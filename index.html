@@ -3,14 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Family Challenge Quest</title>
+  <title>Family Challenge Quest: Modern Codenames</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
   <script>
     tailwind.config = {
       theme: {
-        fontFamily: {
-          sans: ['Inter', 'sans-serif']
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif']
+          },
+          colors: {
+            primary: '#2563eb'
+          }
         }
       }
     }
@@ -18,226 +24,235 @@
 </head>
 <body class="bg-gray-50 font-sans text-gray-900 min-h-screen">
   <div class="container mx-auto px-6 lg:px-12 py-8">
-    <header class="mb-8">
-      <h1 class="text-3xl font-semibold leading-tight text-center">Family Challenge Quest</h1>
+    <header class="mb-8 text-center">
+      <h1 class="text-3xl font-semibold leading-tight">Family Challenge Quest: Modern Codenames</h1>
     </header>
-    <nav role="tablist" class="flex space-x-2 overflow-x-auto mb-6">
-      <button role="tab" aria-controls="game-tab" aria-selected="true" data-tab="game" onclick="showTab('game')" class="flex-1 px-6 py-2 rounded-full font-medium transition-all duration-300 bg-blue-600 text-white shadow-sm">Game</button>
-      <button role="tab" aria-controls="edit-tab" aria-selected="false" data-tab="edit" onclick="showTab('edit')" class="flex-1 px-6 py-2 rounded-full font-medium transition-all duration-300 bg-white text-gray-700 border border-gray-300 hover:bg-gray-50">Edit</button>
-      <button role="tab" aria-controls="leaderboard-tab" aria-selected="false" data-tab="leaderboard" onclick="showTab('leaderboard')" class="flex-1 px-6 py-2 rounded-full font-medium transition-all duration-300 bg-white text-gray-700 border border-gray-300 hover:bg-gray-50">Leaderboard</button>
-    </nav>
-    <main>
-      <section id="game-tab" class="tab-content bg-white rounded-2xl shadow-md p-6">
-        <h2 class="text-xl font-medium mb-4">Current Round</h2>
-        <div id="instructions" class="text-base text-gray-700 leading-relaxed mb-4"></div>
-        <div id="game-round" class="mb-6"></div>
-        <div class="flex space-x-4 mb-6">
-          <button onclick="revealCard()" class="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6 py-2 shadow-sm transition-colors duration-300">Reveal Hint</button>
-          <button onclick="nextPlayer()" class="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6 py-2 shadow-sm transition-colors duration-300">Next Player</button>
+    <main class="grid grid-cols-12 gap-6">
+      <section id="scoreboard" class="col-span-12 md:col-span-4 bg-white rounded-2xl shadow-md p-6">
+        <h2 class="text-xl font-medium mb-4">Scoreboard</h2>
+        <div class="space-y-4">
+          <div class="flex justify-between items-center">
+            <span class="text-base font-medium text-gray-700">Red Team Remaining:</span>
+            <span id="redScore" class="text-lg font-bold">9</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-base font-medium text-gray-700">Blue Team Remaining:</span>
+            <span id="blueScore" class="text-lg font-bold">8</span>
+          </div>
+          <div class="text-center">
+            <span id="currentTurn" class="text-lg font-medium text-red-600">Red's Turn</span>
+          </div>
         </div>
-        <div id="scoreboard" class="space-y-2"></div>
       </section>
-      <section id="edit-tab" class="tab-content hidden bg-white rounded-2xl shadow-md p-6">
-        <h2 class="text-xl font-medium mb-4">Game Setup</h2>
-        <div id="player-config" class="space-y-2 mb-4"></div>
-        <button onclick="addPlayer()" class="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6 py-2 shadow-sm transition-colors duration-300 mb-4">Add Player</button>
-        <textarea id="encodedInput" placeholder="Paste AI-generated game code here..." class="w-full h-40 p-4 border border-gray-300 rounded-md mb-4"></textarea>
-        <button onclick="loadGameData()" class="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6 py-2 shadow-sm transition-colors duration-300">Load Game Data</button>
+      <section id="timer" class="col-span-12 md:col-span-4 bg-white rounded-2xl shadow-md p-6 text-center">
+        <h2 class="text-xl font-medium mb-4">Turn Timer</h2>
+        <div id="countdown" class="text-4xl font-bold text-red-600 mb-4">1:00</div>
+        <button onclick="startTimer()" class="bg-primary hover:bg-blue-700 text-white rounded-full px-6 py-2 shadow-sm transition-shadow duration-300">Start Timer</button>
       </section>
-      <section id="leaderboard-tab" class="tab-content hidden bg-white rounded-2xl shadow-md p-6">
-        <h2 class="text-xl font-medium mb-4">Leaderboard</h2>
-        <div id="final-scores" class="space-y-2"></div>
+      <section id="clueSection" class="col-span-12 md:col-span-4 bg-white rounded-2xl shadow-md p-6">
+        <h2 class="text-xl font-medium mb-4">Give Clue</h2>
+        <div class="flex flex-col sm:flex-row gap-4">
+          <input id="clueWord" type="text" placeholder="Clue word" class="flex-1 border border-gray-300 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+          <input id="clueNumber" type="number" min="0" placeholder="Number" class="w-full sm:w-20 border border-gray-300 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+          <button onclick="giveClue()" class="bg-primary hover:bg-blue-700 text-white rounded-full px-6 py-2 shadow-sm transition-shadow duration-300">Give Clue</button>
+        </div>
+        <p id="currentClue" class="mt-4 text-lg font-medium text-gray-700"></p>
       </section>
+      <section id="gameBoard" class="col-span-12 bg-white rounded-2xl shadow-md p-6">
+        <h2 class="text-xl font-medium mb-4">Game Board</h2>
+        <div id="wordGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4"></div>
+      </section>
+      <section id="qrSection" class="col-span-12 bg-white rounded-2xl shadow-md p-6 text-center">
+        <h2 class="text-xl font-medium mb-4">Spymaster QR Code</h2>
+        <p class="mb-4 text-base text-gray-700 leading-relaxed">Scan to view the private key on your phone:</p>
+        <canvas id="qrCanvas" class="mx-auto"></canvas>
+      </section>
+      <div class="col-span-12 flex flex-col sm:flex-row justify-center gap-4">
+        <button id="endTurnButton" onclick="endTurn()" class="bg-gray-600 hover:bg-gray-700 text-white rounded-full px-6 py-2 shadow-sm transition-shadow duration-300">End Turn</button>
+        <button id="newGameButton" onclick="newGame()" class="bg-green-600 hover:bg-green-700 text-white rounded-full px-6 py-2 shadow-sm transition-shadow duration-300">New Game</button>
+      </div>
     </main>
   </div>
   <script>
     const STATE = {
-      players: [],
-      scores: {},
-      rounds: [],
-      currentPlayerIndex: 0,
-      currentTab: 'game',
+      words: [],
+      assignments: [],
+      revealed: [],
+      currentTeam: 'red',
+      redRemaining: 9,
+      blueRemaining: 8,
+      gameOver: false,
+      timerInterval: null
     };
 
-    function showTab(tabId) {
-      STATE.currentTab = tabId;
-      document.querySelectorAll('[role="tab"]').forEach(btn => {
-        const isActive = btn.dataset.tab === tabId;
-        btn.setAttribute('aria-selected', isActive);
-        if (isActive) {
-          btn.classList.add('bg-blue-600', 'text-white');
-          btn.classList.remove('bg-white', 'text-gray-700', 'border', 'border-gray-300', 'hover:bg-gray-50');
-        } else {
-          btn.classList.add('bg-white', 'text-gray-700', 'border', 'border-gray-300', 'hover:bg-gray-50');
-          btn.classList.remove('bg-blue-600', 'text-white');
-        }
-      });
-      document.querySelectorAll('.tab-content').forEach(tab => {
-        tab.classList.toggle('hidden', tab.id !== `${tabId}-tab`);
-      });
-      if (tabId === 'game') {
-        renderRound();
-        renderScoreboard();
-      } else if (tabId === 'leaderboard') {
-        renderLeaderboard();
-      }
+    const wordList = ['airplane', 'apple', 'ball', 'banana', 'beach', 'bear', 'bed', 'bell', 'bird', 'boat', 'book', 'boot', 'bottle', 'brain', 'bridge', 'brush', 'butter', 'button', 'cake', 'camera', 'car', 'cat', 'chair', 'chicken', 'circle', 'clock', 'cloud', 'coat', 'coin', 'computer', 'cup', 'dance', 'day', 'desk', 'diamond', 'dog', 'door', 'dress', 'duck', 'ear', 'egg', 'elephant', 'eye', 'face', 'farm', 'finger', 'fire', 'fish', 'flower', 'foot', 'fork', 'fox', 'frog', 'game', 'garden', 'gate', 'ghost', 'gift', 'girl', 'glass', 'glove', 'gold', 'grass', 'guitar', 'hair', 'hammer', 'hand', 'hat', 'head', 'heart', 'helicopter', 'horse', 'hospital', 'house', 'ice', 'island', 'jacket', 'jet', 'juice', 'key', 'king', 'kite', 'knife', 'lamp', 'leaf', 'leg', 'lemon', 'letter', 'light', 'lion', 'lock', 'map', 'milk', 'monkey', 'moon', 'mountain', 'mouse', 'mouth', 'music', 'nail', 'neck', 'needle', 'nest', 'night', 'nose', 'nut', 'ocean', 'oil', 'orange', 'owl', 'paint', 'pants', 'paper', 'pen', 'pencil', 'phone', 'piano', 'picture', 'pig', 'pillow', 'plane', 'plant', 'plate', 'pocket', 'potato', 'queen', 'rabbit', 'rain', 'ring', 'river', 'robot', 'rock', 'roof', 'room', 'root', 'rose', 'school', 'scissors', 'sea', 'sheep', 'ship', 'shirt', 'shoe', 'shorts', 'shoulder', 'sky', 'snake', 'snow', 'sock', 'song', 'spoon', 'square', 'star', 'stick', 'sun', 'table', 'tail', 'tiger', 'time', 'toe', 'tomato', 'tooth', 'train', 'tree', 'truck', 'umbrella', 'vegetable', 'village', 'wall', 'watch', 'water', 'whale', 'wheel', 'window', 'wind', 'wing', 'wolf', 'woman', 'wood', 'worm', 'zebra'];
+
+    function shuffle(array) {
+      return array.sort(() => Math.random() - 0.5);
     }
 
-    function addPlayer() {
-      const container = document.getElementById('player-config');
-      const input = document.createElement('input');
-      input.classList.add('w-full', 'p-2', 'border', 'border-gray-300', 'rounded-md');
-      input.placeholder = 'Player name';
-      input.addEventListener('change', updatePlayers);
-      container.appendChild(input);
-    }
-
-    function updatePlayers() {
-      STATE.players = Array.from(document.querySelectorAll('#player-config input'))
-        .map(input => input.value.trim())
-        .filter(name => name);
-      STATE.players.forEach(p => {
-        if (!(p in STATE.scores)) STATE.scores[p] = 0;
-      });
-    }
-
-    function loadGameData() {
-      const input = document.getElementById('encodedInput').value.trim();
-      if (!input.startsWith('[ FQDATA_v1 ]')) return alert('Invalid format');
-      const encoded = input.split(']')[1].trim();
-      const xorKey = 'FQKEY';
-      let decoded;
-      try {
-        decoded = atob(encoded);
-      } catch (e) {
-        return alert('Invalid base64 encoding');
-      }
-      let output = '';
-      for (let i = 0; i < decoded.length; i++) {
-        output += String.fromCharCode(decoded.charCodeAt(i) ^ xorKey.charCodeAt(i % xorKey.length));
-      }
-      try {
-        STATE.rounds = JSON.parse(output);
-        alert('✅ Game data loaded!');
-        startGame();
-      } catch (e) {
-        alert('❌ Failed to decode game data');
-      }
-    }
-
-    function startGame() {
-      STATE.currentPlayerIndex = 0;
-      showTab('game');
-    }
-
-    function renderRound() {
-      if (STATE.players.length === 0 || STATE.rounds.length === 0) return;
-      const round = STATE.rounds[STATE.currentPlayerIndex % STATE.rounds.length];
-      const roundBox = document.getElementById('game-round');
-      const instructions = document.getElementById('instructions');
-      const currentPlayer = STATE.players[STATE.currentPlayerIndex % STATE.players.length];
-      instructions.textContent = `Everyone else, look away. ${currentPlayer}, click when ready.`;
-      roundBox.innerHTML = '';
-      const card = document.createElement('div');
-      card.classList.add('bg-white', 'rounded-2xl', 'shadow-md', 'p-6', 'text-center', 'text-gray-500', 'cursor-pointer', 'transition-shadow', 'duration-300', 'hover:shadow-lg');
-      card.textContent = '[Click to reveal card]';
-      card.setAttribute('role', 'button');
-      card.setAttribute('tabindex', '0');
-      card.setAttribute('aria-label', 'Reveal card');
-      const reveal = () => {
-        card.textContent = round.content;
-        card.classList.remove('text-gray-500', 'cursor-pointer', 'hover:shadow-lg');
-        card.classList.add('text-gray-900');
-        card.removeAttribute('role');
-        card.removeAttribute('tabindex');
-        card.removeAttribute('aria-label');
-        card.removeEventListener('click', reveal);
-        card.removeEventListener('keydown', keyHandler);
-      };
-      const keyHandler = (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          reveal();
-          e.preventDefault();
-        }
-      };
-      card.addEventListener('click', reveal);
-      card.addEventListener('keydown', keyHandler);
-      roundBox.appendChild(card);
-    }
-
-    function revealCard() {
-      if (STATE.players.length === 0 || STATE.rounds.length === 0) return;
-      const round = STATE.rounds[STATE.currentPlayerIndex % STATE.rounds.length];
-      const currentPlayer = STATE.players[STATE.currentPlayerIndex % STATE.players.length];
-      alert(`Hint for ${currentPlayer}:\n${round.content}`);
-    }
-
-    function nextPlayer() {
-      STATE.currentPlayerIndex++;
-      renderRound();
-      renderScoreboard();
+    function initGame() {
+      STATE.words = shuffle(wordList).slice(0, 25);
+      const positions = shuffle(Array.from({length: 25}, (_, i) => i));
+      STATE.assignments = new Array(25).fill('neutral');
+      positions.slice(0, 9).forEach(p => STATE.assignments[p] = 'red');
+      positions.slice(9, 17).forEach(p => STATE.assignments[p] = 'blue');
+      positions[17] = 'assassin';
+      STATE.revealed = new Array(25).fill(false);
+      STATE.currentTeam = 'red';
+      STATE.redRemaining = 9;
+      STATE.blueRemaining = 8;
+      STATE.gameOver = false;
     }
 
     function renderScoreboard() {
-      const board = document.getElementById('scoreboard');
-      board.innerHTML = '';
-      STATE.players.forEach(p => {
-        const row = document.createElement('div');
-        row.classList.add('flex', 'justify-between', 'items-center', 'p-4', 'bg-white', 'rounded-lg', 'shadow-sm');
-        row.innerHTML = `<span class="text-base text-gray-700">${p}: ${STATE.scores[p]} pts</span>`;
-        const plus = document.createElement('button');
-        plus.classList.add('bg-blue-600', 'hover:bg-blue-700', 'text-white', 'rounded-full', 'px-4', 'py-1', 'shadow-sm', 'transition-colors', 'duration-300');
-        plus.textContent = '+';
-        plus.onclick = () => {
-          STATE.scores[p]++;
-          renderScoreboard();
-        };
-        row.appendChild(plus);
-        board.appendChild(row);
-      });
+      document.getElementById('redScore').textContent = STATE.redRemaining;
+      document.getElementById('blueScore').textContent = STATE.blueRemaining;
+      const turnEl = document.getElementById('currentTurn');
+      turnEl.textContent = `${STATE.currentTeam.charAt(0).toUpperCase() + STATE.currentTeam.slice(1)}'s Turn`;
+      if (STATE.currentTeam === 'red') {
+        turnEl.classList.add('text-red-600');
+        turnEl.classList.remove('text-blue-600');
+      } else {
+        turnEl.classList.add('text-blue-600');
+        turnEl.classList.remove('text-red-600');
+      }
     }
 
-    function renderLeaderboard() {
-      const finalScores = document.getElementById('final-scores');
-      finalScores.innerHTML = '';
-      const sorted = [...STATE.players].sort((a, b) => STATE.scores[b] - STATE.scores[a]);
-      sorted.forEach(p => {
-        const row = document.createElement('div');
-        row.classList.add('flex', 'justify-between', 'items-center', 'p-4', 'bg-white', 'rounded-lg', 'shadow-sm');
-        row.innerHTML = `<span class="text-base text-gray-700 font-medium">${p}</span> <span>${STATE.scores[p]} pts</span>`;
-        finalScores.appendChild(row);
-      });
-    }
-
-    window.addEventListener('load', () => {
-      const tablist = document.querySelector('[role="tablist"]');
-      tablist.addEventListener('keydown', (e) => {
-        const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
-        const index = tabs.indexOf(document.activeElement);
-        if (index === -1) return;
-        let nextIndex;
-        if (e.key === 'ArrowRight') {
-          nextIndex = (index + 1) % tabs.length;
-        } else if (e.key === 'ArrowLeft') {
-          nextIndex = (index - 1 + tabs.length) % tabs.length;
-        } else {
-          return;
+    function renderGrid() {
+      const grid = document.getElementById('wordGrid');
+      grid.innerHTML = '';
+      STATE.words.forEach((word, i) => {
+        const card = document.createElement('div');
+        card.classList.add('bg-white', 'rounded-xl', 'shadow-sm', 'p-4', 'text-center', 'transition-shadow', 'duration-300', 'text-base', 'font-medium', 'text-gray-700');
+        card.textContent = word.toUpperCase();
+        card.dataset.index = i;
+        card.setAttribute('role', 'button');
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('aria-label', `Guess word: ${word}`);
+        if (STATE.revealed[i]) {
+          let bgClass;
+          const color = STATE.assignments[i];
+          if (color === 'red') bgClass = 'bg-red-500 text-white';
+          else if (color === 'blue') bgClass = 'bg-blue-500 text-white';
+          else if (color === 'neutral') bgClass = 'bg-yellow-200 text-gray-800';
+          else bgClass = 'bg-black text-white';
+          card.classList.add(...bgClass.split(' '));
+          card.classList.remove('hover:shadow-md', 'cursor-pointer');
+          card.removeAttribute('role');
+          card.removeAttribute('tabindex');
+          card.removeAttribute('aria-label');
+        } else if (!STATE.gameOver) {
+          card.classList.add('cursor-pointer', 'hover:shadow-md');
+          card.addEventListener('click', () => handleGuess(i));
+          card.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleGuess(i); });
         }
-        tabs[nextIndex].focus();
-        showTab(tabs[nextIndex].dataset.tab);
-        e.preventDefault();
+        grid.appendChild(card);
       });
+    }
 
-      addPlayer();
-      addPlayer();
-      const inputs = document.querySelectorAll('#player-config input');
-      inputs[0].value = 'Player 1';
-      inputs[1].value = 'Player 2';
-      updatePlayers();
-      const defaultData = '[ FQDATA_v1 ] HSppJjYoJS4rLWRra2cYJSVrKiwycSplNCk/ICAgZCxnZSJkMiQrLSM/P2djZnMPNzgxcSplMSkkOCB7O31rPnslPiUxPCglaX95ZAIiKz5mMGs2Nig2aTgE';
-      document.getElementById('encodedInput').value = defaultData;
-      loadGameData();
-    });
+    function handleGuess(index) {
+      if (STATE.gameOver || STATE.revealed[index]) return;
+      STATE.revealed[index] = true;
+      const color = STATE.assignments[index];
+      let continueTurn = false;
+      if (color === 'red' || color === 'blue') {
+        STATE[`${color}Remaining`]--;
+        if (STATE[`${color}Remaining`] === 0) {
+          alert(`${color.toUpperCase()} Team wins!`);
+          STATE.gameOver = true;
+        }
+        if (color === STATE.currentTeam) continueTurn = true;
+      } else if (color === 'assassin') {
+        const winner = STATE.currentTeam === 'red' ? 'blue' : 'red';
+        alert(`Assassin guessed! ${winner.toUpperCase()} Team wins!`);
+        STATE.gameOver = true;
+      }
+      if (!continueTurn && !STATE.gameOver) endTurn();
+      renderGrid();
+      renderScoreboard();
+    }
+
+    function endTurn() {
+      if (STATE.gameOver) return;
+      STATE.currentTeam = STATE.currentTeam === 'red' ? 'blue' : 'red';
+      renderScoreboard();
+    }
+
+    function startTimer(duration = 60) {
+      clearInterval(STATE.timerInterval);
+      let remaining = duration;
+      const display = document.getElementById('countdown');
+      const updateDisplay = () => {
+        const min = Math.floor(remaining / 60);
+        const sec = remaining % 60;
+        display.textContent = `${min}:${sec.toString().padStart(2, '0')}`;
+      };
+      updateDisplay();
+      STATE.timerInterval = setInterval(() => {
+        remaining--;
+        updateDisplay();
+        if (remaining <= 0) {
+          clearInterval(STATE.timerInterval);
+          alert('Time is up!');
+          endTurn();
+        }
+      }, 1000);
+    }
+
+    function giveClue() {
+      const word = document.getElementById('clueWord').value.trim();
+      const num = document.getElementById('clueNumber').value;
+      if (word && num) {
+        document.getElementById('currentClue').textContent = `Clue: ${word.toUpperCase()} ${num}`;
+        document.getElementById('clueWord').value = '';
+        document.getElementById('clueNumber').value = '';
+        startTimer();
+      }
+    }
+
+    function generateQR() {
+      const data = { words: STATE.words, assignments: STATE.assignments };
+      const encoded = btoa(JSON.stringify(data));
+      const url = `${window.location.origin}${window.location.pathname}?key=${encoded}`;
+      QRCode.toCanvas(document.getElementById('qrCanvas'), url, { width: 200 }, (error) => {
+        if (error) console.error(error);
+      });
+    }
+
+    function newGame() {
+      initGame();
+      renderScoreboard();
+      renderGrid();
+      generateQR();
+      document.getElementById('currentClue').textContent = '';
+      clearInterval(STATE.timerInterval);
+      document.getElementById('countdown').textContent = '1:00';
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const keyParam = urlParams.get('key');
+    if (keyParam) {
+      try {
+        const data = JSON.parse(atob(keyParam));
+        STATE.words = data.words;
+        STATE.assignments = data.assignments;
+        STATE.revealed = new Array(25).fill(true);
+        STATE.gameOver = true; // Disable interactions
+        document.title = 'Spymaster View';
+        document.querySelector('h1').textContent = 'Spymaster View';
+        ['scoreboard', 'timer', 'clueSection', 'qrSection'].forEach(id => document.getElementById(id).style.display = 'none');
+        document.querySelector('.flex[col-span-12]').style.display = 'none';
+        renderGrid();
+      } catch (e) {
+        alert('Invalid key');
+      }
+    } else {
+      initGame();
+      renderScoreboard();
+      renderGrid();
+      generateQR();
+    }
   </script>
 </body>
 </html>
