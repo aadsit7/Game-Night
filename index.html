@@ -152,16 +152,17 @@
       STATE.colors = Array(25).fill('neutral');
       STATE.colors[positions[0]] = 'assassin';
       let posIdx = 1;
-      for (let i = 0; i < 9; i++) {
+      for (let i = 0; i < STATE.remaining[starterTeam]; i++) {
         STATE.colors[positions[posIdx++]] = starterTeam;
       }
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < STATE.remaining[otherTeam]; i++) {
         STATE.colors[positions[posIdx++]] = otherTeam;
       }
-      // remaining positions are neutral (7)
       STATE.revealed = new Set();
       STATE.mode = 'clue';
       STATE.clue = null;
+      STATE.gameOver = false;
+      STATE.winner = null;
       render();
     }
     function updateLayout() {
@@ -174,19 +175,19 @@
       const fsControls = document.getElementById('fs-controls');
       if (isFs) {
         body.classList.add('h-screen', 'overflow-hidden');
-        htmlEl.classList.add('h-screen');
+        htmlEl.classList.add('h-screen', 'overflow-hidden');
         headerEl.classList.add('hidden');
         footerEl.classList.add('hidden');
-        mainEl.classList.remove('py-12', 'px-4', 'md:px-6', 'max-w-6xl', 'gap-12');
-        mainEl.classList.add('h-full', 'p-8', 'md:p-12', 'lg:p-16', 'gap-8', 'md:gap-12', 'max-w-none');
+        mainEl.classList.remove('container', 'mx-auto', 'px-4', 'md:px-6', 'py-12', 'max-w-6xl', 'gap-12');
+        mainEl.classList.add('h-full', 'w-full', 'flex', 'flex-col', 'p-4', 'md:p-8');
         fsControls.classList.remove('hidden');
       } else {
         body.classList.remove('h-screen', 'overflow-hidden');
-        htmlEl.classList.remove('h-screen');
+        htmlEl.classList.remove('h-screen', 'overflow-hidden');
         headerEl.classList.remove('hidden');
         footerEl.classList.remove('hidden');
-        mainEl.classList.remove('h-full', 'p-8', 'md:p-12', 'lg:p-16', 'gap-8', 'md:gap-12', 'max-w-none');
-        mainEl.classList.add('py-12', 'px-4', 'md:px-6', 'max-w-6xl', 'gap-12');
+        mainEl.classList.remove('h-full', 'w-full', 'flex', 'flex-col', 'p-4', 'md:p-8');
+        mainEl.classList.add('container', 'mx-auto', 'px-4', 'md:px-6', 'py-12', 'max-w-6xl', 'gap-12');
         fsControls.classList.add('hidden');
       }
     }
@@ -194,167 +195,185 @@
       lucide.createIcons();
       const isFs = STATE.fullscreen;
       updateLayout();
-      // Game Over Banner
+      const teamColor = STATE.currentTeam === 'red' ? 'red' : 'blue';
+      const otherTeam = STATE.currentTeam === 'red' ? 'blue' : 'red';
+      // Game Over
       const gameOverBanner = document.getElementById('game-over-banner');
       const winnerDisplay = document.getElementById('winner-display');
       if (STATE.gameOver) {
         gameOverBanner.classList.remove('hidden');
-        const teamColor = STATE.winner === 'red' ? 'from-red-500 to-red-600' : 'from-blue-500 to-blue-600';
-        const sizeClasses = isFs ? 'text-6xl md:text-8xl px-24 md:px-32 py-16 md:py-20' : 'text-4xl md:text-5xl px-12 md:px-20 py-8 md:py-12';
-        winnerDisplay.className = `font-black text-white ${sizeClasses} rounded-3xl shadow-2xl mx-auto max-w-max mb-6 bg-gradient-to-r ${teamColor} transform scale-105`;
+        const winColor = STATE.winner === 'red' ? 'from-red-500 to-red-600' : 'from-blue-500 to-blue-600';
+        const sizeClasses = isFs ? 'text-6xl px-16 py-12' : 'text-4xl md:text-5xl px-12 md:px-20 py-8 md:py-12';
+        winnerDisplay.className = `${sizeClasses} font-black text-white rounded-3xl shadow-2xl mx-auto max-w-max mb-6 bg-gradient-to-r ${winColor} transform scale-105`;
         winnerDisplay.textContent = `${STATE.winner.toUpperCase()} TEAM WINS! 🎉`;
+        if (isFs) {
+          document.getElementById('clue-section').classList.add('hidden');
+          document.getElementById('current-team-indicator').classList.add('hidden');
+          document.getElementById('remaining-display').classList.add('hidden');
+        }
       } else {
         gameOverBanner.classList.add('hidden');
       }
-      // Remaining Display
-      const remSize = isFs ? 'text-5xl md:text-7xl p-8 md:p-12 gap-12 md:gap-20' : 'text-4xl md:text-5xl p-6 gap-8 md:gap-16';
-      const remDivSize = isFs ? 'text-2xl md:text-4xl p-8 rounded-3xl' : 'text-xl md:text-2xl p-6 rounded-3xl';
-      document.getElementById('remaining-display').className = `flex flex-col md:flex-row justify-center items-center ${remSize} bg-white/70 backdrop-blur-sm shadow-xl mb-0`;
-      document.querySelector('#remaining-display > div:nth-child(1)').className = `text-center ${remDivSize}`;
-      document.querySelector('#remaining-display > div:nth-child(2)').className = `text-center ${remDivSize}`;
+      // Remaining
       document.getElementById('red-remaining').textContent = STATE.remaining.red;
       document.getElementById('blue-remaining').textContent = STATE.remaining.blue;
-      // Current Team Indicator
+      // Current Team
       const currentIndicator = document.getElementById('current-team-indicator');
       if (!STATE.gameOver) {
         currentIndicator.classList.remove('hidden');
         const teamEl = currentIndicator.querySelector('div');
-        const teamColor = STATE.currentTeam === 'red' ? 'bg-red-500 shadow-red-500/50' : 'bg-blue-500 shadow-blue-500/50';
-        const currSize = isFs ? 'text-4xl md:text-6xl px-20 md:px-28 py-10 md:py-12' : 'text-2xl md:text-3xl px-12 md:px-16 py-6 md:py-8';
-        teamEl.className = `font-black text-white ${currSize} rounded-3xl shadow-2xl ${teamColor}`;
+        const tColor = STATE.currentTeam === 'red' ? 'bg-red-500 shadow-red-500/50' : 'bg-blue-500 shadow-blue-500/50';
+        const size = isFs ? 'text-4xl px-16 py-8' : 'text-2xl md:text-3xl px-12 md:px-16 py-6 md:py-8';
+        teamEl.className = `${size} font-black text-white rounded-3xl shadow-2xl ${tColor} transform scale-110`;
         teamEl.textContent = `${STATE.currentTeam.toUpperCase()}'S TURN`;
       } else {
         currentIndicator.classList.add('hidden');
       }
       // Clue Section
       const clueSection = document.getElementById('clue-section');
-      const cluePSize = isFs ? 'p-12 md:p-16' : 'p-8 md:p-12';
-      clueSection.className = `bg-white/70 backdrop-blur-md rounded-3xl shadow-xl ${cluePSize} mb-12 max-w-2xl mx-auto ${STATE.mode === 'clue' || STATE.mode === 'guess' ? '' : 'hidden'}`;
-      if (STATE.mode === 'clue') {
-        clueSection.innerHTML = `
-          <h2 class="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-800 mb-12 text-center tracking-wide">Give a Clue</h2>
-          <div class="flex flex-col lg:flex-row gap-8 items-end mb-12">
-            <div class="flex-1">
-              <label class="block text-lg md:text-xl font-semibold text-gray-700 mb-4">Number:</label>
-              <select id="clue-num" class="w-full p-6 md:p-8 border-2 border-gray-300 rounded-3xl focus:border-blue-500 focus:ring-4 focus:ring-blue-200 text-2xl md:text-3xl font-bold tracking-wide">
-                ${[1,2,3,4,5,6,7,8,9].map(n => `<option value="${n}">${n}</option>`).join('')}
-              </select>
-            </div>
-            <div class="flex-1">
-              <label class="block text-lg md:text-xl font-semibold text-gray-700 mb-4">Clue Word:</label>
-              <input id="clue-word" type="text" class="w-full p-6 md:p-8 border-2 border-gray-300 rounded-3xl focus:border-blue-500 focus:ring-4 focus:ring-blue-200 text-2xl md:text-3xl font-bold uppercase tracking-widest" placeholder="e.g. FRUIT" maxlength="20" autocomplete="off">
-            </div>
-          </div>
-          <button id="submit-clue-btn" class="w-full lg:w-auto px-16 py-8 bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white rounded-3xl shadow-2xl hover:shadow-3xl transition-all duration-300 font-bold text-2xl flex items-center gap-4 justify-center mx-auto">
-            <i data-lucide="send"></i>
-            Give Clue
-          </button>
-        `;
-        document.getElementById('submit-clue-btn').onclick = submitClue;
-      } else if (STATE.mode === 'guess') {
-        clueSection.innerHTML = `
-          <div class="text-center">
-            <div class="text-5xl md:text-7xl lg:text-8xl font-black text-gray-900 mb-8 md:mb-12 tracking-widest">${STATE.clue.word} ${STATE.clue.num}</div>
-            <p class="text-2xl md:text-3xl text-gray-600 font-semibold mb-12">Pass when ready</p>
-            <button id="pass-btn" class="px-16 py-8 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white rounded-3xl shadow-2xl hover:shadow-3xl transition-all duration-300 font-bold text-2xl flex items-center gap-4 mx-auto">
-              <i data-lucide="skip-forward"></i>
-              Pass Turn
-            </button>
-          </div>
-        `;
-        document.getElementById('pass-btn').onclick = passTurn;
-      }
-      // Grid Wrapper and Grid
-      const gridWrapper = document.getElementById('grid-wrapper');
-      const gridSize = isFs ? 'aspect-square mx-auto max-w-[92vw] max-h-[68vh] flex items-center justify-center' : 'w-full';
-      gridWrapper.className = gridSize;
-      const grid = document.getElementById('grid');
-      const gridClass = isFs ? 'grid grid-cols-5 grid-rows-5 gap-2 md:gap-3 p-6 md:p-8 w-full h-full' : 'grid grid-cols-5 gap-3 md:gap-4 w-full h-auto';
-      grid.className = gridClass;
-      grid.innerHTML = '';
-      for (let row = 0; row < 5; row++) {
-        for (let col = 0; col < 5; col++) {
-          const idx = row * 5 + col;
-          const word = STATE.words[idx];
-          const color = STATE.colors[idx];
-          const revealed = STATE.revealed.has(idx);
-          let classes = 'card col-span-1 row-span-1 flex items-center justify-center text-center font-bold cursor-pointer hover:shadow-xl transition-all duration-300 select-none border-2 border-transparent group rounded-2xl shadow-md overflow-hidden';
-          let textClasses = 'text-gray-900 group-hover:text-gray-800 transition-colors';
-          const textSize = isFs ? 'text-lg md:text-xl lg:text-2xl xl:text-3xl' : 'text-sm md:text-base lg:text-lg';
-          textClasses += ` ${textSize}`;
-          if (revealed) {
-            classes = classes.replace('cursor-pointer hover:shadow-xl', 'cursor-default shadow-2xl scale-105 border-0');
-            if (color === 'red') {
-              classes += ' bg-red-500';
-              textClasses = textClasses.replace('text-gray-900', 'text-white');
-            } else if (color === 'blue') {
-              classes += ' bg-blue-500';
-              textClasses = textClasses.replace('text-gray-900', 'text-white');
-            } else if (color === 'neutral') {
-              classes += ' bg-amber-400';
-              textClasses += ' font-black';
-            } else { // assassin
-              classes += ' bg-gray-800';
-              textClasses = textClasses.replace('text-gray-900', 'text-white');
-            }
-          } else if (STATE.spyView) {
-            if (color === 'red') {
-              classes += ' bg-red-50 border-red-400/50 hover:border-red-500';
-            } else if (color === 'blue') {
-              classes += ' bg-blue-50 border-blue-400/50 hover:border-blue-500';
-            } else if (color === 'neutral') {
-              classes += ' bg-amber-50 border-amber-400/50 hover:border-amber-500';
-            } else {
-              classes += ' bg-gray-100 border-gray-400/50 hover:border-gray-500';
-            }
-          } else {
-            classes += ' bg-white hover:bg-gray-50';
+      clueSection.classList.add('hidden');
+      if (!STATE.gameOver) {
+        if (isFs) {
+          // Minimal view in fullscreen
+          document.getElementById('remaining-display').classList.add('hidden');
+          document.getElementById('current-team-indicator').classList.add('hidden');
+          clueSection.classList.remove('hidden');
+          clueSection.classList.remove('max-w-2xl', 'mb-12');
+          clueSection.classList.add('w-full', 'text-center', 'p-4', 'md:p-6');
+          if (STATE.mode === 'guess' && STATE.clue) {
+            const fsClueColor = STATE.currentTeam === 'red' ? 'text-red-600' : 'text-blue-600';
+            clueSection.innerHTML = `
+              <div class="text-4xl md:text-6xl font-black ${fsClueColor} mb-4 uppercase tracking-wide">
+                ${STATE.currentTeam.toUpperCase()}: ${STATE.clue.word} ${STATE.clue.num}
+              </div>
+              <button id="pass-btn" class="px-8 py-4 bg-gray-500 text-white rounded-2xl shadow-md hover:bg-gray-600 transition-all duration-300 font-medium flex items-center gap-2 mx-auto">
+                <i data-lucide="skip-forward"></i>
+                Pass
+              </button>
+            `;
+            document.getElementById('pass-btn').onclick = passTurn;
+          } else if (STATE.mode === 'clue') {
+            clueSection.innerHTML = `
+              <div class="text-4xl md:text-6xl font-black text-gray-900 mb-4 uppercase tracking-wide">
+                ${STATE.currentTeam.toUpperCase()}: Give Clue
+              </div>
+              <div class="flex flex-col md:flex-row gap-4 justify-center mb-4">
+                <input id="clue-word" type="text" class="p-4 border-2 border-gray-300 rounded-2xl text-2xl font-bold uppercase tracking-wide w-full md:w-auto" placeholder="Clue Word">
+                <select id="clue-num" class="p-4 border-2 border-gray-300 rounded-2xl text-2xl font-bold">
+                  ${[1,2,3,4,5,6,7,8,9].map(n => `<option value="${n}">${n}</option>`).join('')}
+                </select>
+              </div>
+              <button id="submit-clue-btn" class="px-8 py-4 bg-blue-500 text-white rounded-2xl shadow-md hover:bg-blue-600 transition-all duration-300 font-medium flex items-center gap-2 mx-auto">
+                <i data-lucide="send"></i>
+                Submit
+              </button>
+            `;
+            document.getElementById('submit-clue-btn').onclick = submitClue;
           }
-          const card = document.createElement('div');
-          card.className = classes;
-          card.dataset.idx = idx;
-          card.setAttribute('role', 'button');
-          card.setAttribute('tabindex', revealed ? '-1' : '0');
-          card.innerHTML = `<span class="${textClasses} px-2 py-1 md:px-3 md:py-2 select-none">${word}</span>`;
-          grid.appendChild(card);
+        } else {
+          // Normal view
+          document.getElementById('remaining-display').classList.remove('hidden');
+          if (STATE.mode === 'clue') {
+            clueSection.classList.remove('hidden');
+            clueSection.innerHTML = `
+              <h2 class="text-2xl md:text-3xl font-bold text-gray-800 mb-8 text-center">Give a Clue</h2>
+              <div class="flex flex-col md:flex-row gap-6 items-end mb-8">
+                <div class="flex-1">
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Number of words:</label>
+                  <select id="clue-num" class="w-full p-4 border-2 border-gray-300 rounded-2xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-lg font-semibold">
+                    ${[1,2,3,4,5,6,7,8,9].map(n => `<option value="${n}">${n}</option>`).join('')}
+                  </select>
+                </div>
+                <div class="flex-1">
+                  <label class="block text-sm font-medium text-gray-700 mb-2">One word clue:</label>
+                  <input id="clue-word" type="text" class="w-full p-4 border-2 border-gray-300 rounded-2xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-lg font-bold uppercase tracking-wide" placeholder="e.g. FRUIT" maxlength="20">
+                </div>
+              </div>
+              <button id="submit-clue-btn" class="w-full md:w-auto px-12 py-6 bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 font-bold text-xl flex items-center gap-3 justify-center mx-auto">
+                <i data-lucide="send"></i>
+                Give Clue
+              </button>
+            `;
+            document.getElementById('submit-clue-btn').onclick = submitClue;
+          } else if (STATE.mode === 'guess') {
+            clueSection.classList.remove('hidden');
+            clueSection.innerHTML = `
+              <div class="text-center">
+                <div class="text-3xl md:text-4xl font-black text-gray-900 mb-4 tracking-wide">${STATE.clue.word} ${STATE.clue.num}</div>
+                <p class="text-xl md:text-2xl text-gray-600 font-semibold mb-8">Pass when ready</p>
+                <button id="pass-btn" class="px-12 py-6 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 font-bold text-xl flex items-center gap-3 mx-auto">
+                  <i data-lucide="skip-forward"></i>
+                  Pass Turn
+                </button>
+              </div>
+            `;
+            document.getElementById('pass-btn').onclick = passTurn;
+          }
         }
       }
-      // Update button states
+      // Grid
+      const gridWrapper = document.getElementById('grid-wrapper');
+      gridWrapper.className = isFs ? 'flex-1 w-full h-full flex items-center justify-center' : 'w-full';
+      const grid = document.getElementById('grid');
+      grid.className = isFs ? 'grid grid-cols-5 grid-rows-5 gap-2 w-full h-full' : 'grid grid-cols-5 gap-3 md:gap-4 max-w-5xl mx-auto';
+      grid.innerHTML = '';
+      for (let i = 0; i < 25; i++) {
+        const word = STATE.words[i];
+        const color = STATE.colors[i];
+        const revealed = STATE.revealed.has(i);
+        let classes = 'flex items-center justify-center text-center font-bold cursor-pointer transition-all duration-300 select-none border-2 border-transparent group rounded-2xl shadow-md';
+        let textClasses = 'text-gray-900 group-hover:text-gray-800';
+        const textSize = isFs ? 'text-base md:text-xl lg:text-2xl p-2 md:p-4' : 'text-xs md:text-base lg:text-lg p-1 md:p-2';
+        if (revealed) {
+          classes = classes.replace('cursor-pointer', 'cursor-default').replace('group', '') + ' scale-105';
+          if (color === 'red') classes += ' bg-red-500', textClasses = 'text-white';
+          else if (color === 'blue') classes += ' bg-blue-500', textClasses = 'text-white';
+          else if (color === 'neutral') classes += ' bg-amber-400', textClasses = 'text-gray-900';
+          else classes += ' bg-gray-800', textClasses = 'text-white';
+        } else if (STATE.spyView) {
+          if (color === 'red') classes += ' bg-red-50 border-red-400 hover:border-red-500';
+          else if (color === 'blue') classes += ' bg-blue-50 border-blue-400 hover:border-blue-500';
+          else if (color === 'neutral') classes += ' bg-amber-50 border-amber-400 hover:border-amber-500';
+          else classes += ' bg-gray-100 border-gray-500 hover:border-gray-600';
+        } else {
+          classes += ' bg-white hover:bg-gray-50 hover:shadow-lg';
+        }
+        const card = document.createElement('div');
+        card.className = classes;
+        card.dataset.idx = i;
+        card.innerHTML = `<span class="${textClasses} ${textSize} uppercase">${word}</span>`;
+        grid.appendChild(card);
+      }
+      // Spy toggle
       const spyBtn = document.getElementById('spy-toggle-btn');
       const fsSpyBtn = document.getElementById('fs-spy-toggle');
-      const spyIcon = spyBtn?.querySelector('i') || fsSpyBtn?.querySelector('i');
       if (STATE.spyView) {
-        if (spyBtn) spyBtn.innerHTML = '<i data-lucide="eye-off"></i> Guesser View';
-        if (fsSpyBtn) fsSpyBtn.innerHTML = '<i data-lucide="eye-off" class="w-5 h-5"></i>';
-        spyBtn?.classList.replace('bg-blue-500/80', 'bg-green-500/80');
+        spyBtn.innerHTML = '<i data-lucide="eye-off"></i> Guesser View';
+        fsSpyBtn.innerHTML = '<i data-lucide="eye-off" class="w-5 h-5"></i>';
+        spyBtn.classList.add('bg-green-500/80');
+        spyBtn.classList.remove('bg-blue-500/80');
       } else {
-        if (spyBtn) spyBtn.innerHTML = '<i data-lucide="eye"></i> Spymaster View';
-        if (fsSpyBtn) fsSpyBtn.innerHTML = '<i data-lucide="eye" class="w-5 h-5"></i>';
-        spyBtn?.classList.replace('bg-green-500/80', 'bg-blue-500/80');
+        spyBtn.innerHTML = '<i data-lucide="eye"></i> Spymaster View';
+        fsSpyBtn.innerHTML = '<i data-lucide="eye" class="w-5 h-5"></i>';
+        spyBtn.classList.add('bg-blue-500/80');
+        spyBtn.classList.remove('bg-green-500/80');
       }
-      const fsIcon = document.getElementById('fullscreen-toggle-btn')?.querySelector('i');
+      const fsBtn = document.getElementById('fullscreen-toggle-btn');
       if (STATE.fullscreen) {
-        document.getElementById('fullscreen-toggle-btn').innerHTML = '<i data-lucide="minimize-2"></i> Exit Fullscreen';
+        fsBtn.innerHTML = '<i data-lucide="minimize-2"></i> Exit Fullscreen';
       } else {
-        document.getElementById('fullscreen-toggle-btn').innerHTML = '<i data-lucide="maximize-2"></i> Fullscreen';
+        fsBtn.innerHTML = '<i data-lucide="maximize-2"></i> Fullscreen';
       }
       lucide.createIcons();
     }
-    function handleGridClick(e) {
-      const card = e.target.closest('.card[role="button"]');
-      if (card && STATE.mode === 'guess' && !STATE.gameOver) {
-        const idx = parseInt(card.dataset.idx);
-        if (!STATE.revealed.has(idx)) {
-          guess(idx);
-        }
-      }
-    }
     function guess(idx) {
+      if (STATE.revealed.has(idx)) return;
       STATE.revealed.add(idx);
       const color = STATE.colors[idx];
       const team = STATE.currentTeam;
+      const other = team === 'red' ? 'blue' : 'red';
       if (color === 'assassin') {
-        STATE.winner = team === 'red' ? 'blue' : 'red';
+        STATE.winner = other;
         STATE.gameOver = true;
       } else if (color === team) {
         STATE.remaining[team]--;
@@ -362,7 +381,16 @@
           STATE.winner = team;
           STATE.gameOver = true;
         }
-      } else {
+        // continue turn
+      } else if (color === other) {
+        STATE.remaining[other]--;
+        if (STATE.remaining[other] === 0) {
+          STATE.winner = other;
+          STATE.gameOver = true;
+        }
+        passTurn();
+        return;
+      } else { // neutral
         passTurn();
         return;
       }
@@ -377,65 +405,44 @@
     function submitClue() {
       const num = parseInt(document.getElementById('clue-num').value);
       const word = document.getElementById('clue-word').value.trim().toUpperCase();
-      if (!word || word.length < 2 || num < 1 || num > 9) {
-        alert('Enter a valid clue: 2+ letters word and number 1-9.');
+      if (num < 1 || num > 9 || !word || word.length < 2) {
+        alert('Invalid clue: need word (2+ letters) and number 1-9.');
         return;
       }
-      STATE.clue = { word, num };
+      STATE.clue = { num, word };
       STATE.mode = 'guess';
       render();
     }
     async function toggleFullscreen() {
-      try {
-        if (!document.fullscreenElement) {
-          await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
-        } else {
-          await document.exitFullscreen();
-        }
-      } catch (err) {
-        console.warn('Fullscreen API not supported:', err);
-        alert('Fullscreen not supported on this browser/device.');
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
       }
     }
-    function setupEventListeners() {
-      document.getElementById('new-game-btn').onclick = newGame;
-      document.getElementById('new-game-over-btn').onclick = newGame;
-      document.getElementById('spy-toggle-btn').onclick = () => { STATE.spyView = !STATE.spyView; render(); };
-      document.getElementById('fullscreen-toggle-btn').onclick = toggleFullscreen;
-      document.getElementById('fs-spy-toggle').onclick = () => { STATE.spyView = !STATE.spyView; render(); };
-      document.getElementById('fs-new-game').onclick = newGame;
-      document.getElementById('fs-exit').onclick = toggleFullscreen;
-      document.getElementById('grid').addEventListener('click', handleGridClick);
-      // Keyboard for cards
-      document.addEventListener('keydown', (e) => {
-        if (STATE.mode !== 'guess' || STATE.gameOver || document.activeElement.tagName === 'INPUT') return;
-        const focused = document.activeElement.closest('.card');
-        if (!focused) return;
-        let idx = parseInt(focused.dataset.idx);
-        if (e.key === 'ArrowLeft') idx = Math.max(0, idx - 1);
-        else if (e.key === 'ArrowRight') idx = Math.min(24, idx + 1);
-        else if (e.key === 'ArrowUp') idx = Math.max(0, idx - 5);
-        else if (e.key === 'ArrowDown') idx = Math.min(24, idx + 5);
-        else if (e.key === 'Enter' || e.key === ' ') {
-          if (!STATE.revealed.has(idx)) guess(idx);
-          return;
-        } else return;
-        const targetCard = document.querySelector(`[data-idx="${idx}"]`);
-        if (targetCard) {
-          targetCard.focus();
-          e.preventDefault();
-        }
-      });
+    function handleGridClick(e) {
+      if (STATE.mode !== 'guess' || STATE.gameOver) return;
+      const card = e.target.closest('div[data-idx]');
+      if (card) {
+        const idx = parseInt(card.dataset.idx);
+        guess(idx);
+      }
     }
     function init() {
       newGame();
-      setupEventListeners();
+      document.getElementById('new-game-btn').addEventListener('click', newGame);
+      document.getElementById('new-game-over-btn').addEventListener('click', newGame);
+      document.getElementById('spy-toggle-btn').addEventListener('click', () => { STATE.spyView = !STATE.spyView; render(); });
+      document.getElementById('fullscreen-toggle-btn').addEventListener('click', toggleFullscreen);
+      document.getElementById('fs-spy-toggle').addEventListener('click', () => { STATE.spyView = !STATE.spyView; render(); });
+      document.getElementById('fs-new-game').addEventListener('click', newGame);
+      document.getElementById('fs-exit').addEventListener('click', toggleFullscreen);
+      document.getElementById('grid').addEventListener('click', handleGridClick);
       document.addEventListener('fullscreenchange', () => {
         STATE.fullscreen = !!document.fullscreenElement;
         render();
       });
-      window.addEventListener('orientationchange', () => setTimeout(render, 150));
-      window.addEventListener('resize', () => setTimeout(render, 150));
+      window.addEventListener('resize', render);
     }
     init();
   </script>
