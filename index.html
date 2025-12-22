@@ -3,256 +3,326 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Family Challenge Quest: Modern Codenames</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <title>Codenames - Digital Edition</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
           fontFamily: {
-            sans: ['Inter', 'sans-serif']
+            inter: ['Inter', 'sans-serif'],
           },
-          colors: {
-            primary: '#2563eb'
-          }
-        }
-      }
-    }
+        },
+      },
+    };
   </script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 </head>
-<body class="bg-gray-50 font-sans text-gray-900 min-h-screen">
-  <div class="container mx-auto px-6 lg:px-12 py-8">
-    <header class="mb-8 text-center">
-      <h1 class="text-3xl font-semibold leading-tight">Family Challenge Quest: Modern Codenames</h1>
-    </header>
-    <main class="grid grid-cols-12 gap-6">
-      <section id="scoreboard" class="col-span-12 md:col-span-4 bg-white rounded-2xl shadow-md p-6">
-        <h2 class="text-xl font-medium mb-4">Scoreboard</h2>
-        <div class="space-y-4">
-          <div class="flex justify-between items-center">
-            <span class="text-base font-medium text-gray-700">Red Team Remaining:</span>
-            <span id="redScore" class="text-lg font-bold">9</span>
-          </div>
-          <div class="flex justify-between items-center">
-            <span class="text-base font-medium text-gray-700">Blue Team Remaining:</span>
-            <span id="blueScore" class="text-lg font-bold">8</span>
-          </div>
-          <div class="text-center">
-            <span id="currentTurn" class="text-lg font-medium text-red-600">Red's Turn</span>
-          </div>
+<body class="bg-gradient-to-br from-gray-50 to-blue-50 font-inter text-gray-900 min-h-screen">
+  <header class="bg-white/80 backdrop-blur-md shadow-lg sticky top-0 z-50">
+    <div class="container mx-auto px-6 py-4">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <h1 class="text-3xl md:text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">Codenames</h1>
+        <div class="flex flex-wrap gap-3 justify-center md:justify-end">
+          <button id="new-game-btn" class="px-6 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 font-medium flex items-center gap-2">
+            <i data-lucide="refresh-cw"></i>
+            New Game
+          </button>
+          <button id="spy-toggle-btn" class="px-6 py-2.5 bg-blue-500/80 hover:bg-blue-600 text-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 font-medium flex items-center gap-2">
+            <i data-lucide="eye"></i>
+            Spymaster View
+          </button>
         </div>
-      </section>
-      <section id="timer" class="col-span-12 md:col-span-4 bg-white rounded-2xl shadow-md p-6 text-center">
-        <h2 class="text-xl font-medium mb-4">Turn Timer</h2>
-        <div id="countdown" class="text-4xl font-bold text-red-600 mb-4">1:00</div>
-        <button onclick="startTimer()" class="bg-primary hover:bg-blue-700 text-white rounded-full px-6 py-2 shadow-sm transition-shadow duration-300">Start Timer</button>
-      </section>
-      <section id="clueSection" class="col-span-12 md:col-span-4 bg-white rounded-2xl shadow-md p-6">
-        <h2 class="text-xl font-medium mb-4">Give Clue</h2>
-        <div class="flex flex-col sm:flex-row gap-4">
-          <input id="clueWord" type="text" placeholder="Clue word" class="flex-1 border border-gray-300 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
-          <input id="clueNumber" type="number" min="0" placeholder="Number" class="w-full sm:w-20 border border-gray-300 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
-          <button onclick="giveClue()" class="bg-primary hover:bg-blue-700 text-white rounded-full px-6 py-2 shadow-sm transition-shadow duration-300">Give Clue</button>
-        </div>
-        <p id="currentClue" class="mt-4 text-lg font-medium text-gray-700"></p>
-      </section>
-      <section id="gameBoard" class="col-span-12 bg-white rounded-2xl shadow-md p-6">
-        <h2 class="text-xl font-medium mb-4">Game Board</h2>
-        <div id="wordGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4"></div>
-      </section>
-      <section id="qrSection" class="col-span-12 bg-white rounded-2xl shadow-md p-6 text-center">
-        <h2 class="text-xl font-medium mb-4">Spymaster QR Code</h2>
-        <p class="mb-4 text-base text-gray-700 leading-relaxed">Scan to view the private key on your phone:</p>
-        <canvas id="qrCanvas" class="mx-auto"></canvas>
-      </section>
-      <div class="col-span-12 flex flex-col sm:flex-row justify-center gap-4">
-        <button id="endTurnButton" onclick="endTurn()" class="bg-gray-600 hover:bg-gray-700 text-white rounded-full px-6 py-2 shadow-sm transition-shadow duration-300">End Turn</button>
-        <button id="newGameButton" onclick="newGame()" class="bg-green-600 hover:bg-green-700 text-white rounded-full px-6 py-2 shadow-sm transition-shadow duration-300">New Game</button>
       </div>
-    </main>
-  </div>
+    </div>
+  </header>
+  <main class="container mx-auto px-4 md:px-6 py-12 max-w-6xl">
+    <div id="game-over-banner" class="hidden mb-12 mx-auto max-w-2xl text-center">
+      <div id="winner-display" class="text-4xl md:text-5xl font-black text-white px-12 md:px-20 py-8 md:py-12 rounded-3xl shadow-2xl mx-auto max-w-max mb-6 transform scale-105"></div>
+      <button id="new-game-over-btn" class="px-8 py-4 bg-white/90 hover:bg-white text-gray-900 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 font-semibold text-lg flex items-center gap-3 mx-auto">
+        <i data-lucide="play"></i>
+        Play Again
+      </button>
+    </div>
+    <div id="remaining-display" class="flex flex-col md:flex-row justify-center items-center gap-8 md:gap-16 mb-12">
+      <div class="text-center p-6 bg-white/70 backdrop-blur-sm rounded-3xl shadow-xl">
+        <div class="text-xl md:text-2xl font-bold text-red-600 mb-2">Red Team</div>
+        <div id="red-remaining" class="text-4xl md:text-5xl font-black">9</div>
+      </div>
+      <div class="text-center p-6 bg-white/70 backdrop-blur-sm rounded-3xl shadow-xl">
+        <div class="text-xl md:text-2xl font-bold text-blue-600 mb-2">Blue Team</div>
+        <div id="blue-remaining" class="text-4xl md:text-5xl font-black">8</div>
+      </div>
+    </div>
+    <div id="current-team-indicator" class="hidden mb-12 mx-auto max-w-max">
+      <div class="text-2xl md:text-3xl font-black text-white px-12 md:px-16 py-6 md:py-8 rounded-3xl shadow-2xl transform scale-110"></div>
+    </div>
+    <div id="clue-section" class="bg-white/70 backdrop-blur-md rounded-3xl shadow-xl p-8 md:p-12 mb-12 max-w-2xl mx-auto hidden"></div>
+    <div id="grid" class="grid grid-cols-5 sm:grid-cols-6 gap-3 md:gap-4 max-w-5xl mx-auto"></div>
+  </main>
+  <footer class="bg-white/50 backdrop-blur-md mt-auto pt-12 pb-6">
+    <div class="container mx-auto px-6 text-center text-gray-500 text-sm">Digital Edition – Family Game Night Ready</div>
+  </footer>
   <script>
+    lucide.createIcons();
     const STATE = {
       words: [],
-      assignments: [],
-      revealed: [],
+      colors: [],
+      revealed: new Set(),
       currentTeam: 'red',
-      redRemaining: 9,
-      blueRemaining: 8,
+      remaining: { red: 9, blue: 8 },
+      mode: 'clue',
+      clue: null,
+      spyView: false,
       gameOver: false,
-      timerInterval: null
+      winner: null,
     };
-
-    const wordList = ['airplane', 'apple', 'ball', 'banana', 'beach', 'bear', 'bed', 'bell', 'bird', 'boat', 'book', 'boot', 'bottle', 'brain', 'bridge', 'brush', 'butter', 'button', 'cake', 'camera', 'car', 'cat', 'chair', 'chicken', 'circle', 'clock', 'cloud', 'coat', 'coin', 'computer', 'cup', 'dance', 'day', 'desk', 'diamond', 'dog', 'door', 'dress', 'duck', 'ear', 'egg', 'elephant', 'eye', 'face', 'farm', 'finger', 'fire', 'fish', 'flower', 'foot', 'fork', 'fox', 'frog', 'game', 'garden', 'gate', 'ghost', 'gift', 'girl', 'glass', 'glove', 'gold', 'grass', 'guitar', 'hair', 'hammer', 'hand', 'hat', 'head', 'heart', 'helicopter', 'horse', 'hospital', 'house', 'ice', 'island', 'jacket', 'jet', 'juice', 'key', 'king', 'kite', 'knife', 'lamp', 'leaf', 'leg', 'lemon', 'letter', 'light', 'lion', 'lock', 'map', 'milk', 'monkey', 'moon', 'mountain', 'mouse', 'mouth', 'music', 'nail', 'neck', 'needle', 'nest', 'night', 'nose', 'nut', 'ocean', 'oil', 'orange', 'owl', 'paint', 'pants', 'paper', 'pen', 'pencil', 'phone', 'piano', 'picture', 'pig', 'pillow', 'plane', 'plant', 'plate', 'pocket', 'potato', 'queen', 'rabbit', 'rain', 'ring', 'river', 'robot', 'rock', 'roof', 'room', 'root', 'rose', 'school', 'scissors', 'sea', 'sheep', 'ship', 'shirt', 'shoe', 'shorts', 'shoulder', 'sky', 'snake', 'snow', 'sock', 'song', 'spoon', 'square', 'star', 'stick', 'sun', 'table', 'tail', 'tiger', 'time', 'toe', 'tomato', 'tooth', 'train', 'tree', 'truck', 'umbrella', 'vegetable', 'village', 'wall', 'watch', 'water', 'whale', 'wheel', 'window', 'wind', 'wing', 'wolf', 'woman', 'wood', 'worm', 'zebra'];
-
+    const WORDLIST = [
+      "AFRICA", "AGENT", "AIR", "ALIEN", "ALPS", "AMAZON", "AMBULANCE", "AMERICA", "ANGEL", "ANTARCTICA",
+      "APPLE", "ARM", "ATLANTIS", "AUSTRALIA", "AZTEC", "BACK", "BALL", "BAND", "BANK", "BAR",
+      "BARK", "BAT", "BATTERY", "BEACH", "BEAR", "BEAT", "BED", "BEIJING", "BELL", "BELT",
+      "BERLIN", "BERMUDA", "BERRY", "BILL", "BLOCK", "BOARD", "BOLT", "BOMB", "BOND", "BOOM",
+      "BOOT", "BOTTLE", "BOW", "BOX", "BRIDGE", "BRUSH", "BUCK", "BUFFALO", "BUG", "BUGLE",
+      "BUTTON", "CALF", "CANADA", "CAP", "CAPITAL", "CAR", "CARD", "CARROT", "CASINO", "CAST",
+      "CAT", "CELL", "CENTAUR", "CENTER", "CHAIR", "CHANGE", "CHARGE", "CHECK", "CHEST", "CHICK",
+      "CHINA", "CHOCOLATE", "CHURCH", "CIRCLE", "CLIFF", "CLOAK", "CLUB", "CODE", "COLD", "COMIC",
+      "COMPOUND", "CONCERT", "CONDUCTOR", "CONTRACT", "COOK", "COPPER", "COTTON", "COURT", "COVER", "CRANE",
+      "CRASH", "CRICKET", "CROSS", "CROWN", "CYCLE", "CZECH", "DANCE", "DATE", "DAY", "DEATH",
+      "DECK", "DEGREE", "DIAMOND", "DICE", "DINOSAUR", "DISEASE", "DOCTOR", "DOG", "DRAFT", "DRAGON",
+      "DRESS", "DRILL", "DROP", "DUCK", "DWARF", "EAGLE", "EGYPT", "EMBASSY", "ENGINE", "ENGLAND",
+      "EUROPE", "EYE", "FACE", "FAIR", "FALL", "FAN", "FENCE", "FIELD", "FIGHTER", "FIGURE",
+      "FILE", "FILM", "FIRE", "FISH", "FLUTE", "FLY", "FOOT", "FORCE", "FOREST", "FORK",
+      "FRANCE", "GAME", "GAS", "GENIUS", "GERMANY", "GHOST", "GIANT", "GLASS", "GLOVE", "GOLD",
+      "GRACE", "GRASS", "GREECE", "GREEN", "GROUND", "HAM", "HAND", "HAWK", "HEAD", "HEART",
+      "HELICOPTER", "HIMALAYAS", "HOLE", "HOLLYWOOD", "HONEY", "HOOD", "HOOK", "HORN", "HORSE", "HORSESHOE",
+      "HOSPITAL", "HOTEL", "ICE", "ICE CREAM", "INDIA", "IRON", "IVORY", "JACK", "JAM", "JET",
+      "JUPITER", "KANGAROO", "KETCHUP", "KEY", "KID", "KING", "KIWI", "KNIFE", "KNIGHT", "LAB",
+      "LAP", "LASER", "LAWYER", "LEAD", "LEMON", "LEPRECHAUN", "LIFE", "LIGHT", "LIMOUSINE", "LINE",
+      "LINK", "LION", "LITTER", "LOCH NESS", "LOCK", "LOG", "LONDON", "LUCK", "MAIL", "MAMMOTH",
+      "MAPLE", "MARBLE", "MARCH", "MASS", "MATCH", "MERCURY", "MEXICO", "MICROSCOPE", "MILLIONAIRE", "MINE",
+      "MINT", "MISSILE", "MODEL", "MOLE", "MOON", "MOSCOW", "MOUNT", "MOUSE", "MOUTH", "MUG",
+      "NAIL", "NEEDLE", "NET", "NEW YORK", "NIGHT", "NINJA", "NOTE", "NOVEL", "NURSE", "NUT",
+      "OCTOPUS", "OIL", "OLIVE", "OLYMPUS", "OPERA", "ORANGE", "ORGAN", "PALM", "PAN", "PANTS",
+      "PAPER", "PARACHUTE", "PARK", "PART", "PASS", "PASTE", "PENGUIN", "PHOENIX", "PIANO", "PIE",
+      "PILOT", "PIN", "PIPE", "PIRATE", "PISTOL", "PIT", "PITCH", "PLANE", "PLASTIC", "PLATE",
+      "PLATYPUS", "PLAY", "PLOT", "POINT", "POISON", "POLE", "POLICE", "POOL", "PORT", "POST",
+      "POUND", "PRESS", "PRINCESS", "PUMPKIN", "PUPIL", "PYRAMID", "QUEEN", "RABBIT", "RACKET", "RAY",
+      "REVOLUTION", "RING", "ROBIN", "ROBOT", "ROCK", "ROME", "ROOT", "ROSE", "ROULETTE", "ROUND",
+      "ROW", "RULER", "SATELLITE", "SATURN", "SCALE", "SCHOOL", "SCIENTIST", "SCORPION", "SCREEN", "SCUBA DIVER",
+      "SEAL", "SERVER", "SHADOW", "SHAKESPEARE", "SHARK", "SHIP", "SHOE", "SHOP", "SHOT", "SINK",
+      "SKYSCRAPER", "SLIP", "SLUG", "SMUGGLER", "SNOW", "SNOWMAN", "SOCK", "SOLDIER", "SOUL", "SOUND",
+      "SPACE", "SPELL", "SPIDER", "SPIKE", "SPINE", "SPOT", "SPRING", "SPY", "SQUARE", "STADIUM",
+      "STAFF", "STAR", "STATE", "STICK", "STOCK", "STRAW", "STREAM", "STRIKE", "STRING", "SUB",
+      "SUIT", "SUPERHERO", "SWING", "SWITCH", "TABLE", "TABLET", "TAG", "TAIL", "TAP", "TEACHER",
+      "TELESCOPE", "TEMPLE", "THEATER", "THIEF", "THUMB", "TICK", "TIE", "TIME", "TOKYO", "TOOTH",
+      "TORCH", "TOWER", "TRACK", "TRAIN", "TRIANGLE", "TRIP", "TRUNK", "TUBE", "TURKEY", "UNDERTAKER",
+      "UNICORN", "VACUUM", "VAN", "VET", "WAKE", "WALL", "WAR", "WASHER", "WASHINGTON", "WATCH",
+      "WATER", "WAVE", "WEB", "WELL", "WHALE", "WHIP", "WIND", "WITCH", "WORM", "YARD"
+    ];
     function shuffle(array) {
       return array.sort(() => Math.random() - 0.5);
     }
-
-    function initGame() {
-      STATE.words = shuffle(wordList).slice(0, 25);
-      const positions = shuffle(Array.from({length: 25}, (_, i) => i));
-      STATE.assignments = new Array(25).fill('neutral');
-      positions.slice(0, 9).forEach(p => STATE.assignments[p] = 'red');
-      positions.slice(9, 17).forEach(p => STATE.assignments[p] = 'blue');
-      positions[17] = 'assassin';
-      STATE.revealed = new Array(25).fill(false);
-      STATE.currentTeam = 'red';
-      STATE.redRemaining = 9;
-      STATE.blueRemaining = 8;
+    function newGame() {
+      STATE.words = shuffle([...WORDLIST]).slice(0, 25);
+      const starterTeam = Math.random() < 0.5 ? 'red' : 'blue';
+      const otherTeam = starterTeam === 'red' ? 'blue' : 'red';
+      STATE.remaining = { red: starterTeam === 'red' ? 9 : 8, blue: starterTeam === 'blue' ? 9 : 8 };
+      STATE.currentTeam = starterTeam;
+      const positions = shuffle(Array.from({ length: 25 }, (_, i) => i));
+      STATE.colors = Array(25).fill('neutral');
+      STATE.colors[positions[0]] = 'assassin';
+      let posIdx = 1;
+      for (let i = 0; i < 9; i++) {
+        STATE.colors[positions[posIdx++]] = starterTeam;
+      }
+      for (let i = 0; i < 8; i++) {
+        STATE.colors[positions[posIdx++]] = otherTeam;
+      }
+      STATE.revealed = new Set();
+      STATE.mode = 'clue';
+      STATE.clue = null;
+      STATE.spyView = false;
       STATE.gameOver = false;
+      STATE.winner = null;
     }
-
-    function renderScoreboard() {
-      document.getElementById('redScore').textContent = STATE.redRemaining;
-      document.getElementById('blueScore').textContent = STATE.blueRemaining;
-      const turnEl = document.getElementById('currentTurn');
-      turnEl.textContent = `${STATE.currentTeam.charAt(0).toUpperCase() + STATE.currentTeam.slice(1)}'s Turn`;
-      if (STATE.currentTeam === 'red') {
-        turnEl.classList.add('text-red-600');
-        turnEl.classList.remove('text-blue-600');
+    function render() {
+      lucide.createIcons();
+      // Game Over
+      const gameOverBanner = document.getElementById('game-over-banner');
+      const winnerDisplay = document.getElementById('winner-display');
+      if (STATE.gameOver) {
+        gameOverBanner.classList.remove('hidden');
+        const teamColor = STATE.winner === 'red' ? 'from-red-500 to-red-600' : 'from-blue-500 to-blue-600';
+        winnerDisplay.className = `text-4xl md:text-5xl font-black text-white px-12 md:px-20 py-8 md:py-12 rounded-3xl shadow-2xl mx-auto max-w-max mb-6 bg-gradient-to-r ${teamColor} transform scale-105`;
+        winnerDisplay.textContent = `${STATE.winner.toUpperCase()} TEAM WINS! 🎉`;
       } else {
-        turnEl.classList.add('text-blue-600');
-        turnEl.classList.remove('text-red-600');
+        gameOverBanner.classList.add('hidden');
+      }
+      // Remaining
+      document.getElementById('red-remaining').textContent = STATE.remaining.red;
+      document.getElementById('blue-remaining').textContent = STATE.remaining.blue;
+      // Current Team
+      const currentIndicator = document.getElementById('current-team-indicator');
+      if (!STATE.gameOver) {
+        currentIndicator.classList.remove('hidden');
+        const teamEl = currentIndicator.querySelector('div');
+        const teamColor = STATE.currentTeam === 'red' ? 'bg-red-500 shadow-red-500/50' : 'bg-blue-500 shadow-blue-500/50';
+        teamEl.className = `text-2xl md:text-3xl font-black text-white px-12 md:px-16 py-6 md:py-8 rounded-3xl shadow-2xl ${teamColor}`;
+        teamEl.textContent = `${STATE.currentTeam.toUpperCase()}'S TURN`;
+      } else {
+        currentIndicator.classList.add('hidden');
+      }
+      // Clue Section
+      const clueSection = document.getElementById('clue-section');
+      if (STATE.mode === 'clue') {
+        clueSection.classList.remove('hidden');
+        clueSection.innerHTML = `
+          <h2 class="text-2xl md:text-3xl font-bold text-gray-800 mb-8 text-center">Give a Clue</h2>
+          <div class="flex flex-col md:flex-row gap-6 items-end mb-8">
+            <div class="flex-1">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Number of words:</label>
+              <select id="clue-num" class="w-full p-4 border-2 border-gray-300 rounded-2xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-lg font-semibold">
+                ${[1,2,3,4,5,6,7,8,9].map(n => `<option value="${n}">${n}</option>`).join('')}
+              </select>
+            </div>
+            <div class="flex-1">
+              <label class="block text-sm font-medium text-gray-700 mb-2">One word clue:</label>
+              <input id="clue-word" type="text" class="w-full p-4 border-2 border-gray-300 rounded-2xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-lg font-bold uppercase tracking-wide" placeholder="e.g. FRUIT" maxlength="20">
+            </div>
+          </div>
+          <button id="submit-clue-btn" class="w-full md:w-auto px-12 py-6 bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 font-bold text-xl flex items-center gap-3 justify-center mx-auto">
+            <i data-lucide="send"></i>
+            Give Clue
+          </button>
+        `;
+        document.getElementById('submit-clue-btn').onclick = submitClue;
+      } else {
+        clueSection.classList.remove('hidden');
+        clueSection.innerHTML = `
+          <div class="text-center">
+            <div class="text-3xl md:text-4xl font-black text-gray-900 mb-4 tracking-wide">${STATE.clue.word} ${STATE.clue.num}</div>
+            <p class="text-xl md:text-2xl text-gray-600 font-semibold mb-8">Pass when ready</p>
+            <button id="pass-btn" class="px-12 py-6 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 font-bold text-xl flex items-center gap-3 mx-auto">
+              <i data-lucide="skip-forward"></i>
+              Pass Turn
+            </button>
+          </div>
+        `;
+        document.getElementById('pass-btn').onclick = passTurn;
+      }
+      // Grid
+      const grid = document.getElementById('grid');
+      grid.innerHTML = '';
+      for (let row = 0; row < 5; row++) {
+        for (let col = 0; col < 6; col++) {
+          const idx = row * 6 + col;
+          const word = STATE.words[idx];
+          const color = STATE.colors[idx];
+          const revealed = STATE.revealed.has(idx);
+          let classes = 'card aspect-square bg-white rounded-2xl shadow-md p-3 md:p-4 text-center font-bold text-xs md:text-base lg:text-lg cursor-pointer hover:shadow-xl transition-all duration-300 flex items-center justify-center select-none border-2 border-transparent group';
+          let textClasses = 'text-gray-900 group-hover:text-gray-800';
+          if (revealed) {
+            classes += ' cursor-default shadow-2xl border-0 scale-105';
+            if (color === 'red') {
+              classes += ' bg-red-500';
+              textClasses = 'text-white';
+            } else if (color === 'blue') {
+              classes += ' bg-blue-500';
+              textClasses = 'text-white';
+            } else if (color === 'neutral') {
+              classes += ' bg-amber-400';
+              textClasses = 'text-gray-900 font-bold';
+            } else {
+              classes += ' bg-gray-800';
+              textClasses = 'text-white';
+            }
+          } else if (STATE.spyView) {
+            if (color === 'red') {
+              classes += ' bg-red-50 border-red-400 hover:border-red-500';
+            } else if (color === 'blue') {
+              classes += ' bg-blue-50 border-blue-400 hover:border-blue-500';
+            } else if (color === 'neutral') {
+              classes += ' bg-amber-50 border-amber-400 hover:border-amber-500';
+            } else {
+              classes += ' bg-gray-100 border-gray-500 hover:border-gray-600';
+            }
+          }
+          const card = document.createElement('div');
+          card.className = classes;
+          card.dataset.idx = idx;
+          card.innerHTML = `<span class="${textClasses}">${word}</span>`;
+          grid.appendChild(card);
+        }
+      }
+      // Spy Toggle Text
+      const spyBtn = document.getElementById('spy-toggle-btn');
+      const spyIcon = spyBtn.querySelector('i');
+      if (STATE.spyView) {
+        spyBtn.innerHTML = '<i data-lucide="eye-off"></i> Guesser View';
+        spyBtn.classList.replace('bg-blue-500/80', 'bg-green-500/80');
+      } else {
+        spyBtn.innerHTML = '<i data-lucide="eye"></i> Spymaster View';
+        spyBtn.classList.replace('bg-green-500/80', 'bg-blue-500/80');
+      }
+      lucide.createIcons();
+    }
+    function handleGridClick(e) {
+      if (e.target.closest('.card') && STATE.mode === 'guess' && !STATE.gameOver) {
+        const card = e.target.closest('.card');
+        const idx = parseInt(card.dataset.idx);
+        if (!STATE.revealed.has(idx)) {
+          guess(idx);
+        }
       }
     }
-
-    function renderGrid() {
-      const grid = document.getElementById('wordGrid');
-      grid.innerHTML = '';
-      STATE.words.forEach((word, i) => {
-        const card = document.createElement('div');
-        card.classList.add('bg-white', 'rounded-xl', 'shadow-sm', 'p-4', 'text-center', 'transition-shadow', 'duration-300', 'text-base', 'font-medium', 'text-gray-700');
-        card.textContent = word.toUpperCase();
-        card.dataset.index = i;
-        card.setAttribute('role', 'button');
-        card.setAttribute('tabindex', '0');
-        card.setAttribute('aria-label', `Guess word: ${word}`);
-        if (STATE.revealed[i]) {
-          let bgClass;
-          const color = STATE.assignments[i];
-          if (color === 'red') bgClass = 'bg-red-500 text-white';
-          else if (color === 'blue') bgClass = 'bg-blue-500 text-white';
-          else if (color === 'neutral') bgClass = 'bg-yellow-200 text-gray-800';
-          else bgClass = 'bg-black text-white';
-          card.classList.add(...bgClass.split(' '));
-          card.classList.remove('hover:shadow-md', 'cursor-pointer');
-          card.removeAttribute('role');
-          card.removeAttribute('tabindex');
-          card.removeAttribute('aria-label');
-        } else if (!STATE.gameOver) {
-          card.classList.add('cursor-pointer', 'hover:shadow-md');
-          card.addEventListener('click', () => handleGuess(i));
-          card.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleGuess(i); });
-        }
-        grid.appendChild(card);
-      });
-    }
-
-    function handleGuess(index) {
-      if (STATE.gameOver || STATE.revealed[index]) return;
-      STATE.revealed[index] = true;
-      const color = STATE.assignments[index];
-      let continueTurn = false;
-      if (color === 'red' || color === 'blue') {
-        STATE[`${color}Remaining`]--;
-        if (STATE[`${color}Remaining`] === 0) {
-          alert(`${color.toUpperCase()} Team wins!`);
+    function guess(idx) {
+      STATE.revealed.add(idx);
+      const color = STATE.colors[idx];
+      const team = STATE.currentTeam;
+      const otherTeam = team === 'red' ? 'blue' : 'red';
+      if (color === 'assassin') {
+        STATE.winner = otherTeam;
+        STATE.gameOver = true;
+      } else if (color === team) {
+        STATE.remaining[team]--;
+        if (STATE.remaining[team] === 0) {
+          STATE.winner = team;
           STATE.gameOver = true;
         }
-        if (color === STATE.currentTeam) continueTurn = true;
-      } else if (color === 'assassin') {
-        const winner = STATE.currentTeam === 'red' ? 'blue' : 'red';
-        alert(`Assassin guessed! ${winner.toUpperCase()} Team wins!`);
-        STATE.gameOver = true;
+      } else {
+        passTurn();
+        return;
       }
-      if (!continueTurn && !STATE.gameOver) endTurn();
-      renderGrid();
-      renderScoreboard();
+      render();
     }
-
-    function endTurn() {
-      if (STATE.gameOver) return;
-      STATE.currentTeam = STATE.currentTeam === 'red' ? 'blue' : 'red';
-      renderScoreboard();
+    function passTurn() {
+      const otherTeam = STATE.currentTeam === 'red' ? 'blue' : 'red';
+      STATE.currentTeam = otherTeam;
+      STATE.mode = 'clue';
+      STATE.clue = null;
+      render();
     }
-
-    function startTimer(duration = 60) {
-      clearInterval(STATE.timerInterval);
-      let remaining = duration;
-      const display = document.getElementById('countdown');
-      const updateDisplay = () => {
-        const min = Math.floor(remaining / 60);
-        const sec = remaining % 60;
-        display.textContent = `${min}:${sec.toString().padStart(2, '0')}`;
-      };
-      updateDisplay();
-      STATE.timerInterval = setInterval(() => {
-        remaining--;
-        updateDisplay();
-        if (remaining <= 0) {
-          clearInterval(STATE.timerInterval);
-          alert('Time is up!');
-          endTurn();
-        }
-      }, 1000);
-    }
-
-    function giveClue() {
-      const word = document.getElementById('clueWord').value.trim();
-      const num = document.getElementById('clueNumber').value;
-      if (word && num) {
-        document.getElementById('currentClue').textContent = `Clue: ${word.toUpperCase()} ${num}`;
-        document.getElementById('clueWord').value = '';
-        document.getElementById('clueNumber').value = '';
-        startTimer();
+    function submitClue() {
+      const num = parseInt(document.getElementById('clue-num').value);
+      const word = document.getElementById('clue-word').value.trim().toUpperCase();
+      if (num < 1 || num > 9 || !word || word.length < 2) {
+        alert('Please enter a number (1-9) and a clue word (2+ letters).');
+        return;
       }
+      STATE.clue = { num, word };
+      STATE.mode = 'guess';
+      render();
     }
-
-    function generateQR() {
-      const data = { words: STATE.words, assignments: STATE.assignments };
-      const encoded = btoa(JSON.stringify(data));
-      const url = `${window.location.origin}${window.location.pathname}?key=${encoded}`;
-      QRCode.toCanvas(document.getElementById('qrCanvas'), url, { width: 200 }, (error) => {
-        if (error) console.error(error);
-      });
+    function init() {
+      newGame();
+      render();
+      document.getElementById('new-game-btn').onclick = () => { newGame(); render(); };
+      document.getElementById('spy-toggle-btn').onclick = () => { STATE.spyView = !STATE.spyView; render(); };
+      document.getElementById('new-game-over-btn').onclick = () => { newGame(); render(); };
+      document.getElementById('grid').addEventListener('click', handleGridClick);
     }
-
-    function newGame() {
-      initGame();
-      renderScoreboard();
-      renderGrid();
-      generateQR();
-      document.getElementById('currentClue').textContent = '';
-      clearInterval(STATE.timerInterval);
-      document.getElementById('countdown').textContent = '1:00';
-    }
-
-    const urlParams = new URLSearchParams(window.location.search);
-    const keyParam = urlParams.get('key');
-    if (keyParam) {
-      try {
-        const data = JSON.parse(atob(keyParam));
-        STATE.words = data.words;
-        STATE.assignments = data.assignments;
-        STATE.revealed = new Array(25).fill(true);
-        STATE.gameOver = true; // Disable interactions
-        document.title = 'Spymaster View';
-        document.querySelector('h1').textContent = 'Spymaster View';
-        ['scoreboard', 'timer', 'clueSection', 'qrSection'].forEach(id => document.getElementById(id).style.display = 'none');
-        document.querySelector('.flex[col-span-12]').style.display = 'none';
-        renderGrid();
-      } catch (e) {
-        alert('Invalid key');
-      }
-    } else {
-      initGame();
-      renderScoreboard();
-      renderGrid();
-      generateQR();
-    }
+    init();
   </script>
 </body>
-</html>
+</html>v
