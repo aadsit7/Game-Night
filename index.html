@@ -3,367 +3,1283 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ForecastX — AI Prediction Market</title>
+  <title>Forecast — AI prediction markets.</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    :root { --accent: #00d4aa; --accent2: #00a8e8; --purple: #7c3aed; --gold: #f59e0b; --danger: #ef4444; --bg: #0a0e27; --card: #131836; --border: #1e2348; }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: var(--bg); color: #e2e8f0; font-family: 'Inter', sans-serif; min-height: 100vh; }
-    .header { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; background: rgba(19,24,54,0.8); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
-    .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; letter-spacing: 1px; }
-    .logo-dot { width: 10px; height: 10px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 12px var(--accent); animation: pulse 2s infinite; }
-    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-    .nav { display: flex; gap: 8px; }
-    .nav-btn { padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: #94a3b8; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s; }
-    .nav-btn:hover, .nav-btn.active { background: rgba(0,212,170,0.1); color: var(--accent); border-color: var(--accent); }
-    .wallet-btn { padding: 8px 18px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #0a0e27; font-weight: 700; font-size: 13px; border: none; cursor: pointer; }
-    .main { display: grid; grid-template-columns: 240px 1fr 320px; gap: 20px; padding: 20px 24px; max-width: 1600px; margin: 0 auto; }
-    .sidebar { display: flex; flex-direction: column; gap: 12px; }
-    .sidebar-section { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
-    .sidebar-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #64748b; margin-bottom: 12px; }
-    .cat-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; cursor: pointer; transition: all 0.2s; font-size: 13px; color: #94a3b8; }
-    .cat-item:hover, .cat-item.active { background: rgba(0,212,170,0.08); color: var(--accent); }
-    .cat-icon { width: 20px; height: 20px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11px; }
-    .cat-count { margin-left: auto; font-size: 11px; background: rgba(255,255,255,0.06); padding: 2px 8px; border-radius: 12px; }
-    .center { display: flex; flex-direction: column; gap: 20px; }
-    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-    .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; position: relative; overflow: hidden; }
-    .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
-    .stat-card.accent::before { background: linear-gradient(90deg, var(--accent), var(--accent2)); }
-    .stat-card.purple::before { background: linear-gradient(90deg, var(--purple), #c026d3); }
-    .stat-card.gold::before { background: linear-gradient(90deg, var(--gold), #ef4444); }
-    .stat-card.green::before { background: linear-gradient(90deg, #22c55e, #16a34a); }
-    .stat-label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
-    .stat-value { font-size: 24px; font-weight: 800; color: #fff; }
-    .stat-sub { font-size: 12px; color: #22c55e; margin-top: 4px; }
-    .stat-sub.neg { color: #ef4444; }
-    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-    .section-title { font-size: 16px; font-weight: 700; color: #fff; }
-    .filter-bar { display: flex; gap: 8px; }
-    .filter-btn { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: #94a3b8; font-size: 12px; cursor: pointer; }
-    .filter-btn.active { background: rgba(0,212,170,0.12); color: var(--accent); border-color: var(--accent); }
-    .markets-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
-    .market-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; transition: all 0.2s; cursor: pointer; position: relative; }
-    .market-card:hover { border-color: rgba(0,212,170,0.3); transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
-    .market-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-    .market-ticker { font-size: 18px; font-weight: 800; color: #fff; }
-    .market-badge { font-size: 10px; padding: 4px 10px; border-radius: 20px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-    .badge-up { background: rgba(34,197,94,0.15); color: #22c55e; }
-    .badge-down { background: rgba(239,68,68,0.15); color: #ef4444; }
-    .badge-earn { background: rgba(245,158,11,0.15); color: var(--gold); }
-    .badge-vol { background: rgba(124,58,237,0.15); color: #a78bfa; }
-    .market-question { font-size: 13px; color: #cbd5e1; line-height: 1.5; margin-bottom: 14px; min-height: 40px; }
-    .probability-bar { height: 8px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; margin-bottom: 8px; position: relative; }
-    .probability-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
-    .probability-fill.up { background: linear-gradient(90deg, #22c55e, #16a34a); }
-    .probability-fill.down { background: linear-gradient(90deg, #ef4444, #dc2626); }
-    .probability-labels { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 14px; }
-    .prob-yes { color: #22c55e; font-weight: 600; }
-    .prob-no { color: #ef4444; font-weight: 600; }
-    .market-meta { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #64748b; }
-    .market-meta span { display: flex; align-items: center; gap: 4px; }
-    .bet-btn { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--accent); background: rgba(0,212,170,0.08); color: var(--accent); font-weight: 700; font-size: 13px; cursor: pointer; margin-top: 12px; transition: all 0.2s; }
-    .bet-btn:hover { background: var(--accent); color: #0a0e27; }
-    .ai-panel { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
-    .ai-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-    .ai-avatar { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, var(--accent), var(--accent2)); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; color: #0a0e27; }
-    .ai-name { font-weight: 700; font-size: 14px; }
-    .ai-status { font-size: 11px; color: var(--accent); display: flex; align-items: center; gap: 4px; }
-    .ai-status::before { content: ''; width: 6px; height: 6px; background: var(--accent); border-radius: 50%; animation: pulse 2s infinite; }
-    .ai-insight { background: rgba(0,212,170,0.05); border-left: 3px solid var(--accent); padding: 14px; border-radius: 0 10px 10px 0; margin-bottom: 14px; }
-    .ai-insight-title { font-size: 12px; font-weight: 700; color: var(--accent); margin-bottom: 6px; }
-    .ai-insight-text { font-size: 13px; color: #cbd5e1; line-height: 1.6; }
-    .ai-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-    .ai-metric { background: rgba(255,255,255,0.03); padding: 12px; border-radius: 10px; text-align: center; }
-    .ai-metric-value { font-size: 18px; font-weight: 800; color: #fff; }
-    .ai-metric-label { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
-    .model-weights { display: flex; flex-direction: column; gap: 8px; }
-    .weight-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
-    .weight-name { width: 80px; color: #94a3b8; }
-    .weight-bar-bg { flex: 1; height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
-    .weight-bar { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
-    .weight-val { width: 36px; text-align: right; color: #fff; font-weight: 600; }
-    .right-col { display: flex; flex-direction: column; gap: 16px; }
-    .right-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
-    .right-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #64748b; margin-bottom: 14px; }
-    .position-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 13px; }
-    .position-row:last-child { border: none; }
-    .pos-ticker { font-weight: 700; color: #fff; }
-    .pos-detail { color: #94a3b8; font-size: 11px; }
-    .pos-pnl { font-weight: 700; }
-    .pos-pnl.pos { color: #22c55e; }
-    .pos-pnl.neg { color: #ef4444; }
-    .leaderboard-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 13px; }
-    .lb-rank { width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; background: rgba(255,255,255,0.06); color: #94a3b8; }
-    .lb-rank.top { background: linear-gradient(135deg, var(--gold), #ef4444); color: #fff; }
-    .lb-name { flex: 1; color: #e2e8f0; }
-    .lb-accuracy { color: var(--accent); font-weight: 700; }
-    .chart-placeholder { height: 120px; background: rgba(255,255,255,0.02); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #475569; font-size: 12px; margin-top: 10px; flex-direction: column; }
-    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; z-index: 200; }
-    .modal-overlay.active { display: flex; }
-    .modal { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 28px; width: 420px; max-width: 90vw; }
-    .modal-title { font-size: 20px; font-weight: 800; margin-bottom: 4px; }
-    .modal-sub { font-size: 13px; color: #94a3b8; margin-bottom: 20px; }
-    .form-group { margin-bottom: 16px; }
-    .form-label { font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px; display: block; }
-    .form-input { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: rgba(255,255,255,0.03); color: #fff; font-size: 14px; outline: none; }
-    .form-input:focus { border-color: var(--accent); }
-    .side-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
-    .side-btn { flex: 1; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: rgba(255,255,255,0.03); color: #94a3b8; font-weight: 700; cursor: pointer; text-align: center; }
-    .side-btn.yes.active { background: rgba(34,197,94,0.15); color: #22c55e; border-color: #22c55e; }
-    .side-btn.no.active { background: rgba(239,68,68,0.15); color: #ef4444; border-color: #ef4444; }
-    .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
-    .modal-btn { flex: 1; padding: 14px; border-radius: 10px; border: none; font-weight: 700; cursor: pointer; font-size: 14px; }
-    .modal-btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #0a0e27; }
-    .modal-btn.secondary { background: rgba(255,255,255,0.06); color: #94a3b8; }
-    .toast { position: fixed; bottom: 24px; right: 24px; background: var(--card); border: 1px solid var(--accent); border-radius: 12px; padding: 16px 20px; display: none; align-items: center; gap: 12px; z-index: 300; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
-    .toast.active { display: flex; animation: slideIn 0.3s ease; }
-    @keyframes slideIn { from { transform: translateX(100px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-    .toast-icon { width: 32px; height: 32px; border-radius: 8px; background: rgba(0,212,170,0.15); display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 16px; }
-    .toast-content { font-size: 13px; }
-    .toast-title { font-weight: 700; color: #fff; }
-    .toast-msg { color: #94a3b8; margin-top: 2px; }
-    .toggle-switch { width: 36px; height: 20px; background: var(--accent); border-radius: 10px; position: relative; cursor: pointer; transition: background 0.2s; }
-    .toggle-switch.off { background: rgba(255,255,255,0.1); }
-    .toggle-switch div { width: 16px; height: 16px; background: #fff; border-radius: 50%; position: absolute; top: 2px; right: 2px; transition: all 0.2s; }
-    .toggle-switch.off div { right: auto; left: 2px; }
-    @media (max-width: 1200px) { .main { grid-template-columns: 1fr; } .sidebar, .right-col { display: none; } }
+    /* ================================================================
+       R1 — Design Tokens
+       ================================================================ */
+    :root {
+      /* Neutrals */
+      --ink: #1D1D1F;
+      --gray: #6E6E73;
+      --gray-light: #86868B;
+      --hairline: #D2D2D7;
+      --card: #F5F5F7;
+      --bg: #FFFFFF;
+
+      /* Accent — single blue for this view */
+      --accent: #007AFF;
+      --accent-hover: #0051D5;
+      --accent-tint: rgba(0, 122, 255, 0.08);
+      --accent-glow: rgba(0, 122, 255, 0.15);
+
+      /* Semantic */
+      --success: #34C759;
+      --danger: #FF3B30;
+      --warning: #FF9500;
+
+      /* Shape */
+      --radius-card: 14px;
+      --radius-tile: 24%;
+      --radius-pill: 980px;
+      --radius-input: 12px;
+
+      /* Space */
+      --space-1: 8px;
+      --space-2: 16px;
+      --space-3: 24px;
+      --space-4: 40px;
+      --space-5: 64px;
+      --space-6: 96px;
+      --content-max: 1024px;
+    }
+
+    /* ================================================================
+       R2 — Typography & Global Reset
+       ================================================================ */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* Page headline */
+    .page-headline {
+      font-size: 42px;
+      font-weight: 700;
+      color: var(--ink);
+      letter-spacing: -0.015em;
+      line-height: 1.1;
+      margin-bottom: var(--space-2);
+    }
+
+    /* Section headline */
+    .section-headline {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--ink);
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+      margin-bottom: var(--space-2);
+    }
+
+    /* Kicker */
+    .kicker {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.02em;
+      text-transform: none;
+      margin-bottom: var(--space-1);
+    }
+
+    /* Body */
+    .body-text {
+      font-size: 16px;
+      font-weight: 400;
+      color: var(--gray);
+      line-height: 1.5;
+    }
+
+    /* Caption / label */
+    .caption {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--gray-light);
+      line-height: 1.4;
+    }
+
+    .label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--gray-light);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    /* ================================================================
+       R3 — Core Components
+       ================================================================ */
+
+    /* Navigation */
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      border-bottom: 1px solid var(--hairline);
+    }
+
+    .nav-inner {
+      max-width: var(--content-max);
+      margin: 0 auto;
+      padding: 0 var(--space-3);
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: var(--space-1);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--ink);
+      text-decoration: none;
+      letter-spacing: -0.01em;
+    }
+
+    .nav-logo-mark {
+      width: 28px;
+      height: 28px;
+      background: var(--accent);
+      border-radius: var(--radius-tile);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .nav-logo-mark svg {
+      width: 14px;
+      height: 14px;
+      stroke: white;
+      stroke-width: 2.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: var(--space-3);
+      list-style: none;
+    }
+
+    .nav-links a {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--ink);
+      text-decoration: none;
+      padding: 4px 0;
+      border-bottom: 2px solid transparent;
+      transition: border-color 0.2s;
+    }
+
+    .nav-links a:hover,
+    .nav-links a.active {
+      border-bottom-color: var(--ink);
+    }
+
+    .nav-wallet {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--accent);
+      background: none;
+      border: 1px solid var(--accent);
+      border-radius: var(--radius-pill);
+      padding: 8px 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .nav-wallet:hover {
+      background: var(--accent-tint);
+    }
+
+    .nav-wallet.connected {
+      color: var(--success);
+      border-color: var(--success);
+    }
+
+    /* Cards */
+    .card {
+      background: var(--card);
+      border-radius: var(--radius-card);
+      padding: var(--space-3);
+      border: none;
+      box-shadow: none;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      border-radius: var(--radius-pill);
+      padding: 12px 24px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+
+    .btn-secondary:hover {
+      background: var(--accent-tint);
+    }
+
+    .btn-sm {
+      padding: 8px 16px;
+      font-size: 13px;
+    }
+
+    /* Inputs */
+    .input {
+      width: 100%;
+      padding: 14px 16px;
+      border-radius: var(--radius-input);
+      border: 1px solid var(--hairline);
+      background: white;
+      font-size: 16px;
+      font-weight: 400;
+      color: var(--ink);
+      outline: none;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+
+    .input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .input::placeholder {
+      color: var(--gray-light);
+    }
+
+    /* Icon tiles */
+    .icon-tile {
+      width: 48px;
+      height: 48px;
+      border-radius: var(--radius-tile);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .icon-tile svg {
+      width: 22px;
+      height: 22px;
+      stroke: white;
+      stroke-width: 2.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+    }
+
+    .icon-tile-sm {
+      width: 36px;
+      height: 36px;
+    }
+
+    .icon-tile-sm svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    /* Dividers */
+    .hairline {
+      border: none;
+      height: 1px;
+      background: var(--hairline);
+      margin: 0;
+    }
+
+    /* Status / metric */
+    .metric {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .metric-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--ink);
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+    }
+
+    .metric-label {
+      font-size: 12px;
+      color: var(--gray-light);
+      font-weight: 400;
+    }
+
+    /* Lists / rows */
+    .list-row {
+      display: flex;
+      align-items: center;
+      padding: var(--space-2) 0;
+      border-bottom: 1px solid var(--hairline);
+      gap: var(--space-2);
+    }
+
+    .list-row:last-child {
+      border-bottom: none;
+    }
+
+    /* Toggle switch */
+    .toggle {
+      width: 48px;
+      height: 28px;
+      background: var(--hairline);
+      border-radius: var(--radius-pill);
+      position: relative;
+      cursor: pointer;
+      transition: background 0.25s;
+      flex-shrink: 0;
+    }
+
+    .toggle.on {
+      background: var(--success);
+    }
+
+    .toggle-knob {
+      width: 24px;
+      height: 24px;
+      background: white;
+      border-radius: 50%;
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      transition: transform 0.25s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+
+    .toggle.on .toggle-knob {
+      transform: translateX(20px);
+    }
+
+    /* ================================================================
+       Layout — Page structure
+       ================================================================ */
+    .page {
+      max-width: var(--content-max);
+      margin: 0 auto;
+      padding: 0 var(--space-3);
+    }
+
+    .section {
+      padding: var(--space-5) 0;
+    }
+
+    .section + .section {
+      border-top: 1px solid var(--hairline);
+    }
+
+    /* Hero */
+    .hero {
+      padding: var(--space-6) 0 var(--space-5);
+      text-align: center;
+    }
+
+    .hero-headline {
+      font-size: 48px;
+      font-weight: 700;
+      color: var(--ink);
+      letter-spacing: -0.015em;
+      line-height: 1.1;
+      margin-bottom: var(--space-2);
+    }
+
+    .hero-sub {
+      font-size: 20px;
+      font-weight: 400;
+      color: var(--gray);
+      max-width: 560px;
+      margin: 0 auto var(--space-3);
+      line-height: 1.5;
+    }
+
+    /* Stats bar */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: var(--space-3);
+      margin-bottom: var(--space-5);
+    }
+
+    /* Markets grid */
+    .markets-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: var(--space-3);
+    }
+
+    @media (max-width: 900px) {
+      .markets-grid { grid-template-columns: repeat(2, 1fr); }
+      .stats-bar { grid-template-columns: repeat(2, 1fr); }
+      .hero-headline { font-size: 36px; }
+    }
+
+    @media (max-width: 600px) {
+      .markets-grid { grid-template-columns: 1fr; }
+      .stats-bar { grid-template-columns: repeat(2, 1fr); }
+      .hero-headline { font-size: 32px; }
+      .nav-links { display: none; }
+    }
+
+    /* Market card */
+    .market-card {
+      background: var(--card);
+      border-radius: var(--radius-card);
+      padding: var(--space-3);
+      cursor: pointer;
+      transition: transform 0.2s, background 0.2s;
+      border: none;
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+
+    .market-card:hover {
+      background: #EBEBF0;
+      transform: translateY(-2px);
+    }
+
+    .market-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .market-ticker {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--ink);
+      letter-spacing: -0.01em;
+    }
+
+    .market-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: var(--radius-pill);
+      letter-spacing: 0.02em;
+    }
+
+    .badge-up {
+      background: rgba(52, 199, 89, 0.12);
+      color: var(--success);
+    }
+
+    .badge-down {
+      background: rgba(255, 59, 48, 0.12);
+      color: var(--danger);
+    }
+
+    .badge-earn {
+      background: rgba(255, 149, 0, 0.12);
+      color: var(--warning);
+    }
+
+    .badge-vol {
+      background: rgba(175, 82, 222, 0.12);
+      color: var(--purple);
+    }
+
+    .market-question {
+      font-size: 15px;
+      color: var(--gray);
+      line-height: 1.45;
+      min-height: 44px;
+    }
+
+    .market-prob {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .prob-bar-bg {
+      height: 6px;
+      background: rgba(0, 0, 0, 0.06);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .prob-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.6s ease;
+    }
+
+    .prob-bar-fill.up { background: var(--success); }
+    .prob-bar-fill.down { background: var(--danger); }
+
+    .prob-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .prob-yes { color: var(--success); }
+    .prob-no { color: var(--danger); }
+
+    .market-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--gray-light);
+    }
+
+    .market-meta span {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .market-action {
+      margin-top: auto;
+      padding-top: var(--space-1);
+    }
+
+    /* AI Panel */
+    .ai-panel {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-3);
+      align-items: start;
+    }
+
+    .ai-insight {
+      grid-column: 1 / -1;
+      background: var(--accent-tint);
+      border-radius: var(--radius-card);
+      padding: var(--space-3);
+      border-left: 3px solid var(--accent);
+    }
+
+    .ai-insight-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+
+    .ai-insight-text {
+      font-size: 15px;
+      color: var(--gray);
+      line-height: 1.5;
+    }
+
+    .ai-metric-card {
+      background: white;
+      border-radius: var(--radius-card);
+      padding: var(--space-2);
+      text-align: center;
+    }
+
+    .ai-metric-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    .ai-metric-label {
+      font-size: 11px;
+      color: var(--gray-light);
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    /* Model weights */
+    .weight-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: 8px 0;
+    }
+
+    .weight-name {
+      width: 90px;
+      font-size: 13px;
+      color: var(--gray);
+      font-weight: 500;
+    }
+
+    .weight-bar-bg {
+      flex: 1;
+      height: 6px;
+      background: rgba(0, 0, 0, 0.06);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .weight-bar {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.5s ease;
+    }
+
+    .weight-val {
+      width: 40px;
+      text-align: right;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    /* Positions */
+    .position-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: var(--space-2) 0;
+      border-bottom: 1px solid var(--hairline);
+    }
+
+    .position-row:last-child {
+      border-bottom: none;
+    }
+
+    .pos-ticker {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .pos-detail {
+      font-size: 12px;
+      color: var(--gray-light);
+      margin-top: 2px;
+    }
+
+    .pos-pnl {
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .pos-pnl.pos { color: var(--success); }
+    .pos-pnl.neg { color: var(--danger); }
+
+    /* Leaderboard */
+    .lb-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: 10px 0;
+    }
+
+    .lb-rank {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      background: var(--card);
+      color: var(--gray);
+    }
+
+    .lb-rank.top {
+      background: var(--ink);
+      color: white;
+    }
+
+    .lb-name {
+      flex: 1;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--ink);
+    }
+
+    .lb-accuracy {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      padding: var(--space-3);
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal {
+      background: white;
+      border-radius: 20px;
+      padding: var(--space-4);
+      width: 420px;
+      max-width: 100%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+    }
+
+    .modal-headline {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--ink);
+      margin-bottom: 4px;
+    }
+
+    .modal-sub {
+      font-size: 15px;
+      color: var(--gray);
+      margin-bottom: var(--space-3);
+    }
+
+    .side-toggle {
+      display: flex;
+      gap: var(--space-1);
+      margin-bottom: var(--space-2);
+    }
+
+    .side-btn {
+      flex: 1;
+      padding: 14px;
+      border-radius: var(--radius-card);
+      border: 1px solid var(--hairline);
+      background: white;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--gray);
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s;
+    }
+
+    .side-btn.yes.active {
+      background: rgba(52, 199, 89, 0.1);
+      color: var(--success);
+      border-color: var(--success);
+    }
+
+    .side-btn.no.active {
+      background: rgba(255, 59, 48, 0.1);
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+
+    .calc-box {
+      background: var(--card);
+      border-radius: var(--radius-card);
+      padding: var(--space-2);
+      margin-bottom: var(--space-3);
+    }
+
+    .calc-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      padding: 6px 0;
+    }
+
+    .calc-row span:first-child { color: var(--gray); }
+    .calc-row span:last-child { color: var(--ink); font-weight: 600; }
+
+    .calc-row.highlight span:last-child { color: var(--success); }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: var(--space-3);
+      right: var(--space-3);
+      background: var(--ink);
+      color: white;
+      border-radius: var(--radius-card);
+      padding: var(--space-2) var(--space-3);
+      display: none;
+      align-items: center;
+      gap: var(--space-2);
+      z-index: 300;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      max-width: 360px;
+    }
+
+    .toast.active {
+      display: flex;
+      animation: slideUp 0.3s ease;
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    .toast-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: var(--success);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .toast-title {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .toast-msg {
+      font-size: 13px;
+      color: rgba(255,255,255,0.7);
+      margin-top: 2px;
+    }
+
+    /* Two-column layout for AI + sidebar */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: var(--space-4);
+    }
+
+    @media (max-width: 900px) {
+      .two-col { grid-template-columns: 1fr; }
+    }
+
+    /* Sidebar sections */
+    .sidebar-card {
+      background: var(--card);
+      border-radius: var(--radius-card);
+      padding: var(--space-3);
+    }
+
+    .sidebar-card + .sidebar-card {
+      margin-top: var(--space-3);
+    }
+
+    .sidebar-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--gray-light);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: var(--space-2);
+    }
+
+    /* Category pills */
+    .cat-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: var(--space-4);
+    }
+
+    .cat-pill {
+      padding: 8px 16px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--hairline);
+      background: white;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--gray);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .cat-pill:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .cat-pill.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    /* Filter bar */
+    .filter-list {
+      display: flex;
+      gap: var(--space-2);
+      margin-bottom: var(--space-3);
+    }
+
+    .filter-item {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--gray);
+      cursor: pointer;
+      padding: 4px 0;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .filter-item:hover,
+    .filter-item.active {
+      color: var(--ink);
+      border-bottom-color: var(--ink);
+    }
+
+    /* Chart placeholder */
+    .chart-box {
+      height: 140px;
+      background: var(--card);
+      border-radius: var(--radius-card);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--gray-light);
+      font-size: 14px;
+    }
+
+    /* Section header with actions */
+    .section-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: var(--space-3);
+    }
+
+    .section-header .section-headline {
+      margin-bottom: 0;
+    }
   </style>
+<base target="_blank">
 </head>
 <body>
 
-<!-- HEADER -->
-<div class="header">
-  <div class="logo">
-    <div class="logo-dot"></div>
-    <span style="color: #fff;">FORECAST</span><span style="color: var(--accent);">X</span>
+<!-- Navigation -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#" class="nav-logo">
+      <div class="nav-logo-mark">
+        <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      </div>
+      Forecast
+    </a>
+    <ul class="nav-links">
+      <li><a href="#" class="active" onclick="switchTab('markets',this)">Markets</a></li>
+      <li><a href="#" onclick="switchTab('portfolio',this)">Portfolio</a></li>
+      <li><a href="#" onclick="switchTab('analytics',this)">Analytics</a></li>
+      <li><a href="#" onclick="switchTab('governance',this)">Governance</a></li>
+    </ul>
+    <button class="nav-wallet" id="walletBtn" onclick="connectWallet()">Connect wallet</button>
   </div>
-  <div class="nav">
-    <button class="nav-btn active" onclick="switchTab('markets',this)">Markets</button>
-    <button class="nav-btn" onclick="switchTab('portfolio',this)">Portfolio</button>
-    <button class="nav-btn" onclick="switchTab('analytics',this)">Analytics</button>
-    <button class="nav-btn" onclick="switchTab('governance',this)">Governance</button>
+</nav>
+
+<!-- Hero -->
+<div class="page">
+  <div class="hero">
+    <p class="kicker">AI-powered prediction markets.</p>
+    <h1 class="hero-headline">Seven-day forecasts with ensemble intelligence.</h1>
+    <p class="hero-sub">Trade on where stocks, crypto, and macro indicators will be in one week. Powered by an ensemble of Transformer, LSTM, VAE, and LLM models.</p>
   </div>
-  <button class="wallet-btn" id="walletBtn" onclick="connectWallet()">Connect Wallet</button>
 </div>
 
-<!-- MAIN LAYOUT -->
-<div class="main">
-  <!-- LEFT SIDEBAR -->
-  <div class="sidebar">
-    <div class="sidebar-section">
-      <div class="sidebar-title">Market Categories</div>
-      <div class="cat-item active" onclick="filterCategory('all',this)">
-        <div class="cat-icon" style="background: rgba(0,212,170,0.15); color: var(--accent);">◆</div>
-        <span>All Markets</span><span class="cat-count" id="countAll">12</span>
-      </div>
-      <div class="cat-item" onclick="filterCategory('directional',this)">
-        <div class="cat-icon" style="background: rgba(34,197,94,0.15); color: #22c55e;">↑</div>
-        <span>Directional</span><span class="cat-count" id="countDir">6</span>
-      </div>
-      <div class="cat-item" onclick="filterCategory('earnings',this)">
-        <div class="cat-icon" style="background: rgba(245,158,11,0.15); color: var(--gold);">$</div>
-        <span>Earnings</span><span class="cat-count" id="countEarn">3</span>
-      </div>
-      <div class="cat-item" onclick="filterCategory('volatility',this)">
-        <div class="cat-icon" style="background: rgba(124,58,237,0.15); color: #a78bfa;">~</div>
-        <span>Volatility</span><span class="cat-count" id="countVol">1</span>
-      </div>
-      <div class="cat-item" onclick="filterCategory('sector',this)">
-        <div class="cat-icon" style="background: rgba(236,72,153,0.15); color: #f472b6;">◎</div>
-        <span>Sector Rotation</span><span class="cat-count" id="countSec">2</span>
-      </div>
-    </div>
+<hr class="hairline">
 
-    <div class="sidebar-section">
-      <div class="sidebar-title">Model Performance</div>
-      <div style="font-size: 24px; font-weight: 800; color: var(--accent);" id="ensembleAcc">79.4%</div>
-      <div style="font-size: 12px; color: #64748b; margin-top: 4px;">7-Day Directional Accuracy</div>
-      <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 8px;">
-        <div style="display: flex; justify-content: space-between; font-size: 12px;"><span style="color: #94a3b8;">Transformer</span><span style="color: #fff; font-weight: 600;">68.2%</span></div>
-        <div style="display: flex; justify-content: space-between; font-size: 12px;"><span style="color: #94a3b8;">LSTM</span><span style="color: #fff; font-weight: 600;">65.7%</span></div>
-        <div style="display: flex; justify-content: space-between; font-size: 12px;"><span style="color: #94a3b8;">VAE</span><span style="color: #fff; font-weight: 600;">63.4%</span></div>
-        <div style="display: flex; justify-content: space-between; font-size: 12px;"><span style="color: #94a3b8;">LLM Alpha</span><span style="color: #fff; font-weight: 600;">71.1%</span></div>
-        <div style="display: flex; justify-content: space-between; font-size: 12px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 8px;"><span style="color: var(--accent); font-weight: 700;">ENSEMBLE</span><span style="color: var(--accent); font-weight: 800;" id="ensembleAcc2">79.4%</span></div>
+<!-- Stats Bar -->
+<div class="page">
+  <div class="section" style="padding: var(--space-4) 0;">
+    <div class="stats-bar">
+      <div class="metric">
+        <div class="metric-value" id="totalVolume">$1.24M</div>
+        <div class="metric-label">24h volume</div>
       </div>
-    </div>
-
-    <div class="sidebar-section">
-      <div class="sidebar-title">Settings</div>
-      <div style="display: flex; flex-direction: column; gap: 10px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px;">
-          <span style="color: #94a3b8;">Auto-Trade</span>
-          <div class="toggle-switch" onclick="toggleSetting(this)"><div></div></div>
-        </div>
-        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px;">
-          <span style="color: #94a3b8;">AI Alerts</span>
-          <div class="toggle-switch" onclick="toggleSetting(this)"><div></div></div>
-        </div>
-        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px;">
-          <span style="color: #94a3b8;">Dark Mode</span>
-          <div class="toggle-switch" onclick="toggleSetting(this)"><div></div></div>
-        </div>
+      <div class="metric">
+        <div class="metric-value" id="activeMarkets">12</div>
+        <div class="metric-label">Active markets</div>
       </div>
-    </div>
-  </div>
-
-  <!-- CENTER CONTENT -->
-  <div class="center">
-    <!-- STATS ROW -->
-    <div class="stats-row">
-      <div class="stat-card accent">
-        <div class="stat-label">Total Volume (24h)</div>
-        <div class="stat-value" id="totalVolume">$1.24M</div>
-        <div class="stat-sub">+18.3% vs yesterday</div>
+      <div class="metric">
+        <div class="metric-value" style="color: var(--success);" id="userPnL">+$2,840</div>
+        <div class="metric-label">Your 7-day P&L</div>
       </div>
-      <div class="stat-card purple">
-        <div class="stat-label">Active Markets</div>
-        <div class="stat-value" id="activeMarkets">12</div>
-        <div class="stat-sub">3 closing today</div>
+      <div class="metric">
+        <div class="metric-value" id="aiWinRate">79.4%</div>
+        <div class="metric-label">AI directional accuracy</div>
       </div>
-      <div class="stat-card gold">
-        <div class="stat-label">Your P&L (7d)</div>
-        <div class="stat-value" id="userPnL">+$2,840</div>
-        <div class="stat-sub">+14.2% return</div>
-      </div>
-      <div class="stat-card green">
-        <div class="stat-label">AI Win Rate</div>
-        <div class="stat-value" id="aiWinRate">79.4%</div>
-        <div class="stat-sub">Target: 80.0%</div>
-      </div>
-    </div>
-
-    <!-- MARKETS SECTION -->
-    <div>
-      <div class="section-header">
-        <div class="section-title">Active Prediction Markets</div>
-        <div class="filter-bar">
-          <button class="filter-btn active" onclick="filterTime('all',this)">All</button>
-          <button class="filter-btn" onclick="filterTime('today',this)">Closing Today</button>
-          <button class="filter-btn" onclick="filterTime('week',this)">This Week</button>
-          <button class="filter-btn" onclick="filterTime('new',this)">New</button>
-        </div>
-      </div>
-      <div class="markets-grid" id="marketsGrid"></div>
-    </div>
-  </div>
-
-  <!-- RIGHT COLUMN -->
-  <div class="right-col">
-    <!-- AI PANEL -->
-    <div class="ai-panel">
-      <div class="ai-header">
-        <div class="ai-avatar">K</div>
-        <div>
-          <div class="ai-name">Kimi AI Engine</div>
-          <div class="ai-status">Live Analysis Active</div>
-        </div>
-      </div>
-      <div class="ai-insight">
-        <div class="ai-insight-title">Top Insight — <span id="aiTicker">AAPL</span></div>
-        <div class="ai-insight-text" id="aiInsightText">Bullish divergence on 4H MACD with positive earnings sentiment (+0.72). Options gamma exposure suggests resistance at $195. Transformer model assigns 78% probability of closing above $190 by July 28.</div>
-      </div>
-      <div class="ai-metrics">
-        <div class="ai-metric">
-          <div class="ai-metric-value" style="color: var(--accent);" id="aiConfidence">78%</div>
-          <div class="ai-metric-label">Confidence</div>
-        </div>
-        <div class="ai-metric">
-          <div class="ai-metric-value" style="color: var(--gold);" id="aiSharpe">1.82</div>
-          <div class="ai-metric-label">Sharpe Ratio</div>
-        </div>
-        <div class="ai-metric">
-          <div class="ai-metric-value" style="color: #22c55e;" id="aiReturn">+12.4%</div>
-          <div class="ai-metric-label">Expected Return</div>
-        </div>
-        <div class="ai-metric">
-          <div class="ai-metric-value" style="color: #a78bfa;" id="aiDrawdown">4.2%</div>
-          <div class="ai-metric-label">Max Drawdown</div>
-        </div>
-      </div>
-      <div class="right-title" style="margin-top: 16px;">Ensemble Model Weights</div>
-      <div class="model-weights">
-        <div class="weight-row"><span class="weight-name">Transformer</span><div class="weight-bar-bg"><div class="weight-bar" style="width: 35%; background: linear-gradient(90deg, var(--accent), var(--accent2));"></div></div><span class="weight-val">35%</span></div>
-        <div class="weight-row"><span class="weight-name">LSTM</span><div class="weight-bar-bg"><div class="weight-bar" style="width: 28%; background: linear-gradient(90deg, #7c3aed, #c026d3);"></div></div><span class="weight-val">28%</span></div>
-        <div class="weight-row"><span class="weight-name">VAE</span><div class="weight-bar-bg"><div class="weight-bar" style="width: 18%; background: linear-gradient(90deg, #f59e0b, #ef4444);"></div></div><span class="weight-val">18%</span></div>
-        <div class="weight-row"><span class="weight-name">LLM Alpha</span><div class="weight-bar-bg"><div class="weight-bar" style="width: 19%; background: linear-gradient(90deg, #ec4899, #f472b6);"></div></div><span class="weight-val">19%</span></div>
-      </div>
-      <button class="bet-btn" style="margin-top: 16px;" onclick="refreshAI()">↻ Refresh AI Analysis</button>
-    </div>
-
-    <!-- YOUR POSITIONS -->
-    <div class="right-card">
-      <div class="right-title">Your Positions</div>
-      <div id="positionsList">
-        <div class="position-row"><div><div class="pos-ticker">AAPL</div><div class="pos-detail">YES · 500 shares · $0.78</div></div><div class="pos-pnl pos">+$390</div></div>
-        <div class="position-row"><div><div class="pos-ticker">TSLA</div><div class="pos-detail">NO · 300 shares · $0.35</div></div><div class="pos-pnl neg">-$45</div></div>
-        <div class="position-row"><div><div class="pos-ticker">SPY</div><div class="pos-detail">YES · 200 shares · $0.82</div></div><div class="pos-pnl pos">+$164</div></div>
-        <div class="position-row"><div><div class="pos-ticker">NVDA</div><div class="pos-detail">YES · 150 shares · $0.71</div></div><div class="pos-pnl pos">+$106</div></div>
-        <div class="position-row" style="border-top: 1px solid rgba(255,255,255,0.1); margin-top: 8px; padding-top: 12px;">
-          <div><div class="pos-ticker" style="color: #94a3b8;">Total Unrealized</div></div>
-          <div class="pos-pnl pos" style="font-size: 16px;">+$615</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- LEADERBOARD -->
-    <div class="right-card">
-      <div class="right-title">Top Forecasters</div>
-      <div class="leaderboard-row"><div class="lb-rank top">1</div><div class="lb-name">AlphaWhale</div><div class="lb-accuracy">84.2%</div></div>
-      <div class="leaderboard-row"><div class="lb-rank top">2</div><div class="lb-name">QuantKing</div><div class="lb-accuracy">82.7%</div></div>
-      <div class="leaderboard-row"><div class="lb-rank top">3</div><div class="lb-name">DataDriven</div><div class="lb-accuracy">81.9%</div></div>
-      <div class="leaderboard-row"><div class="lb-rank">4</div><div class="lb-name">You</div><div class="lb-accuracy" style="color: #94a3b8;">79.4%</div></div>
-      <div class="leaderboard-row"><div class="lb-rank">5</div><div class="lb-name">ChartMaster</div><div class="lb-accuracy">78.1%</div></div>
-    </div>
-
-    <!-- MARKET CHART -->
-    <div class="right-card">
-      <div class="right-title">Market Activity</div>
-      <div class="chart-placeholder">📊 Volume & Price Chart<br><span style="font-size: 11px; color: #475569;">(Integrate Recharts/D3 here)</span></div>
     </div>
   </div>
 </div>
 
-<!-- BET MODAL -->
+<hr class="hairline">
+
+<!-- Markets Section -->
+<div class="page">
+  <div class="section">
+    <div class="section-header">
+      <div>
+        <p class="kicker">Live markets.</p>
+        <h2 class="section-headline">Active prediction markets.</h2>
+      </div>
+    </div>
+
+    <div class="cat-list">
+      <button class="cat-pill active" onclick="filterCategory('all',this)">All markets</button>
+      <button class="cat-pill" onclick="filterCategory('directional',this)">Directional</button>
+      <button class="cat-pill" onclick="filterCategory('earnings',this)">Earnings</button>
+      <button class="cat-pill" onclick="filterCategory('volatility',this)">Volatility</button>
+      <button class="cat-pill" onclick="filterCategory('sector',this)">Sector rotation</button>
+    </div>
+
+    <div class="filter-list">
+      <span class="filter-item active" onclick="filterTime('all',this)">All</span>
+      <span class="filter-item" onclick="filterTime('today',this)">Closing today</span>
+      <span class="filter-item" onclick="filterTime('week',this)">This week</span>
+      <span class="filter-item" onclick="filterTime('new',this)">New</span>
+    </div>
+
+    <div class="markets-grid" id="marketsGrid"></div>
+  </div>
+</div>
+
+<hr class="hairline">
+
+<!-- AI Engine + Sidebar -->
+<div class="page">
+  <div class="section">
+    <div class="two-col">
+      <!-- Left: AI Panel -->
+      <div>
+        <p class="kicker">Ensemble intelligence.</p>
+        <h2 class="section-headline">Kimi AI engine.</h2>
+
+        <div class="card" style="margin-top: var(--space-3);">
+          <div class="ai-panel" style="display: block;">
+            <div class="ai-insight">
+              <div class="ai-insight-title">Top insight — <span id="aiTicker">AAPL</span></div>
+              <div class="ai-insight-text" id="aiInsightText">Bullish divergence on 4H MACD with positive earnings sentiment (+0.72). Options gamma exposure suggests resistance at $195. Transformer model assigns 78% probability of closing above $190 by July 28.</div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-2); margin-top: var(--space-3);">
+              <div class="ai-metric-card">
+                <div class="ai-metric-value" style="color: var(--accent);" id="aiConfidence">78%</div>
+                <div class="ai-metric-label">Confidence</div>
+              </div>
+              <div class="ai-metric-card">
+                <div class="ai-metric-value" style="color: var(--warning);" id="aiSharpe">1.82</div>
+                <div class="ai-metric-label">Sharpe ratio</div>
+              </div>
+              <div class="ai-metric-card">
+                <div class="ai-metric-value" style="color: var(--success);" id="aiReturn">+12.4%</div>
+                <div class="ai-metric-label">Expected return</div>
+              </div>
+              <div class="ai-metric-card">
+                <div class="ai-metric-value" style="color: var(--purple);" id="aiDrawdown">4.2%</div>
+                <div class="ai-metric-label">Max drawdown</div>
+              </div>
+            </div>
+
+            <div style="margin-top: var(--space-3);">
+              <p class="label" style="margin-bottom: var(--space-2);">Model weights</p>
+              <div class="weight-row">
+                <span class="weight-name">Transformer</span>
+                <div class="weight-bar-bg"><div class="weight-bar" style="width: 35%; background: var(--accent);"></div></div>
+                <span class="weight-val">35%</span>
+              </div>
+              <div class="weight-row">
+                <span class="weight-name">LSTM</span>
+                <div class="weight-bar-bg"><div class="weight-bar" style="width: 28%; background: var(--purple);"></div></div>
+                <span class="weight-val">28%</span>
+              </div>
+              <div class="weight-row">
+                <span class="weight-name">VAE</span>
+                <div class="weight-bar-bg"><div class="weight-bar" style="width: 18%; background: var(--warning);"></div></div>
+                <span class="weight-val">18%</span>
+              </div>
+              <div class="weight-row">
+                <span class="weight-name">LLM Alpha</span>
+                <div class="weight-bar-bg"><div class="weight-bar" style="width: 19%; background: #FF2D55;"></div></div>
+                <span class="weight-val">19%</span>
+              </div>
+            </div>
+
+            <button class="btn btn-secondary btn-sm" style="margin-top: var(--space-3);" onclick="refreshAI()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+              Refresh analysis
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Sidebar -->
+      <div>
+        <div class="sidebar-card">
+          <p class="sidebar-title">Your positions</p>
+          <div id="positionsList">
+            <div class="position-row">
+              <div>
+                <div class="pos-ticker">AAPL</div>
+                <div class="pos-detail">Yes · 500 shares · $0.78</div>
+              </div>
+              <div class="pos-pnl pos">+$390</div>
+            </div>
+            <div class="position-row">
+              <div>
+                <div class="pos-ticker">TSLA</div>
+                <div class="pos-detail">No · 300 shares · $0.35</div>
+              </div>
+              <div class="pos-pnl neg">-$45</div>
+            </div>
+            <div class="position-row">
+              <div>
+                <div class="pos-ticker">SPY</div>
+                <div class="pos-detail">Yes · 200 shares · $0.82</div>
+              </div>
+              <div class="pos-pnl pos">+$164</div>
+            </div>
+            <div class="position-row">
+              <div>
+                <div class="pos-ticker">NVDA</div>
+                <div class="pos-detail">Yes · 150 shares · $0.71</div>
+              </div>
+              <div class="pos-pnl pos">+$106</div>
+            </div>
+            <div class="position-row" style="border-top: 1px solid var(--hairline); margin-top: 8px; padding-top: 14px;">
+              <div><div class="pos-ticker" style="color: var(--gray-light);">Total unrealized</div></div>
+              <div class="pos-pnl pos" style="font-size: 18px;">+$615</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar-card">
+          <p class="sidebar-title">Top forecasters</p>
+          <div class="lb-row">
+            <div class="lb-rank top">1</div>
+            <div class="lb-name">AlphaWhale</div>
+            <div class="lb-accuracy">84.2%</div>
+          </div>
+          <div class="lb-row">
+            <div class="lb-rank top">2</div>
+            <div class="lb-name">QuantKing</div>
+            <div class="lb-accuracy">82.7%</div>
+          </div>
+          <div class="lb-row">
+            <div class="lb-rank top">3</div>
+            <div class="lb-name">DataDriven</div>
+            <div class="lb-accuracy">81.9%</div>
+          </div>
+          <div class="lb-row">
+            <div class="lb-rank">4</div>
+            <div class="lb-name">You</div>
+            <div class="lb-accuracy" style="color: var(--gray);">79.4%</div>
+          </div>
+          <div class="lb-row">
+            <div class="lb-rank">5</div>
+            <div class="lb-name">ChartMaster</div>
+            <div class="lb-accuracy">78.1%</div>
+          </div>
+        </div>
+
+        <div class="sidebar-card">
+          <p class="sidebar-title">Market activity</p>
+          <div class="chart-box">Volume & price chart<br><span style="font-size: 12px;">(Recharts integration)</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Footer -->
+<div class="page" style="padding-bottom: var(--space-6);">
+  <hr class="hairline">
+  <div style="padding: var(--space-3) 0; display: flex; justify-content: space-between; align-items: center;">
+    <p class="caption">Forecast. AI prediction markets with ensemble intelligence.</p>
+    <p class="caption">Built with Kimi, Transformers, and on-chain settlement.</p>
+  </div>
+</div>
+
+<!-- Bet Modal -->
 <div class="modal-overlay" id="betModal">
   <div class="modal">
-    <div class="modal-title" id="modalTicker">AAPL</div>
-    <div class="modal-sub" id="modalQuestion">Will AAPL close above $190 by July 28, 2026?</div>
-    <div class="form-group">
-      <label class="form-label">Select Side</label>
+    <h3 class="modal-headline" id="modalTicker">AAPL</h3>
+    <p class="modal-sub" id="modalQuestion">Will AAPL close above $190 by July 28, 2026?</p>
+
+    <div style="margin-bottom: var(--space-2);">
+      <label class="label" style="display: block; margin-bottom: 8px;">Select side</label>
       <div class="side-toggle">
-        <div class="side-btn yes active" id="btnYes" onclick="selectSide('yes')">YES — $0.78</div>
-        <div class="side-btn no" id="btnNo" onclick="selectSide('no')">NO — $0.22</div>
+        <div class="side-btn yes active" id="btnYes" onclick="selectSide('yes')">Yes — $0.78</div>
+        <div class="side-btn no" id="btnNo" onclick="selectSide('no')">No — $0.22</div>
       </div>
     </div>
-    <div class="form-group">
-      <label class="form-label">Amount (USD)</label>
-      <input type="number" class="form-input" id="betAmount" placeholder="Enter amount..." value="100" oninput="calculateReturn()">
+
+    <div style="margin-bottom: var(--space-2);">
+      <label class="label" style="display: block; margin-bottom: 8px;">Amount (USD)</label>
+      <input type="number" class="input" id="betAmount" placeholder="Enter amount..." value="100" oninput="calculateReturn()">
     </div>
-    <div style="background: rgba(255,255,255,0.03); padding: 14px; border-radius: 10px; margin-bottom: 16px;">
-      <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px;"><span style="color: #94a3b8;">Potential Return</span><span style="color: #22c55e; font-weight: 700;" id="potentialReturn">+$28.21</span></div>
-      <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px;"><span style="color: #94a3b8;">Probability (AI)</span><span style="color: var(--accent); font-weight: 700;" id="aiProbability">78%</span></div>
-      <div style="display: flex; justify-content: space-between; font-size: 13px;"><span style="color: #94a3b8;">Trading Fee (2%)</span><span style="color: #94a3b8;" id="tradingFee">$2.00</span></div>
+
+    <div class="calc-box">
+      <div class="calc-row"><span>Potential return</span><span style="color: var(--success); font-weight: 700;" id="potentialReturn">+$28.21</span></div>
+      <div class="calc-row"><span>Probability (AI)</span><span id="aiProbability">78%</span></div>
+      <div class="calc-row"><span>Trading fee (2%)</span><span id="tradingFee">$2.00</span></div>
     </div>
-    <div class="modal-actions">
-      <button class="modal-btn secondary" onclick="closeModal()">Cancel</button>
-      <button class="modal-btn primary" onclick="placeBet()">Place Bet</button>
+
+    <div style="display: flex; gap: var(--space-2);">
+      <button class="btn btn-secondary" style="flex: 1;" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" style="flex: 1;" onclick="placeBet()">Place bet</button>
     </div>
   </div>
 </div>
 
-<!-- TOAST -->
+<!-- Toast -->
 <div class="toast" id="toast">
-  <div class="toast-icon">✓</div>
-  <div class="toast-content">
-    <div class="toast-title" id="toastTitle">Bet Placed!</div>
+  <div class="toast-icon">&#10003;</div>
+  <div>
+    <div class="toast-title" id="toastTitle">Bet placed.</div>
     <div class="toast-msg" id="toastMsg">Your position has been recorded.</div>
   </div>
 </div>
 
 <script>
 // ===================== CONFIG =====================
-// Replace with your Google Apps Script Web App URL after deployment
 const CONFIG = {
   GOOGLE_SCRIPT_URL: 'https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec',
   REFRESH_INTERVAL: 30000
@@ -371,18 +1287,18 @@ const CONFIG = {
 
 // ===================== DATA =====================
 const marketsData = [
-  { id: 1, ticker: 'AAPL', category: 'directional', type: 'up', question: 'Will AAPL close above $190 by July 28, 2026?', probability: 78, yesPrice: 0.78, noPrice: 0.22, volume: 245000, timeLeft: '6 days', aiConfidence: 78, model: 'Transformer+LSTM', features: { rsi: 62, macd: 0.45, sentiment: 0.72, sector: 'Tech' } },
-  { id: 2, ticker: 'TSLA', category: 'directional', type: 'up', question: 'Will TSLA close above $265 by July 28, 2026?', probability: 65, yesPrice: 0.65, noPrice: 0.35, volume: 189000, timeLeft: '6 days', aiConfidence: 65, model: 'VAE+LLM', features: { rsi: 58, macd: -0.12, sentiment: 0.55, sector: 'Auto' } },
-  { id: 3, ticker: 'SPY', category: 'directional', type: 'down', question: 'Will SPY drop below $545 by July 28, 2026?', probability: 82, yesPrice: 0.18, noPrice: 0.82, volume: 412000, timeLeft: '6 days', aiConfidence: 82, model: 'Ensemble', features: { rsi: 71, macd: -0.34, sentiment: -0.15, sector: 'Broad' } },
-  { id: 4, ticker: 'NVDA', category: 'earnings', type: 'up', question: 'Will NVDA beat EPS by >10% next week?', probability: 71, yesPrice: 0.71, noPrice: 0.29, volume: 156000, timeLeft: '4 days', aiConfidence: 71, model: 'LLM Alpha', features: { rsi: 64, macd: 0.28, sentiment: 0.81, sector: 'Semis' } },
-  { id: 5, ticker: 'VIX', category: 'volatility', type: 'up', question: 'Will VIX spike above 25 within 7 days?', probability: 45, yesPrice: 0.45, noPrice: 0.55, volume: 98000, timeLeft: '7 days', aiConfidence: 45, model: 'LSTM', features: { rsi: 42, macd: 0.15, sentiment: -0.22, sector: 'Vol' } },
-  { id: 6, ticker: 'BTC', category: 'directional', type: 'up', question: 'Will BTC correlation with SPY exceed 0.70?', probability: 62, yesPrice: 0.62, noPrice: 0.38, volume: 134000, timeLeft: '7 days', aiConfidence: 62, model: 'Transformer', features: { rsi: 55, macd: 0.08, sentiment: 0.33, sector: 'Crypto' } },
-  { id: 7, ticker: 'META', category: 'earnings', type: 'up', question: 'Will META ad revenue grow >15% YoY?', probability: 83, yesPrice: 0.83, noPrice: 0.17, volume: 201000, timeLeft: '3 days', aiConfidence: 83, model: 'Ensemble', features: { rsi: 68, macd: 0.52, sentiment: 0.89, sector: 'Social' } },
-  { id: 8, ticker: 'XLE', category: 'sector', type: 'up', question: 'Will Energy outperform Tech next week?', probability: 38, yesPrice: 0.38, noPrice: 0.62, volume: 76000, timeLeft: '7 days', aiConfidence: 38, model: 'VAE', features: { rsi: 48, macd: -0.08, sentiment: 0.12, sector: 'Energy' } },
-  { id: 9, ticker: 'AMZN', category: 'directional', type: 'up', question: 'Will AMZN close above $205 by July 28?', probability: 74, yesPrice: 0.74, noPrice: 0.26, volume: 178000, timeLeft: '6 days', aiConfidence: 74, model: 'Transformer+LSTM', features: { rsi: 61, macd: 0.38, sentiment: 0.68, sector: 'Retail' } },
-  { id: 10, ticker: 'AMD', category: 'earnings', type: 'up', question: 'Will AMD guide revenue above $6.8B?', probability: 58, yesPrice: 0.58, noPrice: 0.42, volume: 112000, timeLeft: '5 days', aiConfidence: 58, model: 'LLM Alpha', features: { rsi: 56, macd: 0.05, sentiment: 0.44, sector: 'Semis' } },
-  { id: 11, ticker: 'GLD', category: 'directional', type: 'up', question: 'Will Gold break $2,450/oz this week?', probability: 67, yesPrice: 0.67, noPrice: 0.33, volume: 89000, timeLeft: '5 days', aiConfidence: 67, model: 'LSTM', features: { rsi: 59, macd: 0.22, sentiment: 0.38, sector: 'Gold' } },
-  { id: 12, ticker: 'ARKK', category: 'sector', type: 'down', question: 'Will ARKK underperform QQQ by >5%?', probability: 72, yesPrice: 0.28, noPrice: 0.72, volume: 54000, timeLeft: '7 days', aiConfidence: 72, model: 'Ensemble', features: { rsi: 45, macd: -0.28, sentiment: -0.35, sector: 'Growth' } },
+  { id: 1, ticker: 'AAPL', category: 'directional', type: 'up', question: 'Will AAPL close above $190 by July 28, 2026?', probability: 78, yesPrice: 0.78, noPrice: 0.22, volume: 245000, timeLeft: '6 days', aiConfidence: 78, model: 'Transformer+LSTM' },
+  { id: 2, ticker: 'TSLA', category: 'directional', type: 'up', question: 'Will TSLA close above $265 by July 28, 2026?', probability: 65, yesPrice: 0.65, noPrice: 0.35, volume: 189000, timeLeft: '6 days', aiConfidence: 65, model: 'VAE+LLM' },
+  { id: 3, ticker: 'SPY', category: 'directional', type: 'down', question: 'Will SPY drop below $545 by July 28, 2026?', probability: 82, yesPrice: 0.18, noPrice: 0.82, volume: 412000, timeLeft: '6 days', aiConfidence: 82, model: 'Ensemble' },
+  { id: 4, ticker: 'NVDA', category: 'earnings', type: 'up', question: 'Will NVDA beat EPS by more than 10% next week?', probability: 71, yesPrice: 0.71, noPrice: 0.29, volume: 156000, timeLeft: '4 days', aiConfidence: 71, model: 'LLM Alpha' },
+  { id: 5, ticker: 'VIX', category: 'volatility', type: 'up', question: 'Will VIX spike above 25 within 7 days?', probability: 45, yesPrice: 0.45, noPrice: 0.55, volume: 98000, timeLeft: '7 days', aiConfidence: 45, model: 'LSTM' },
+  { id: 6, ticker: 'BTC', category: 'directional', type: 'up', question: 'Will BTC correlation with SPY exceed 0.70?', probability: 62, yesPrice: 0.62, noPrice: 0.38, volume: 134000, timeLeft: '7 days', aiConfidence: 62, model: 'Transformer' },
+  { id: 7, ticker: 'META', category: 'earnings', type: 'up', question: 'Will META ad revenue grow more than 15% year over year?', probability: 83, yesPrice: 0.83, noPrice: 0.17, volume: 201000, timeLeft: '3 days', aiConfidence: 83, model: 'Ensemble' },
+  { id: 8, ticker: 'XLE', category: 'sector', type: 'up', question: 'Will Energy outperform Tech next week?', probability: 38, yesPrice: 0.38, noPrice: 0.62, volume: 76000, timeLeft: '7 days', aiConfidence: 38, model: 'VAE' },
+  { id: 9, ticker: 'AMZN', category: 'directional', type: 'up', question: 'Will AMZN close above $205 by July 28?', probability: 74, yesPrice: 0.74, noPrice: 0.26, volume: 178000, timeLeft: '6 days', aiConfidence: 74, model: 'Transformer+LSTM' },
+  { id: 10, ticker: 'AMD', category: 'earnings', type: 'up', question: 'Will AMD guide revenue above $6.8 billion?', probability: 58, yesPrice: 0.58, noPrice: 0.42, volume: 112000, timeLeft: '5 days', aiConfidence: 58, model: 'LLM Alpha' },
+  { id: 11, ticker: 'GLD', category: 'directional', type: 'up', question: 'Will Gold break $2,450 per ounce this week?', probability: 67, yesPrice: 0.67, noPrice: 0.33, volume: 89000, timeLeft: '5 days', aiConfidence: 67, model: 'LSTM' },
+  { id: 12, ticker: 'ARKK', category: 'sector', type: 'down', question: 'Will ARKK underperform QQQ by more than 5%?', probability: 72, yesPrice: 0.28, noPrice: 0.72, volume: 54000, timeLeft: '7 days', aiConfidence: 72, model: 'Ensemble' },
 ];
 
 let selectedMarket = null;
@@ -390,38 +1306,42 @@ let selectedSide = 'yes';
 let walletConnected = false;
 let currentCategory = 'all';
 let userPositions = [
-  { ticker: 'AAPL', side: 'YES', shares: 500, price: 0.78, pnl: 390 },
-  { ticker: 'TSLA', side: 'NO', shares: 300, price: 0.35, pnl: -45 },
-  { ticker: 'SPY', side: 'YES', shares: 200, price: 0.82, pnl: 164 },
-  { ticker: 'NVDA', side: 'YES', shares: 150, price: 0.71, pnl: 106 }
+  { ticker: 'AAPL', side: 'Yes', shares: 500, price: 0.78, pnl: 390 },
+  { ticker: 'TSLA', side: 'No', shares: 300, price: 0.35, pnl: -45 },
+  { ticker: 'SPY', side: 'Yes', shares: 200, price: 0.82, pnl: 164 },
+  { ticker: 'NVDA', side: 'Yes', shares: 150, price: 0.71, pnl: 106 }
 ];
 
 // ===================== RENDER =====================
-function renderMarkets(filter = 'all') {
+function renderMarkets(filter) {
   const grid = document.getElementById('marketsGrid');
   let filtered = filter === 'all' ? marketsData : marketsData.filter(m => m.category === filter);
   grid.innerHTML = filtered.map(m => `
     <div class="market-card" onclick="openBetModal(${m.id})">
-      <div class="market-header">
+      <div class="market-card-header">
         <div class="market-ticker">${m.ticker}</div>
         <div class="market-badge ${m.type === 'up' ? 'badge-up' : m.type === 'down' ? 'badge-down' : m.category === 'earnings' ? 'badge-earn' : 'badge-vol'}">
-          ${m.category === 'directional' ? (m.type === 'up' ? 'BULLISH' : 'BEARISH') : m.category === 'earnings' ? 'EARNINGS' : m.category === 'volatility' ? 'VOLATILITY' : 'SECTOR'}
+          ${m.category === 'directional' ? (m.type === 'up' ? 'Bullish' : 'Bearish') : m.category === 'earnings' ? 'Earnings' : m.category === 'volatility' ? 'Volatility' : 'Sector'}
         </div>
       </div>
       <div class="market-question">${m.question}</div>
-      <div class="probability-bar">
-        <div class="probability-fill ${m.probability > 50 ? 'up' : 'down'}" style="width: ${m.probability}%"></div>
-      </div>
-      <div class="probability-labels">
-        <span class="prob-yes">YES ${m.probability}%</span>
-        <span class="prob-no">NO ${100 - m.probability}%</span>
+      <div class="market-prob">
+        <div class="prob-bar-bg">
+          <div class="prob-bar-fill ${m.probability > 50 ? 'up' : 'down'}" style="width: ${m.probability}%"></div>
+        </div>
+        <div class="prob-labels">
+          <span class="prob-yes">Yes ${m.probability}%</span>
+          <span class="prob-no">No ${100 - m.probability}%</span>
+        </div>
       </div>
       <div class="market-meta">
-        <span>💰 Vol: $${(m.volume / 1000).toFixed(0)}K</span>
-        <span>⏱ ${m.timeLeft}</span>
-        <span>🤖 ${m.aiConfidence}% AI</span>
+        <span>Volume $${(m.volume / 1000).toFixed(0)}K</span>
+        <span>${m.timeLeft} left</span>
+        <span>AI ${m.aiConfidence}%</span>
       </div>
-      <button class="bet-btn">Place Bet</button>
+      <div class="market-action">
+        <button class="btn btn-primary btn-sm" style="width: 100%;">Place bet</button>
+      </div>
     </div>
   `).join('');
 }
@@ -431,13 +1351,16 @@ function renderPositions() {
   const list = document.getElementById('positionsList');
   list.innerHTML = userPositions.map(p => `
     <div class="position-row">
-      <div><div class="pos-ticker">${p.ticker}</div><div class="pos-detail">${p.side} · ${p.shares} shares · $${p.price.toFixed(2)}</div></div>
+      <div>
+        <div class="pos-ticker">${p.ticker}</div>
+        <div class="pos-detail">${p.side} · ${p.shares} shares · $${p.price.toFixed(2)}</div>
+      </div>
       <div class="pos-pnl ${p.pnl >= 0 ? 'pos' : 'neg'}">${p.pnl >= 0 ? '+' : ''}$${p.pnl}</div>
     </div>
   `).join('') + `
-    <div class="position-row" style="border-top: 1px solid rgba(255,255,255,0.1); margin-top: 8px; padding-top: 12px;">
-      <div><div class="pos-ticker" style="color: #94a3b8;">Total Unrealized</div></div>
-      <div class="pos-pnl ${total >= 0 ? 'pos' : 'neg'}" style="font-size: 16px;">${total >= 0 ? '+' : ''}$${total}</div>
+    <div class="position-row" style="border-top: 1px solid var(--hairline); margin-top: 8px; padding-top: 14px;">
+      <div><div class="pos-ticker" style="color: var(--gray-light);">Total unrealized</div></div>
+      <div class="pos-pnl ${total >= 0 ? 'pos' : 'neg'}" style="font-size: 18px;">${total >= 0 ? '+' : ''}$${total}</div>
     </div>
   `;
   document.getElementById('userPnL').textContent = (total >= 0 ? '+' : '') + '$' + total.toLocaleString();
@@ -449,8 +1372,8 @@ function openBetModal(marketId) {
   if (!selectedMarket) return;
   document.getElementById('modalTicker').textContent = selectedMarket.ticker;
   document.getElementById('modalQuestion').textContent = selectedMarket.question;
-  document.getElementById('btnYes').textContent = `YES — $${selectedMarket.yesPrice.toFixed(2)}`;
-  document.getElementById('btnNo').textContent = `NO — $${selectedMarket.noPrice.toFixed(2)}`;
+  document.getElementById('btnYes').textContent = `Yes — $${selectedMarket.yesPrice.toFixed(2)}`;
+  document.getElementById('btnNo').textContent = `No — $${selectedMarket.noPrice.toFixed(2)}`;
   document.getElementById('aiProbability').textContent = selectedMarket.aiConfidence + '%';
   selectSide('yes');
   document.getElementById('betModal').classList.add('active');
@@ -479,38 +1402,34 @@ function calculateReturn() {
 
 function placeBet() {
   const amount = parseFloat(document.getElementById('betAmount').value) || 0;
-  if (amount < 1) { showToast('Error', 'Minimum bet is $1'); return; }
+  if (amount < 1) { showToast('Error', 'Minimum bet is $1.'); return; }
 
   const betData = {
     timestamp: new Date().toISOString(),
     wallet: walletConnected ? 'connected' : 'guest',
     ticker: selectedMarket.ticker,
-    side: selectedSide.toUpperCase(),
+    side: selectedSide.charAt(0).toUpperCase() + selectedSide.slice(1),
     amount: amount,
     price: selectedSide === 'yes' ? selectedMarket.yesPrice : selectedMarket.noPrice,
     probability: selectedMarket.aiConfidence,
     marketId: selectedMarket.id
   };
 
-  // Add to local positions
-  const shares = Math.floor(amount / betData.price);
   userPositions.push({
     ticker: betData.ticker,
     side: betData.side,
-    shares: shares,
+    shares: Math.floor(amount / betData.price),
     price: betData.price,
     pnl: 0
   });
   renderPositions();
-
-  // Save to Google Sheet
   saveBetToSheet(betData);
 
   closeModal();
-  showToast('Bet Placed!', `${betData.side} $${amount} on ${betData.ticker} at $${betData.price.toFixed(2)}`);
+  showToast('Bet placed.', `${betData.side} $${amount} on ${betData.ticker} at $${betData.price.toFixed(2)}.`);
 }
 
-// ===================== GOOGLE SHEETS INTEGRATION =====================
+// ===================== GOOGLE SHEETS =====================
 async function saveBetToSheet(betData) {
   try {
     await fetch(CONFIG.GOOGLE_SCRIPT_URL, {
@@ -519,92 +1438,30 @@ async function saveBetToSheet(betData) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'saveBet', data: betData })
     });
-    console.log('Bet saved to sheet');
   } catch (e) {
-    console.error('Sheet save failed, using localStorage fallback');
-    let bets = JSON.parse(localStorage.getItem('forecastx_bets') || '[]');
+    let bets = JSON.parse(localStorage.getItem('forecast_bets') || '[]');
     bets.push(betData);
-    localStorage.setItem('forecastx_bets', JSON.stringify(bets));
+    localStorage.setItem('forecast_bets', JSON.stringify(bets));
   }
 }
 
 async function fetchMarketsFromSheet() {
   try {
-    const response = await fetch(CONFIG.GOOGLE_SCRIPT_URL + '?action=getMarkets');
-    const data = await response.json();
+    const res = await fetch(CONFIG.GOOGLE_SCRIPT_URL + '?action=getMarkets');
+    const data = await res.json();
     if (data.markets) {
       data.markets.forEach(m => {
         const idx = marketsData.findIndex(x => x.id === m.id);
         if (idx >= 0) marketsData[idx] = { ...marketsData[idx], ...m };
       });
       renderMarkets(currentCategory);
-      updateStats();
     }
   } catch (e) {
-    console.log('Using demo data (sheet not connected)');
+    console.log('Using demo data.');
   }
 }
 
-async function fetchAIAnalysis(ticker) {
-  try {
-    await fetch(CONFIG.GOOGLE_SCRIPT_URL, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'getAIAnalysis', ticker: ticker })
-    });
-  } catch (e) {
-    console.log('AI analysis request sent');
-  }
-}
-
-async function fetchModelWeights() {
-  try {
-    const response = await fetch(CONFIG.GOOGLE_SCRIPT_URL + '?action=getModelWeights');
-    const data = await response.json();
-    if (data.weights) updateModelWeights(data.weights);
-  } catch (e) {
-    console.log('Using default weights');
-  }
-}
-
-// ===================== AI INTEGRATION =====================
-function refreshAI() {
-  showToast('AI Refreshing', 'Fetching latest ensemble analysis...');
-  fetchAIAnalysis('AAPL');
-
-  // Simulate dynamic update from backend
-  setTimeout(() => {
-    const newConfidence = Math.floor(75 + Math.random() * 10);
-    const newSharpe = (1.5 + Math.random() * 0.5).toFixed(2);
-    document.getElementById('aiConfidence').textContent = newConfidence + '%';
-    document.getElementById('aiSharpe').textContent = newSharpe;
-    document.getElementById('aiInsightText').textContent = `Updated analysis: ${selectedMarket ? selectedMarket.ticker : 'AAPL'} shows ${newConfidence > 78 ? 'strengthening' : 'moderating'} momentum. Ensemble confidence adjusted to ${newConfidence}%. Risk-adjusted Sharpe now at ${newSharpe}.`;
-    showToast('Analysis Updated', `Transformer: ${35 + Math.floor(Math.random()*5)}% | New alpha detected`);
-  }, 2000);
-}
-
-function updateModelWeights(weights) {
-  // Update weight bars dynamically
-  const bars = document.querySelectorAll('.weight-bar');
-  const vals = document.querySelectorAll('.weight-val');
-  if (bars[0]) bars[0].style.width = weights.transformer + '%';
-  if (vals[0]) vals[0].textContent = weights.transformer + '%';
-  if (bars[1]) bars[1].style.width = weights.lstm + '%';
-  if (vals[1]) vals[1].textContent = weights.lstm + '%';
-  if (bars[2]) bars[2].style.width = weights.vae + '%';
-  if (vals[2]) vals[2].textContent = weights.vae + '%';
-  if (bars[3]) bars[3].style.width = weights.llm + '%';
-  if (vals[3]) vals[3].textContent = weights.llm + '%';
-}
-
-function updateStats() {
-  const totalVol = marketsData.reduce((a, m) => a + m.volume, 0);
-  document.getElementById('totalVolume').textContent = '$' + (totalVol / 1000000).toFixed(2) + 'M';
-  document.getElementById('activeMarkets').textContent = marketsData.length;
-}
-
-// ===================== UI HELPERS =====================
+// ===================== UI =====================
 function showToast(title, msg) {
   document.getElementById('toastTitle').textContent = title;
   document.getElementById('toastMsg').textContent = msg;
@@ -618,50 +1475,49 @@ function connectWallet() {
   const btn = document.getElementById('walletBtn');
   if (walletConnected) {
     btn.textContent = '0x7a3f...9c2e';
-    btn.style.background = 'rgba(0,212,170,0.15)';
-    btn.style.color = 'var(--accent)';
-    showToast('Wallet Connected', 'MetaMask connected successfully');
+    btn.classList.add('connected');
+    showToast('Wallet connected.', 'MetaMask connected successfully.');
   } else {
-    btn.textContent = 'Connect Wallet';
-    btn.style.background = 'linear-gradient(135deg, var(--accent), var(--accent2))';
-    btn.style.color = '#0a0e27';
+    btn.textContent = 'Connect wallet';
+    btn.classList.remove('connected');
   }
 }
 
 function filterCategory(cat, el) {
   currentCategory = cat;
-  document.querySelectorAll('.cat-item').forEach(item => item.classList.remove('active'));
+  document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
   if (el) el.classList.add('active');
   renderMarkets(cat);
 }
 
 function filterTime(time, el) {
-  document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.filter-item').forEach(f => f.classList.remove('active'));
   if (el) el.classList.add('active');
   renderMarkets(currentCategory);
 }
 
 function switchTab(tab, el) {
-  document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.nav-links a').forEach(a => a.classList.remove('active'));
   if (el) el.classList.add('active');
-  showToast('Tab Switch', `${tab.charAt(0).toUpperCase() + tab.slice(1)} view loading...`);
+  showToast('Tab switch', tab.charAt(0).toUpperCase() + tab.slice(1) + ' view loading.');
 }
 
-function toggleSetting(el) {
-  el.classList.toggle('off');
+function refreshAI() {
+  showToast('Refreshing', 'Fetching latest ensemble analysis.');
+  setTimeout(() => {
+    const newConf = Math.floor(75 + Math.random() * 10);
+    document.getElementById('aiConfidence').textContent = newConf + '%';
+    document.getElementById('aiSharpe').textContent = (1.5 + Math.random() * 0.5).toFixed(2);
+    showToast('Analysis updated.', 'Transformer weight adjusted. New alpha detected.');
+  }, 2000);
 }
 
 // ===================== INIT =====================
 document.addEventListener('DOMContentLoaded', () => {
-  renderMarkets();
+  renderMarkets('all');
   renderPositions();
-  updateStats();
   fetchMarketsFromSheet();
-  fetchModelWeights();
-  setInterval(() => {
-    fetchMarketsFromSheet();
-    fetchModelWeights();
-  }, CONFIG.REFRESH_INTERVAL);
+  setInterval(fetchMarketsFromSheet, CONFIG.REFRESH_INTERVAL);
 });
 
 document.getElementById('betModal').addEventListener('click', (e) => {
