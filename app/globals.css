@@ -1,0 +1,403 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   Design tokens
+   A calm, Apple-adjacent system: one neutral ramp, one interactive accent,
+   one warm accent reserved for travel pins so they always read as "mine".
+   ========================================================================== */
+
+:root {
+  color-scheme: light dark;
+
+  /* Neutrals — light */
+  --c-bg: #ffffff;
+  --c-surface: #f2f2f7;
+  --c-surface-2: #ffffff;
+  --c-sheet: rgba(250, 250, 252, 0.92);
+  --c-sheet-solid: #fdfdff;
+  --c-ink: #0f1115;
+  --c-ink-2: #62666e;
+  --c-ink-3: #9aa0a8;
+  --c-separator: rgba(60, 60, 67, 0.13);
+  --c-fill: rgba(118, 118, 128, 0.1);
+  --c-fill-strong: rgba(118, 118, 128, 0.17);
+  --c-scrim: rgba(16, 18, 22, 0.4);
+  --c-glass-border: rgba(255, 255, 255, 0.6);
+
+  /* Accents */
+  --c-accent: #007aff;
+  --c-accent-soft: rgba(0, 122, 255, 0.12);
+  --c-on-accent: #ffffff;
+  --c-danger: #e0342a;
+  --c-danger-soft: rgba(255, 59, 48, 0.12);
+  --c-pin: #ff5a3c;
+  --c-pin-deep: #e8391c;
+
+  /* Shape */
+  --r-xs: 8px;
+  --r-sm: 12px;
+  --r-md: 16px;
+  --r-lg: 22px;
+  --r-xl: 28px;
+  --r-pill: 999px;
+
+  /* Depth — restrained; two layers, never more */
+  --shadow-soft: 0 1px 2px rgba(15, 17, 21, 0.05), 0 6px 20px rgba(15, 17, 21, 0.07);
+  --shadow-float: 0 1px 3px rgba(15, 17, 21, 0.08), 0 12px 32px rgba(15, 17, 21, 0.13);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --c-bg: #000000;
+    --c-surface: #0d0d10;
+    /* Also the segmented-control thumb, which has to read clearly against a
+       translucent dark track. */
+    --c-surface-2: #2c2c31;
+    --c-sheet: rgba(26, 26, 30, 0.9);
+    --c-sheet-solid: #141418;
+    --c-ink: #f6f6f8;
+    --c-ink-2: #9ea3ad;
+    --c-ink-3: #6b7078;
+    --c-separator: rgba(255, 255, 255, 0.1);
+    --c-fill: rgba(128, 130, 140, 0.2);
+    --c-fill-strong: rgba(128, 130, 140, 0.32);
+    --c-scrim: rgba(0, 0, 0, 0.58);
+    --c-glass-border: rgba(255, 255, 255, 0.09);
+
+    --c-accent: #0a84ff;
+    --c-accent-soft: rgba(10, 132, 255, 0.2);
+    --c-danger: #ff6961;
+    --c-danger-soft: rgba(255, 69, 58, 0.18);
+    --c-pin: #ff6b4a;
+    --c-pin-deep: #ff4520;
+
+    --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 20px rgba(0, 0, 0, 0.45);
+    --shadow-float: 0 1px 3px rgba(0, 0, 0, 0.6), 0 14px 36px rgba(0, 0, 0, 0.55);
+  }
+}
+
+@theme inline {
+  --color-bg: var(--c-bg);
+  --color-surface: var(--c-surface);
+  --color-surface-2: var(--c-surface-2);
+  --color-sheet: var(--c-sheet);
+  --color-sheet-solid: var(--c-sheet-solid);
+  --color-ink: var(--c-ink);
+  --color-ink-2: var(--c-ink-2);
+  --color-ink-3: var(--c-ink-3);
+  --color-separator: var(--c-separator);
+  --color-fill: var(--c-fill);
+  --color-fill-strong: var(--c-fill-strong);
+  --color-scrim: var(--c-scrim);
+  --color-glass-border: var(--c-glass-border);
+  --color-accent: var(--c-accent);
+  --color-accent-soft: var(--c-accent-soft);
+  --color-on-accent: var(--c-on-accent);
+  --color-danger: var(--c-danger);
+  --color-danger-soft: var(--c-danger-soft);
+  --color-pin: var(--c-pin);
+  --color-pin-deep: var(--c-pin-deep);
+
+  --radius-xs: var(--r-xs);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-xl: var(--r-xl);
+  --radius-pill: var(--r-pill);
+
+  --shadow-soft: var(--shadow-soft);
+  --shadow-float: var(--shadow-float);
+
+  --font-sans: var(--font-sans);
+}
+
+/* ==========================================================================
+   Base
+   ========================================================================== */
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  height: 100%;
+}
+
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--c-bg);
+  color: var(--c-ink);
+  font-family: var(--font-sans);
+  font-size: 17px;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior: none;
+  overflow: hidden;
+}
+
+/* Never let a long place name or a wide sheet introduce sideways scroll. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+/* 16px minimum keeps iOS from zooming the viewport on focus. */
+input,
+textarea,
+select {
+  font-size: max(16px, 1em);
+}
+
+:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: var(--c-accent-soft);
+}
+
+/* Mapbox's own controls & attribution, re-skinned to sit quietly in the UI. */
+.mapboxgl-ctrl-attrib.mapboxgl-compact {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+}
+
+@media (prefers-color-scheme: dark) {
+  .mapboxgl-ctrl-attrib.mapboxgl-compact {
+    background: rgba(0, 0, 0, 0.45);
+  }
+  .mapboxgl-ctrl-attrib a,
+  .mapboxgl-ctrl-attrib {
+    color: rgba(255, 255, 255, 0.7) !important;
+  }
+}
+
+/* Lift Mapbox's logo and attribution clear of the floating tab bar. */
+.mapboxgl-ctrl-bottom-right,
+.mapboxgl-ctrl-bottom-left {
+  z-index: 1 !important;
+  bottom: var(--map-chrome-bottom, 0px) !important;
+  transition: bottom 260ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+/* ==========================================================================
+   The pin you drag when placing or correcting a location
+   ========================================================================== */
+
+/* A classic teardrop: a square with three rounded corners, rotated so the
+   square corner points straight down at the coordinate it marks. */
+.picker-pin {
+  position: relative;
+  width: 34px;
+  height: 44px;
+  cursor: grab;
+  touch-action: none;
+  filter: drop-shadow(0 5px 10px rgba(10, 14, 22, 0.45));
+}
+
+.picker-pin:active {
+  cursor: grabbing;
+}
+
+.picker-pin__body {
+  position: absolute;
+  left: 50%;
+  /* 44px tall minus the 18.4px from centre to tip once rotated. */
+  top: 25.6px;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: linear-gradient(180deg, #ff7a5c 0%, #e22e0c 100%);
+  border: 2.5px solid #fff;
+}
+
+.picker-pin__body::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.picker-pin__pulse {
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  width: 16px;
+  height: 7px;
+  margin-left: -8px;
+  border-radius: 50%;
+  background: rgba(226, 46, 12, 0.3);
+  animation: picker-pulse 1.9s ease-in-out infinite;
+}
+
+@keyframes picker-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.7);
+    opacity: 0.15;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .picker-pin__pulse {
+    animation: none;
+  }
+}
+
+.mapboxgl-canvas:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: -4px;
+}
+
+/* ==========================================================================
+   Utilities
+   ========================================================================== */
+
+@layer utilities {
+  .safe-t {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .safe-b {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .safe-x {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+
+  /* Tasteful translucency: one blur strength, used sparingly — the tab bar,
+     the pin preview, action sheets. Things that float over the globe. */
+  .glass {
+    background: var(--c-sheet);
+    backdrop-filter: saturate(180%) blur(28px);
+    -webkit-backdrop-filter: saturate(180%) blur(28px);
+  }
+
+  @supports not (backdrop-filter: blur(1px)) {
+    .glass {
+      background: var(--c-sheet-solid);
+    }
+  }
+
+  /* Presented sheets are opaque, the way iOS presents them. Content behind a
+     modal should be dimmed and out of the way, never competing for the eye. */
+  .sheet-surface {
+    background: var(--c-sheet-solid);
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Momentum scrolling inside sheets without dragging the page behind. */
+  .scroll-area {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* Two-line clamp used by cards and notes. */
+  .clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Long, unbroken place names must wrap rather than widen the layout. */
+  .wrap-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+}
+
+/* A single shared press feel for tappable surfaces. */
+.pressable {
+  transition: transform 140ms cubic-bezier(0.2, 0.8, 0.3, 1), opacity 140ms ease;
+}
+.pressable:active {
+  transform: scale(0.97);
+  opacity: 0.86;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pressable,
+  .pressable:active {
+    transition: none;
+    transform: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Skeleton shimmer for loading media. */
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.skeleton {
+  background-image: linear-gradient(
+    100deg,
+    var(--c-fill) 25%,
+    var(--c-fill-strong) 45%,
+    var(--c-fill) 65%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
