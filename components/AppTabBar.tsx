@@ -1,16 +1,16 @@
 "use client";
 
 import { forwardRef } from "react";
-import { Globe2, List, Plus } from "lucide-react";
+import { Globe2, History, List, Plus } from "lucide-react";
 
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 
-export type AppMode = "globe" | "places";
+export type AppMode = "globe" | "timeline" | "places";
 
 /**
- * The app's entire navigation: two modes and one way to add a place, floating
- * within thumb reach and clear of the home indicator. No desktop navbar, no
- * hidden menus — everything important is one tap from here.
+ * The app's entire navigation: three ways to read the same history and one way
+ * to add to it, floating within thumb reach and clear of the home indicator.
+ * No desktop navbar, no hidden menus — everything important is one tap away.
  */
 export const AppTabBar = forwardRef<
   HTMLDivElement,
@@ -42,6 +42,7 @@ export const AppTabBar = forwardRef<
           className="glass min-w-0 flex-1 border border-glass-border shadow-float"
           options={[
             { value: "globe", label: "Globe", icon: <Globe2 size={16} strokeWidth={2.1} /> },
+            { value: "timeline", label: "Timeline", icon: <History size={16} strokeWidth={2.1} /> },
             { value: "places", label: "Places", icon: <List size={16} strokeWidth={2.1} /> },
           ]}
         />

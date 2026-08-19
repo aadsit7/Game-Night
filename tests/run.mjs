@@ -15,6 +15,7 @@ const suites = [
   "sheet-mapping.test.mjs",
   "sheet-queue.test.mjs",
   "sheet-connection.test.mjs",
+  "timeline.test.mjs",
 ];
 
 let failed = false;

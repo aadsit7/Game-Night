@@ -3,15 +3,19 @@
 A personal, visual history of everywhere you’ve been — pinned to an interactive
 Earth. Built iPhone-first.
 
-Two ways to look at the same travel history:
+Three ways to look at the same travel history:
 
 - **Globe** — a full-screen 3D Earth you can spin and zoom from whole-planet
   down to street level, with every saved place pinned and nearby pins clustered.
+- **Timeline** — the same history as a chronology, oldest first, with a
+  scrubber whose bars are the years themselves: as tall as that year was busy,
+  so the shape of the control shows where the travelling happened before you
+  touch it. Drag it to move through the years; scrolling drags it back.
 - **Places** — a searchable, sortable collection of the same records, as a
   travel journal rather than a table.
 
 Adding, pinning, editing, moving and deleting a place are the core of the app,
-and every change lands in both views on the same frame.
+and every change lands in all three views on the same frame.
 
 ---
 
@@ -42,7 +46,7 @@ or mocked.
 | `npm run build`     | Production build                                |
 | `npm run typecheck` | `tsc --noEmit`                                  |
 | `npm run lint`      | ESLint                                          |
-| `npm run test`      | Paint expressions, sheet mapping, write queue, connection |
+| `npm run test`      | Paint expressions, sheet mapping, write queue, connection, timeline |
 | `npm run check`     | All four, in order                              |
 | `npm run icons`     | Regenerates the app icons from `scripts/`       |
 | `npm run countries` | Rebuilds `public/geo/countries.json` from Natural Earth |
@@ -156,10 +160,12 @@ browser's IndexedDB and would be meaningless elsewhere, so only real image
 
 ### One collection, two views
 
-`PlacesProvider` holds the only copy of the travel data. The globe and the list
-both read from it; neither keeps its own. That is what makes "rename it in the
-list and the pin's label changes" true by construction rather than by
-remembering to sync.
+`PlacesProvider` holds the only copy of the travel data. The globe, the
+timeline and the list all read from it; none keeps its own. That is what makes
+"rename it in the list and the pin's label changes" true by construction rather
+than by remembering to sync. The timeline's chronology is derived in
+`lib/timeline/buildTimeline.ts` — a pure function over that same array, so the
+date reasoning is testable without a browser.
 
 ```
 lib/store/PlacesProvider.tsx   ← the single source of truth
@@ -293,6 +299,7 @@ components/
   AppShell.tsx           the one place that knows what is on screen
   AppTabBar.tsx          Globe | Places + the add button
   globe/                 TravelGlobe, overlays, preview sheet, fallback
+  timeline/              chronology view and the year scrubber
   places/                list, cards, search, filters, stats
   sync/                  setup screen, connection form, settings sheet
   place/                 detail, form, location search, photos, pin bar

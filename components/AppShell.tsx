@@ -22,6 +22,7 @@ import { PlaceFormSheet } from "@/components/place/PlaceFormSheet";
 import { PlacesView } from "@/components/places/PlacesView";
 import { SheetSetupScreen } from "@/components/sync/SheetSetupScreen";
 import { SyncSettingsSheet } from "@/components/sync/SyncSettingsSheet";
+import { TimelineView } from "@/components/timeline/TimelineView";
 import { ActionSheet } from "@/components/ui/ActionSheet";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Toast, type ToastMessage } from "@/components/ui/Toast";
@@ -681,6 +682,31 @@ export function AppShell() {
               onShowGlobe={() => setMode("globe")}
               syncState={sync.state}
               onOpenSync={() => setSyncOpen(true)}
+            />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* The timeline slides over the globe the same way Places does. */}
+      <AnimatePresence>
+        {mode === "timeline" ? (
+          <motion.div
+            key="timeline"
+            className="absolute inset-0 z-20"
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 22 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 22 }}
+            transition={
+              reduceMotion ? { duration: 0 } : { duration: 0.3, ease: [0.2, 0.8, 0.3, 1] }
+            }
+          >
+            <TimelineView
+              places={places}
+              loading={status === "loading"}
+              bottomInset={tabBarHeight + 16}
+              onOpenPlace={openDetail}
+              onAdd={startCreate}
+              onShowGlobe={() => setMode("globe")}
             />
           </motion.div>
         ) : null}
