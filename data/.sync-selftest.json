@@ -1,27 +1,27 @@
 {
   "version": 1,
-  "updatedAt": "2026-08-19T00:00:00.000Z",
+  "updatedAt": "2026-08-19T01:31:00.000Z",
   "places": [
     {
       "id": "selftest-1",
-      "name": "Þingvellir",
-      "city": "Bláskógabyggð",
-      "country": "Iceland",
-      "countryCode": "IS",
-      "latitude": 64.2559,
-      "longitude": -21.13,
-      "notes": "Non-ASCII round-trip check — Þ, á, —, 京都.",
-      "createdAt": "2026-08-19T00:00:00.000Z",
-      "updatedAt": "2026-08-19T00:00:00.000Z"
+      "name": "Basílica de la Sagrada Família",
+      "city": "Barcelona",
+      "country": "Spain",
+      "countryCode": "ES",
+      "latitude": 41.4036,
+      "longitude": 2.1744,
+      "notes": "Non-ASCII round-trip: í, à, —, 東京, Þingvellir.",
+      "createdAt": "2026-08-19T01:31:00.000Z",
+      "updatedAt": "2026-08-19T01:31:00.000Z"
     },
     {
       "id": "selftest-2",
-      "name": "Deleted Place",
-      "latitude": 0,
-      "longitude": 0,
-      "createdAt": "2026-08-19T00:00:00.000Z",
-      "updatedAt": "2026-08-19T00:00:00.000Z",
-      "deletedAt": "2026-08-19T00:00:00.000Z"
+      "name": "Reykjavík",
+      "latitude": 64.1466,
+      "longitude": -21.9426,
+      "createdAt": "2026-08-19T01:31:00.000Z",
+      "updatedAt": "2026-08-19T01:31:00.000Z",
+      "deletedAt": "2026-08-19T01:31:00.000Z"
     }
   ]
 }
