@@ -19,14 +19,22 @@ and every change lands in both views on the same frame.
 
 ```bash
 npm install
-npm run dev
+npm run mock-sheet   # in one terminal
+npm run dev          # in another
 ```
 
 Open <http://localhost:3000> — and open it in a phone-sized viewport, that’s
 what it’s designed for.
 
+The app reads everything from a Google Sheet, so it needs something to talk to.
+`npm run mock-sheet` serves the same protocol the Apps Script does, against an
+in-memory fixture — connect the app to `http://localhost:8787/` with the access
+code the script prints, and every screen works without touching real data. To
+develop against your own sheet instead, use its `/exec` address.
+
 **There are no API keys to set up.** The map, the place search and the country
-outlines are all keyless; `npm install && npm run dev` is the whole setup.
+outlines are all keyless — the only thing to point the app at is a sheet, real
+or mocked.
 
 | Command             | What it does                                    |
 | ------------------- | ----------------------------------------------- |
@@ -39,6 +47,7 @@ outlines are all keyless; `npm install && npm run dev` is the whole setup.
 | `npm run icons`     | Regenerates the app icons from `scripts/`       |
 | `npm run countries` | Rebuilds `public/geo/countries.json` from Natural Earth |
 | `npm run map-worker` | Copies MapLibre's worker into `public/` (runs automatically) |
+| `npm run mock-sheet` | Local stand-in for the Apps Script, for development |
 
 ### Where the map comes from
 
