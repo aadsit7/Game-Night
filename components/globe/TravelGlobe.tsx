@@ -20,15 +20,16 @@ import {
   LAYER_CLUSTER,
   LAYER_CLUSTER_COUNT,
   LAYER_CLUSTER_GLOW,
+  CITY_LAYERS,
   LAYER_COUNTRY_FILL,
+  LAYER_COUNTRY_LINE,
   LAYER_PIN,
+  LAYER_PIN_DOT,
   MAPBOX_STYLE,
-  PIN_IMAGE,
-  PIN_IMAGE_SELECTED,
   SOURCE_ID,
   hasMapboxToken,
   loadMapbox,
-  registerPinImages,
+  type MapView,
 } from "@/lib/maps/mapbox";
 import { boundsForPlaces, hasValidCoordinates, placeSubtitle } from "@/lib/utils/geo";
 import type { VisitedPlace } from "@/types/place";
@@ -62,6 +63,10 @@ type Props = {
   /** When set, a draggable pin is shown at this position. */
   pickerPosition: GlobePoint | null;
   onPickerChange: (point: GlobePoint, final: boolean) => void;
+  /** Countries paints whole visited countries; Cities shows individual pins. */
+  mapView: MapView;
+  /** Tapping a filled country in Countries mode. */
+  onCountryTap?: (code: string) => void;
   cameraRequest: CameraRequest | null;
   /** Space taken by sheets and the tab bar, so flights centre above them. */
   bottomInset: number;
@@ -70,6 +75,14 @@ type Props = {
 };
 
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+/** Countries and pins are deliberately different hues so neither hides the other. */
+const COUNTRY_COLOR = "#2F6BFF";
+const PIN_COLOR = "#FF5A3C";
+const PIN_COLOR_SELECTED = "#0A84FF";
+
+const COUNTRY_FILL_OPACITY = { countries: 0.55, cities: 0.1 } as const;
+const COUNTRY_LINE_OPACITY = { countries: 0.85, cities: 0 } as const;
 
 /** Label visibility ramp: pins speak for themselves at world scale. */
 const LABEL_RAMP: ExpressionSpecification = [
@@ -106,8 +119,6 @@ const wiredMaps = new WeakSet<MapboxMap>();
  * countries. Runs on every `style.load`, so it must be idempotent.
  */
 function installStyleLayers(map: MapboxMap, data: FeatureCollection): void {
-  registerPinImages(map);
-
   if (map.getSource(SOURCE_ID)) {
     (map.getSource(SOURCE_ID) as GeoJSONSource).setData(data);
   } else {
@@ -138,20 +149,25 @@ function installStyleLayers(map: MapboxMap, data: FeatureCollection): void {
         slot: "middle",
         filter: ["in", ["get", "iso_3166_1"], ["literal", []]] as FilterSpecification,
         paint: {
-          "fill-color": "#FF6A4D",
-          "fill-opacity": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            0,
-            0.16,
-            2.5,
-            0.13,
-            4.5,
-            0.06,
-            6,
-            0,
-          ],
+          "fill-color": COUNTRY_COLOR,
+          "fill-opacity": COUNTRY_FILL_OPACITY.cities,
+          "fill-opacity-transition": { duration: 320 },
+        },
+      });
+    }
+    if (!map.getLayer(LAYER_COUNTRY_LINE)) {
+      map.addLayer({
+        id: LAYER_COUNTRY_LINE,
+        type: "line",
+        source: "country-boundaries",
+        "source-layer": "country_boundaries",
+        slot: "middle",
+        filter: ["in", ["get", "iso_3166_1"], ["literal", []]] as FilterSpecification,
+        paint: {
+          "line-color": COUNTRY_COLOR,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 0, 0.6, 4, 1.4],
+          "line-opacity": 0,
+          "line-opacity-transition": { duration: 320 },
         },
       });
     }
@@ -208,6 +224,25 @@ function installStyleLayers(map: MapboxMap, data: FeatureCollection): void {
     });
   }
 
+  if (!map.getLayer(LAYER_PIN_DOT)) {
+    map.addLayer({
+      id: LAYER_PIN_DOT,
+      type: "circle",
+      source: SOURCE_ID,
+      slot: "top",
+      filter: ["!", ["has", "point_count"]],
+      paint: {
+        // Small, round and dense on purpose: a hundred places should still
+        // read as a constellation rather than a pile of overlapping markers.
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 4.5, 4, 6, 10, 8],
+        "circle-color": PIN_COLOR,
+        "circle-stroke-width": 2,
+        "circle-stroke-color": "rgba(255,255,255,0.95)",
+        "circle-radius-transition": { duration: 180 },
+      },
+    });
+  }
+
   if (!map.getLayer(LAYER_PIN)) {
     map.addLayer({
       id: LAYER_PIN,
@@ -216,19 +251,14 @@ function installStyleLayers(map: MapboxMap, data: FeatureCollection): void {
       slot: "top",
       filter: ["!", ["has", "point_count"]],
       layout: {
-        "icon-image": PIN_IMAGE,
-        "icon-anchor": "bottom",
-        "icon-allow-overlap": true,
-        "icon-ignore-placement": true,
-        "icon-size": 1,
         "text-field": ["get", "name"],
         "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
         "text-size": 12.5,
         "text-anchor": "top",
-        "text-offset": [0, 0.5],
+        "text-offset": [0, 0.7],
         "text-max-width": 9,
-        "text-optional": true,
         "text-padding": 6,
+        "text-allow-overlap": false,
       },
       paint: {
         "text-color": "#14161C",
@@ -264,6 +294,8 @@ export function TravelGlobe({
   pickMode,
   pickerPosition,
   onPickerChange,
+  mapView,
+  onCountryTap,
   cameraRequest,
   bottomInset,
   onStatusChange,
@@ -289,6 +321,8 @@ export function TravelGlobe({
   const onPointPickedRef = useRef(onPointPicked);
   const onPickerChangeRef = useRef(onPickerChange);
   const pickModeRef = useRef(pickMode);
+  const mapViewRef = useRef(mapView);
+  const onCountryTapRef = useRef(onCountryTap);
   const bottomInsetRef = useRef(bottomInset);
   const reduceMotionRef = useRef(reduceMotion);
   const placesRef = useRef(places);
@@ -301,6 +335,8 @@ export function TravelGlobe({
     onPointPickedRef.current = onPointPicked;
     onPickerChangeRef.current = onPickerChange;
     pickModeRef.current = pickMode;
+    mapViewRef.current = mapView;
+    onCountryTapRef.current = onCountryTap;
     bottomInsetRef.current = bottomInset;
     reduceMotionRef.current = reduceMotion;
     placesRef.current = places;
@@ -462,6 +498,22 @@ export function TravelGlobe({
           return;
         }
 
+        // In Countries mode a tap means "show me this country", so pins and
+        // clusters are not in play at all.
+        if (mapViewRef.current === "countries") {
+          if (!map.getLayer(LAYER_COUNTRY_FILL)) return;
+          const hit = map.queryRenderedFeatures(event.point, {
+            layers: [LAYER_COUNTRY_FILL],
+          })[0];
+          const code = hit?.properties?.iso_3166_1;
+          if (code) {
+            onCountryTapRef.current?.(String(code));
+          } else {
+            onDeselectRef.current();
+          }
+          return;
+        }
+
         // Query a small box rather than one pixel: fingers aren't precise.
         const pad = 14;
         const box: [[number, number], [number, number]] = [
@@ -471,7 +523,7 @@ export function TravelGlobe({
         const layers = INTERACTIVE_LAYERS.filter((id) => map?.getLayer(id));
         const features = layers.length > 0 ? map.queryRenderedFeatures(box, { layers }) : [];
 
-        const pin = features.find((feature) => feature.layer?.id === LAYER_PIN);
+        const pin = features.find((feature) => feature.layer?.id === LAYER_PIN_DOT);
         if (pin?.properties?.id) {
           onSelectRef.current(String(pin.properties.id));
           return;
@@ -576,13 +628,13 @@ export function TravelGlobe({
             .filter((code): code is string => Boolean(code && code.length === 2)),
         ),
       ];
-      if (map.getLayer(LAYER_COUNTRY_FILL)) {
-        map.setFilter(LAYER_COUNTRY_FILL, [
-          "in",
-          ["get", "iso_3166_1"],
-          ["literal", codes],
-        ] as FilterSpecification);
-      }
+      const filter = [
+        "in",
+        ["get", "iso_3166_1"],
+        ["literal", codes],
+      ] as FilterSpecification;
+      if (map.getLayer(LAYER_COUNTRY_FILL)) map.setFilter(LAYER_COUNTRY_FILL, filter);
+      if (map.getLayer(LAYER_COUNTRY_LINE)) map.setFilter(LAYER_COUNTRY_LINE, filter);
     } catch {
       // Highlighting is optional.
     }
@@ -622,7 +674,7 @@ export function TravelGlobe({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !styleReady || !map.getLayer(LAYER_PIN)) return;
+    if (!map || !styleReady || !map.getLayer(LAYER_PIN_DOT)) return;
 
     const isSelected: ExpressionSpecification = [
       "==",
@@ -631,29 +683,75 @@ export function TravelGlobe({
     ];
 
     try {
-      map.setLayoutProperty(LAYER_PIN, "icon-image", [
+      map.setPaintProperty(LAYER_PIN_DOT, "circle-color", [
         "case",
         isSelected,
-        PIN_IMAGE_SELECTED,
-        PIN_IMAGE,
+        PIN_COLOR_SELECTED,
+        PIN_COLOR,
       ] as ExpressionSpecification);
-      map.setLayoutProperty(LAYER_PIN, "symbol-sort-key", [
+
+      map.setPaintProperty(LAYER_PIN_DOT, "circle-radius", [
         "case",
         isSelected,
-        1,
-        0,
+        11,
+        ["interpolate", ["linear"], ["zoom"], 1, 4.5, 4, 6, 10, 8],
       ] as ExpressionSpecification);
+
+      map.setPaintProperty(LAYER_PIN_DOT, "circle-stroke-width", [
+        "case",
+        isSelected,
+        3,
+        2,
+      ] as ExpressionSpecification);
+
       // The selected place always shows its name, whatever the zoom.
-      map.setPaintProperty(LAYER_PIN, "text-opacity", [
-        "case",
-        isSelected,
-        1,
-        LABEL_RAMP,
-      ] as ExpressionSpecification);
+      if (map.getLayer(LAYER_PIN)) {
+        map.setPaintProperty(LAYER_PIN, "text-opacity", [
+          "case",
+          isSelected,
+          1,
+          LABEL_RAMP,
+        ] as ExpressionSpecification);
+        map.setLayoutProperty(LAYER_PIN, "symbol-sort-key", [
+          "case",
+          isSelected,
+          1,
+          0,
+        ] as ExpressionSpecification);
+      }
     } catch {
       // Style may be mid-reload.
     }
   }, [selectedId, styleReady]);
+
+  /* ---------------------------------------------------------------------- */
+  /* Countries vs Cities                                                      */
+  /* ---------------------------------------------------------------------- */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleReady) return;
+
+    try {
+      if (map.getLayer(LAYER_COUNTRY_FILL)) {
+        map.setPaintProperty(LAYER_COUNTRY_FILL, "fill-opacity", COUNTRY_FILL_OPACITY[mapView]);
+      }
+      if (map.getLayer(LAYER_COUNTRY_LINE)) {
+        map.setPaintProperty(LAYER_COUNTRY_LINE, "line-opacity", COUNTRY_LINE_OPACITY[mapView]);
+      }
+      for (const layer of CITY_LAYERS) {
+        if (map.getLayer(layer)) {
+          map.setLayoutProperty(
+            layer,
+            "visibility",
+            mapView === "cities" ? "visible" : "none",
+          );
+        }
+      }
+    } catch {
+      // Style may be mid-reload.
+    }
+  }, [mapView, styleReady]);
 
   /* ---------------------------------------------------------------------- */
   /* Camera requests                                                          */

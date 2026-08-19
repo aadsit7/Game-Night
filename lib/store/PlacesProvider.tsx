@@ -14,6 +14,8 @@ import {
 import { buildSamplePlaces } from "@/data/samplePlaces";
 import { PersistenceError, placeRepository } from "@/lib/storage/placeRepository";
 import { deletePhotos } from "@/lib/storage/photoStore";
+import { useGithubSync, type SyncState } from "@/lib/sync/useGithubSync";
+import type { SyncSettings } from "@/lib/sync/syncSettings";
 import type { NewPlaceInput, PlaceChanges, VisitedPlace } from "@/types/place";
 
 /**
@@ -45,6 +47,13 @@ type PlacesContextValue = {
   /** Called once an undo window closes, to release the record's photo blobs. */
   discardPlacePhotos: (place: VisitedPlace) => void;
   reload: () => Promise<void>;
+  /** Cross-device sync through the GitHub repository. */
+  sync: {
+    state: SyncState;
+    settings: SyncSettings | null;
+    updateSettings: (settings: SyncSettings) => void;
+    syncNow: () => void;
+  };
 };
 
 const PlacesContext = createContext<PlacesContextValue | null>(null);
@@ -104,6 +113,18 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
     void load();
   }, [load]);
 
+  /**
+   * The repository is also the storage: another device's changes arrive here,
+   * and this device's go back the same way. Reading needs no credentials;
+   * writing needs a token the owner has pasted into this browser.
+   */
+  const { settings, updateSettings, syncState, schedulePush, syncNow } = useGithubSync({
+    ready: status !== "loading",
+    onMerged: useCallback((merged: VisitedPlace[]) => {
+      if (mounted.current) setPlaces(merged);
+    }, []),
+  });
+
   /** Re-reads from disk after a failed write so the UI never shows a lie. */
   const reconcile = useCallback(async () => {
     try {
@@ -119,13 +140,14 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       try {
         const created = await placeRepository.create(input);
         setPlaces((current) => [created, ...current]);
+        schedulePush();
         return created;
       } catch (error) {
         await reconcile();
         throw new Error(friendlyMessage(error, "That place couldn’t be saved."));
       }
     },
-    [reconcile],
+    [reconcile, schedulePush],
   );
 
   const updatePlace = useCallback(
@@ -141,13 +163,14 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
         const removed = photoRefs(previous).filter((ref) => !photoRefs(updated).includes(ref));
         if (removed.length > 0) void deletePhotos(removed);
 
+        schedulePush();
         return updated;
       } catch (error) {
         await reconcile();
         throw new Error(friendlyMessage(error, "Those changes couldn’t be saved."));
       }
     },
-    [places, reconcile],
+    [places, reconcile, schedulePush],
   );
 
   const movePlace = useCallback(
@@ -155,13 +178,14 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       try {
         const updated = await placeRepository.updateCoordinates(id, latitude, longitude);
         setPlaces((current) => current.map((place) => (place.id === id ? updated : place)));
+        schedulePush();
         return updated;
       } catch (error) {
         await reconcile();
         throw new Error(friendlyMessage(error, "That pin couldn’t be moved."));
       }
     },
-    [reconcile],
+    [reconcile, schedulePush],
   );
 
   const deletePlace = useCallback(
@@ -171,13 +195,14 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       setPlaces((current) => current.filter((place) => place.id !== id));
       try {
         await placeRepository.delete(id);
+        schedulePush();
         return removed;
       } catch (error) {
         await reconcile();
         throw new Error(friendlyMessage(error, "That place couldn’t be deleted."));
       }
     },
-    [places, reconcile],
+    [places, reconcile, schedulePush],
   );
 
   const restorePlace = useCallback(
@@ -185,11 +210,12 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       try {
         await placeRepository.restore(place);
         await reconcile();
+        schedulePush();
       } catch (error) {
         throw new Error(friendlyMessage(error, "That place couldn’t be restored."));
       }
     },
-    [reconcile],
+    [reconcile, schedulePush],
   );
 
   const discardPlacePhotos = useCallback((place: VisitedPlace) => {
@@ -243,6 +269,7 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       restorePlace,
       discardPlacePhotos,
       reload: load,
+      sync: { state: syncState, settings, updateSettings, syncNow },
     }),
     [
       places,
@@ -258,6 +285,10 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       restorePlace,
       discardPlacePhotos,
       load,
+      syncState,
+      settings,
+      updateSettings,
+      syncNow,
     ],
   );
 

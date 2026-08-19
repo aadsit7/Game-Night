@@ -2,15 +2,17 @@
 
 import { useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Compass, MapPin, Plus, SearchX } from "lucide-react";
+import { Cloud, CloudOff, Compass, Loader2, MapPin, Plus, RefreshCw, SearchX } from "lucide-react";
 
 import { PlaceCard } from "@/components/places/PlaceCard";
+import { TravelStats } from "@/components/places/TravelStats";
 import { PlacesFilters } from "@/components/places/PlacesFilters";
 import { PlacesSearch } from "@/components/places/PlacesSearch";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import { visitTimestamp } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
+import type { SyncState } from "@/lib/sync/useGithubSync";
 import type { PlaceSort, VisitedPlace } from "@/types/place";
 
 /**
@@ -69,6 +71,8 @@ export function PlacesView({
   onPlaceActions,
   onAdd,
   onShowGlobe,
+  syncState,
+  onOpenSync,
 }: {
   places: VisitedPlace[];
   countries: Array<{ key: string; label: string; code?: string; count: number }>;
@@ -79,6 +83,8 @@ export function PlacesView({
   onPlaceActions: (id: string) => void;
   onAdd: () => void;
   onShowGlobe: () => void;
+  syncState: SyncState;
+  onOpenSync: () => void;
 }) {
   const reduceMotion = useReducedMotion();
   const [query, setQuery] = useState("");
@@ -111,22 +117,24 @@ export function PlacesView({
           className="pb-4"
           style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 14px)" }}
         >
-          <h1 className="text-[34px] font-bold leading-[1.1] tracking-[-0.03em] text-ink">
-            My Places
-          </h1>
-          <p className="mt-1 text-[15px] text-ink-2">
-            {loading ? (
-              <span className="inline-block h-4 w-40 animate-pulse rounded bg-fill align-middle" />
-            ) : (
-              <>
-                {stats.places} {stats.places === 1 ? "place" : "places"}
-                <span aria-hidden="true" className="mx-1.5 text-ink-3">
-                  ·
-                </span>
-                {stats.countries} {stats.countries === 1 ? "country" : "countries"}
-              </>
-            )}
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <h1 className="text-[34px] font-bold leading-[1.1] tracking-[-0.03em] text-ink">
+              My Places
+            </h1>
+            <SyncChip state={syncState} onPress={onOpenSync} />
+          </div>
+
+          {loading ? (
+            <div className="mt-3 grid grid-cols-3 gap-2.5" aria-hidden="true">
+              {[0, 1, 2].map((index) => (
+                <div key={index} className="skeleton h-[58px] rounded-md" />
+              ))}
+            </div>
+          ) : !isEmpty ? (
+            <div className="mt-3">
+              <TravelStats places={stats.places} countries={stats.countries} />
+            </div>
+          ) : null}
         </header>
 
         {!isEmpty && (
@@ -250,5 +258,40 @@ export function PlacesView({
         countries={countries}
       />
     </div>
+  );
+}
+
+/**
+ * A quiet indicator of where the data stands: reading-only, saving, up to
+ * date, or stuck. Tapping it opens the sync settings.
+ */
+function SyncChip({ state, onPress }: { state: SyncState; onPress: () => void }) {
+  const busy = state.phase === "pulling" || state.phase === "pushing";
+  const Icon = busy ? Loader2 : state.phase === "error" ? CloudOff : state.canWrite ? Cloud : RefreshCw;
+
+  const label =
+    state.phase === "error"
+      ? "Sync problem"
+      : busy
+        ? "Syncing"
+        : state.canWrite
+          ? state.pendingWrite
+            ? "Saving"
+            : "Synced"
+          : "This device";
+
+  return (
+    <button
+      type="button"
+      onClick={onPress}
+      aria-label={`Sync: ${label}. Open sync settings.`}
+      className={cn(
+        "pressable mt-1.5 inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-pill px-3 text-[13px] font-medium",
+        state.phase === "error" ? "bg-danger-soft text-danger" : "bg-fill text-ink-2",
+      )}
+    >
+      <Icon size={14} aria-hidden="true" className={busy ? "animate-spin" : undefined} />
+      {label}
+    </button>
   );
 }

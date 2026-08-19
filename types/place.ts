@@ -24,6 +24,13 @@ export type VisitedPlace = {
   photos?: string[];
   createdAt: string;
   updatedAt: string;
+  /**
+   * Tombstone. A deleted place is kept as a record with this set, rather than
+   * dropped, so the deletion can travel to other devices — otherwise a device
+   * that still has the row would simply put it back on the next sync.
+   * Everything above the repository filters these out.
+   */
+  deletedAt?: string;
 };
 
 /** Fields a caller supplies when creating a place; the rest is generated. */

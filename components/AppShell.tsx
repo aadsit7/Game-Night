@@ -5,11 +5,9 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Globe2, MapPin, Pencil, Trash2 } from "lucide-react";
 
 import { AppTabBar, type AppMode } from "@/components/AppTabBar";
-import {
-  GlobeEmptyState,
-  GlobeStatsPill,
-  PickModeBanner,
-} from "@/components/globe/GlobeOverlay";
+import { GlobeEmptyState, PickModeBanner } from "@/components/globe/GlobeOverlay";
+import { GlobeSearch } from "@/components/globe/GlobeSearch";
+import { MapViewToggle } from "@/components/globe/MapViewToggle";
 import { PlacePreviewSheet } from "@/components/globe/PlacePreviewSheet";
 import {
   TravelGlobe,
@@ -22,11 +20,12 @@ import { LocationSearchSheet } from "@/components/place/LocationSearchSheet";
 import { PlaceDetailSheet } from "@/components/place/PlaceDetailSheet";
 import { PlaceFormSheet } from "@/components/place/PlaceFormSheet";
 import { PlacesView } from "@/components/places/PlacesView";
+import { SyncSettingsSheet } from "@/components/sync/SyncSettingsSheet";
 import { ActionSheet } from "@/components/ui/ActionSheet";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Toast, type ToastMessage } from "@/components/ui/Toast";
 import { reverseGeocode } from "@/lib/maps/geocoding";
-import { hasMapboxToken } from "@/lib/maps/mapbox";
+import { hasMapboxToken, type MapView } from "@/lib/maps/mapbox";
 import { usePlaces } from "@/lib/store/PlacesProvider";
 import {
   applyLocation,
@@ -36,6 +35,7 @@ import {
   isDraftDirty,
   type PlaceDraft,
 } from "@/lib/store/draft";
+import { boundsForPlaces } from "@/lib/utils/geo";
 import { createId } from "@/lib/utils/id";
 import type { LocationResult, VisitedPlace } from "@/types/place";
 
@@ -78,17 +78,20 @@ export function AppShell() {
     deletePlace,
     restorePlace,
     discardPlacePhotos,
+    sync,
   } = usePlaces();
 
   const reduceMotion = useReducedMotion();
 
   const [mode, setMode] = useState<AppMode>("globe");
+  const [mapView, setMapView] = useState<MapView>("cities");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [overlays, setOverlays] = useState<Overlay[]>([]);
   const [actionsFor, setActionsFor] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [discardPrompt, setDiscardPrompt] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
   const [draft, setDraft] = useState<PlaceDraft>(emptyDraft);
@@ -196,6 +199,37 @@ export function AppShell() {
       flyTo(place, 6.5);
     },
     [getPlace, flyTo],
+  );
+
+  /**
+   * Tapping a filled country is a request to see inside it: frame that
+   * country's places and switch to the pin view, the way a travel map goes
+   * from "where in the world" to "where exactly".
+   */
+  const handleCountryTap = useCallback(
+    (code: string) => {
+      const inCountry = places.filter(
+        (place) => place.countryCode?.toUpperCase() === code.toUpperCase(),
+      );
+      if (inCountry.length === 0) return;
+
+      setMapView("cities");
+      const bounds = boundsForPlaces(inCountry);
+      const centre = bounds
+        ? {
+            longitude: (bounds[0][0] + bounds[1][0]) / 2,
+            latitude: (bounds[0][1] + bounds[1][1]) / 2,
+          }
+        : { longitude: inCountry[0].longitude, latitude: inCountry[0].latitude };
+
+      setCamera({
+        token: Date.now(),
+        longitude: centre.longitude,
+        latitude: centre.latitude,
+        zoom: inCountry.length === 1 ? 6.5 : 4.2,
+      });
+    },
+    [places],
   );
 
   const handleDeselect = useCallback(() => {
@@ -545,6 +579,8 @@ export function AppShell() {
           pickMode={Boolean(pinSession)}
           pickerPosition={pinSession?.position ?? null}
           onPickerChange={handlePickerChange}
+          mapView={mapView}
+          onCountryTap={handleCountryTap}
           cameraRequest={camera}
           bottomInset={bottomInset}
           onStatusChange={setGlobeStatus}
@@ -552,16 +588,13 @@ export function AppShell() {
         />
       </div>
 
-      <GlobeStatsPill
-        places={stats.places}
-        countries={stats.countries}
-        visible={
-          mode === "globe" &&
-          globeStatus !== "failed" &&
-          !pinSession &&
-          overlays.length === 0 &&
-          !loadError
-        }
+      <GlobeSearch
+        places={places}
+        // Searching saved places doesn't need Mapbox, so this stays available
+        // even when the map itself can't load.
+        visible={mode === "globe" && !pinSession && overlays.length === 0 && !loadError}
+        onSelect={showOnGlobe}
+        onOpenSettings={() => setSyncOpen(true)}
       />
 
       {loadError ? (
@@ -619,10 +652,25 @@ export function AppShell() {
               onPlaceActions={setActionsFor}
               onAdd={startCreate}
               onShowGlobe={() => setMode("globe")}
+              syncState={sync.state}
+              onOpenSync={() => setSyncOpen(true)}
             />
           </motion.div>
         ) : null}
       </AnimatePresence>
+
+      <MapViewToggle
+        value={mapView}
+        onChange={setMapView}
+        visible={
+          mode === "globe" &&
+          globeStatus !== "failed" &&
+          !pinSession &&
+          overlays.length === 0 &&
+          places.length > 0
+        }
+        bottomOffset={tabBarHeight + (previewVisible ? 176 : 8)}
+      />
 
       <AppTabBar
         ref={tabBarRef}
@@ -792,6 +840,15 @@ export function AppShell() {
           setDraft(draftBaseline);
           popOverlay();
         }}
+      />
+
+      <SyncSettingsSheet
+        open={syncOpen}
+        onClose={() => setSyncOpen(false)}
+        settings={sync.settings}
+        state={sync.state}
+        onSave={sync.updateSettings}
+        onSyncNow={sync.syncNow}
       />
 
       <Toast

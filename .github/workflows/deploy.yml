@@ -3,6 +3,10 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+    # Saving a place commits to data/, which is storage rather than source —
+    # rebuilding and redeploying the whole site on every edit would be waste.
+    paths-ignore:
+      - "data/**"
   workflow_dispatch:
 
 permissions:

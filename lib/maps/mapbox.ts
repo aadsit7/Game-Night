@@ -18,10 +18,25 @@ export const SOURCE_ID = "visited-places";
 export const LAYER_CLUSTER_GLOW = "visited-cluster-glow";
 export const LAYER_CLUSTER = "visited-cluster";
 export const LAYER_CLUSTER_COUNT = "visited-cluster-count";
-export const LAYER_PIN = "visited-pin";
+export const LAYER_PIN_DOT = "visited-pin-dot";
+export const LAYER_PIN = "visited-pin-label";
 export const LAYER_COUNTRY_FILL = "visited-country-fill";
+export const LAYER_COUNTRY_LINE = "visited-country-line";
 
-export const INTERACTIVE_LAYERS = [LAYER_CLUSTER, LAYER_CLUSTER_GLOW, LAYER_PIN];
+/** Layers a tap can land on, in the order the tap handler considers them. */
+export const INTERACTIVE_LAYERS = [LAYER_PIN_DOT, LAYER_CLUSTER, LAYER_CLUSTER_GLOW];
+
+/** Everything that belongs to the city-pin view, hidden in Countries mode. */
+export const CITY_LAYERS = [
+  LAYER_CLUSTER_GLOW,
+  LAYER_CLUSTER,
+  LAYER_CLUSTER_COUNT,
+  LAYER_PIN_DOT,
+  LAYER_PIN,
+];
+
+/** The two ways of reading the map, borrowed from how travel maps are read. */
+export type MapView = "countries" | "cities";
 
 /** Camera the app opens on when there is nothing to frame. */
 export const DEFAULT_CAMERA = { center: [8, 24] as [number, number], zoom: 1.35 };

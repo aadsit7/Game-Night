@@ -18,6 +18,10 @@ export interface PlaceRepository {
   updateCoordinates(id: string, latitude: number, longitude: number): Promise<VisitedPlace>;
   /** Re-inserts a previously deleted record verbatim, preserving its id. */
   restore(place: VisitedPlace): Promise<VisitedPlace>;
+  /** Tombstones included — what a sync layer needs to see. */
+  getAllIncludingDeleted(): Promise<VisitedPlace[]>;
+  /** Overwrites the collection wholesale, e.g. with a merged remote state. */
+  replaceAll(places: VisitedPlace[]): Promise<VisitedPlace[]>;
 }
 
 export class PersistenceError extends Error {
@@ -83,6 +87,7 @@ function sanitize(raw: unknown): VisitedPlace | null {
     photos: photos && photos.length > 0 ? photos : undefined,
     createdAt: trimmed(value.createdAt) ?? now,
     updatedAt: trimmed(value.updatedAt) ?? now,
+    deletedAt: trimmed(value.deletedAt),
   };
 }
 
@@ -171,11 +176,24 @@ class LocalStoragePlaceRepository implements PlaceRepository {
   }
 
   async getAll(): Promise<VisitedPlace[]> {
+    return this.read().filter((place) => !place.deletedAt);
+  }
+
+  async getAllIncludingDeleted(): Promise<VisitedPlace[]> {
     return [...this.read()];
   }
 
+  async replaceAll(places: VisitedPlace[]): Promise<VisitedPlace[]> {
+    const clean = places
+      .map(sanitize)
+      .filter((place): place is VisitedPlace => place !== null);
+    this.write(clean);
+    return clean.filter((place) => !place.deletedAt);
+  }
+
   async getById(id: string): Promise<VisitedPlace | null> {
-    return this.read().find((place) => place.id === id) ?? null;
+    const found = this.read().find((place) => place.id === id);
+    return found && !found.deletedAt ? found : null;
   }
 
   async create(input: NewPlaceInput): Promise<VisitedPlace> {
@@ -193,7 +211,7 @@ class LocalStoragePlaceRepository implements PlaceRepository {
   async update(id: string, changes: PlaceChanges): Promise<VisitedPlace> {
     const places = this.read();
     const index = places.findIndex((place) => place.id === id);
-    if (index === -1) {
+    if (index === -1 || places[index].deletedAt) {
       throw new PersistenceError("That place no longer exists.");
     }
 
@@ -221,10 +239,17 @@ class LocalStoragePlaceRepository implements PlaceRepository {
     return normalized;
   }
 
+  /**
+   * Marks rather than removes. A row that simply vanished locally would be
+   * resurrected by the next sync from a device that still had it.
+   */
   async delete(id: string): Promise<void> {
     const places = this.read();
-    const next = places.filter((place) => place.id !== id);
-    if (next.length === places.length) return;
+    const index = places.findIndex((place) => place.id === id);
+    if (index === -1 || places[index].deletedAt) return;
+    const now = new Date().toISOString();
+    const next = [...places];
+    next[index] = { ...next[index], deletedAt: now, updatedAt: now };
     this.write(next);
   }
 
@@ -236,14 +261,24 @@ class LocalStoragePlaceRepository implements PlaceRepository {
   }
 
   async restore(place: VisitedPlace): Promise<VisitedPlace> {
+    const revived: VisitedPlace = {
+      ...place,
+      deletedAt: undefined,
+      updatedAt: new Date().toISOString(),
+    };
     const places = this.read();
-    if (places.some((existing) => existing.id === place.id)) return place;
-    // Put it back where it was: newest-first ordering is by creation time.
-    const next = [place, ...places].sort(
-      (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
-    );
+    const index = places.findIndex((existing) => existing.id === place.id);
+
+    const next = [...places];
+    if (index === -1) {
+      next.unshift(revived);
+    } else {
+      next[index] = revived;
+    }
+    // Newest-first ordering is by creation time.
+    next.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
     this.write(next);
-    return place;
+    return revived;
   }
 
   /** Used once, on first run, to lay down sample data. */

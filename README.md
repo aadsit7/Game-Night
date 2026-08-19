@@ -72,6 +72,39 @@ the Mapbox dashboard.
 
 ---
 
+## Syncing across devices
+
+Your places live in `data/places.json` **in this repository**. That file is the
+shared copy, and it is what makes the same URL show the same travel history on
+a phone, a laptop and a tablet.
+
+**Reading takes no setup.** The repository is public, so opening the site on any
+device pulls the current file — no sign-in, nothing to configure. The app pulls
+on load, whenever the tab regains focus, and on a slow timer while it's open.
+
+**Saving needs a token, once per device.** Open Sync (the ⚙ next to the map
+search, or the chip beside "My Places") and paste a
+[fine-grained token](https://github.com/settings/personal-access-tokens/new)
+scoped to this repository with **Contents: read and write**. Edits are then
+debounced and committed for you — a burst of typing becomes one commit, not one
+per keystroke.
+
+> **Why isn't the token just built in?** Because this is a static site: any
+> value compiled into it is delivered to every visitor's browser and can be read
+> straight out of the page source. A token in the bundle would hand write access
+> to the repository to anyone who opened the URL, and GitHub would revoke it on
+> sight. Keeping it per-device is the only version of this that is actually safe.
+
+Devices reconcile by last-write-wins per record. Deletions are tombstones rather
+than removals, so deleting on one device doesn't get undone by another device
+that still had the row; tombstones are pruned after 90 days. A save that loses a
+race is not dropped — the file is re-read, merged and written again.
+
+Commits to `data/` are excluded from the deploy workflow, so saving a place
+doesn't rebuild the site.
+
+---
+
 ## Architecture
 
 ### One collection, two views
@@ -113,6 +146,19 @@ IndexedDB (`lib/storage/photoStore.ts`), downscaled to 1600px on the way in.
 The travel data never bumps into the 5 MB localStorage ceiling, and the split
 mirrors the shape a cloud backend would take.
 
+### Two ways to read the map
+
+A **Countries / Cities** toggle sits above the tab bar. Countries paints every
+visited country and answers "how much of the world have I seen"; tapping one
+frames its places and drops you into Cities, which shows the individual pins and
+answers "where exactly was I". Search sits over the map itself, covering saved
+places, so finding somewhere you've been never means leaving the globe.
+
+City pins are small circles rather than large teardrops: at a hundred places a
+map should still read as a constellation instead of a pile of overlapping
+markers. Countries and pins use deliberately different hues so neither hides the
+other.
+
 ### The globe
 
 `components/globe/TravelGlobe.tsx` creates the Mapbox instance exactly once and
@@ -147,13 +193,15 @@ components/
   AppShell.tsx           the one place that knows what is on screen
   AppTabBar.tsx          Globe | Places + the add button
   globe/                 TravelGlobe, overlays, preview sheet, fallback
-  places/                list, cards, search, filters
+  places/                list, cards, search, filters, stats
+  sync/                  sync settings sheet
   place/                 detail, form, location search, photos, pin bar
   ui/                    BottomSheet, SegmentedControl, dialogs, imagery
 lib/
   maps/                  mapbox setup, pin sprites, geocoding
   storage/               placeRepository, photoStore
   store/                 PlacesProvider, draft
+  sync/                  GitHub storage, merge rules, sync hook
   hooks/  utils/
 types/place.ts           the VisitedPlace model
 data/samplePlaces.ts     seed data, isolated so it can be deleted outright
