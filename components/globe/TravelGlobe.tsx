@@ -15,14 +15,15 @@ import { GlobeFallback } from "@/components/globe/GlobeFallback";
 import { usePrefersDark, usePrefersReducedMotion } from "@/lib/hooks/useMediaQuery";
 import {
   CITY_LAYERS,
-  CLUSTER_COLOR,
   COUNTRIES_URL,
-  COUNTRY_COLOR,
+  COUNTRY_BEFORE_IDS,
   COUNTRY_FILL_OPACITY,
   COUNTRY_LINE_OPACITY,
+  COUNTRY_LINE_WIDTH,
   DEFAULT_CAMERA,
   FONT_BOLD,
   INTERACTIVE_LAYERS,
+  LABEL_OPACITY_DEFAULT,
   LAYER_CLUSTER,
   LAYER_CLUSTER_COUNT,
   LAYER_CLUSTER_GLOW,
@@ -30,8 +31,6 @@ import {
   LAYER_COUNTRY_LINE,
   LAYER_PIN,
   LAYER_PIN_DOT,
-  LABEL_OPACITY_DEFAULT,
-  PIN_COLOR,
   PIN_RADIUS_DEFAULT,
   SOURCE_COUNTRIES,
   SOURCE_ID,
@@ -40,13 +39,16 @@ import {
   labelOpacity,
   labelSortKey,
   loadMapLibre,
+  overlayFor,
   pinColor,
   pinRadius,
   pinStrokeWidth,
   selectedFilter,
   styleFor,
   type MapView,
+  type OverlayPalette,
 } from "@/lib/maps/basemap";
+import { applyBasemapTheme, paletteFor } from "@/lib/maps/theme";
 import { boundsForPlaces, hasValidCoordinates, placeSubtitle } from "@/lib/utils/geo";
 import type { VisitedPlace } from "@/types/place";
 
@@ -115,7 +117,11 @@ const wiredMaps = new WeakSet<MapLibreMap>();
  * the layers over both. Runs on every `style.load` — including after a
  * light/dark style swap, which discards all of it — so it must be idempotent.
  */
-function installStyleLayers(map: MapLibreMap, data: FeatureCollection): void {
+function installStyleLayers(
+  map: MapLibreMap,
+  data: FeatureCollection,
+  overlay: OverlayPalette,
+): void {
   if (map.getSource(SOURCE_ID)) {
     (map.getSource(SOURCE_ID) as GeoJSONSource).setData(data);
   } else {
@@ -135,32 +141,41 @@ function installStyleLayers(map: MapLibreMap, data: FeatureCollection): void {
     if (!map.getSource(SOURCE_COUNTRIES)) {
       map.addSource(SOURCE_COUNTRIES, { type: "geojson", data: assetUrl(COUNTRIES_URL) });
     }
+    // Under the borders and labels, over the land, water, roads and buildings.
+    const before = COUNTRY_BEFORE_IDS.find((id) => map.getLayer(id));
+
     if (!map.getLayer(LAYER_COUNTRY_FILL)) {
-      map.addLayer({
-        id: LAYER_COUNTRY_FILL,
-        type: "fill",
-        source: SOURCE_COUNTRIES,
-        filter: ["in", ["get", "code"], ["literal", []]] as FilterSpecification,
-        paint: {
-          "fill-color": COUNTRY_COLOR,
-          "fill-opacity": COUNTRY_FILL_OPACITY.cities,
-          "fill-opacity-transition": { duration: 320 },
+      map.addLayer(
+        {
+          id: LAYER_COUNTRY_FILL,
+          type: "fill",
+          source: SOURCE_COUNTRIES,
+          filter: ["in", ["get", "code"], ["literal", []]] as FilterSpecification,
+          paint: {
+            "fill-color": overlay.country,
+            "fill-opacity": COUNTRY_FILL_OPACITY.cities,
+            "fill-opacity-transition": { duration: 320 },
+          },
         },
-      });
+        before,
+      );
     }
     if (!map.getLayer(LAYER_COUNTRY_LINE)) {
-      map.addLayer({
-        id: LAYER_COUNTRY_LINE,
-        type: "line",
-        source: SOURCE_COUNTRIES,
-        filter: ["in", ["get", "code"], ["literal", []]] as FilterSpecification,
-        paint: {
-          "line-color": COUNTRY_COLOR,
-          "line-width": ["interpolate", ["linear"], ["zoom"], 0, 0.6, 4, 1.4],
-          "line-opacity": 0,
-          "line-opacity-transition": { duration: 320 },
+      map.addLayer(
+        {
+          id: LAYER_COUNTRY_LINE,
+          type: "line",
+          source: SOURCE_COUNTRIES,
+          filter: ["in", ["get", "code"], ["literal", []]] as FilterSpecification,
+          paint: {
+            "line-color": overlay.countryLine,
+            "line-width": COUNTRY_LINE_WIDTH,
+            "line-opacity": 0,
+            "line-opacity-transition": { duration: 320 },
+          },
         },
-      });
+        before,
+      );
     }
   } catch {
     // Country highlighting is a garnish; never let it break the globe.
@@ -173,8 +188,13 @@ function installStyleLayers(map: MapLibreMap, data: FeatureCollection): void {
       source: SOURCE_ID,
       filter: ["has", "point_count"],
       paint: {
-        "circle-color": PIN_COLOR,
-        "circle-opacity": 0.18,
+        /* Atmosphere, not information — the ring and the count already say
+           "several places here", and this only has to suggest that they spread
+           out. A darker, higher-opacity aura measures better and looks like a
+           smudge; in the traveller's own warm hue at low alpha it reads as a
+           halo. It doubles as a generous tap target for the cluster. */
+        "circle-color": overlay.clusterGlow,
+        "circle-opacity": 0.14,
         "circle-radius": ["step", ["get", "point_count"], 26, 5, 31, 15, 37, 40, 43],
       },
     });
@@ -187,10 +207,10 @@ function installStyleLayers(map: MapLibreMap, data: FeatureCollection): void {
       source: SOURCE_ID,
       filter: ["has", "point_count"],
       paint: {
-        "circle-color": CLUSTER_COLOR,
+        "circle-color": overlay.cluster,
         "circle-radius": ["step", ["get", "point_count"], 17, 5, 21, 15, 26, 40, 31],
         "circle-stroke-width": 2.5,
-        "circle-stroke-color": "rgba(255,255,255,0.92)",
+        "circle-stroke-color": overlay.pinStroke,
       },
     });
   }
@@ -222,9 +242,9 @@ function installStyleLayers(map: MapLibreMap, data: FeatureCollection): void {
         // Small, round and dense on purpose: a hundred places should still
         // read as a constellation rather than a pile of overlapping markers.
         "circle-radius": PIN_RADIUS_DEFAULT,
-        "circle-color": PIN_COLOR,
+        "circle-color": overlay.pin,
         "circle-stroke-width": 2,
-        "circle-stroke-color": "rgba(255,255,255,0.95)",
+        "circle-stroke-color": overlay.pinStroke,
         "circle-radius-transition": { duration: 180 },
       },
     });
@@ -247,8 +267,8 @@ function installStyleLayers(map: MapLibreMap, data: FeatureCollection): void {
         "text-allow-overlap": false,
       },
       paint: {
-        "text-color": "#14161C",
-        "text-halo-color": "rgba(255,255,255,0.92)",
+        "text-color": overlay.label,
+        "text-halo-color": overlay.labelHalo,
         "text-halo-width": 1.4,
         "text-halo-blur": 0.4,
         "text-opacity": LABEL_OPACITY_DEFAULT,
@@ -272,13 +292,14 @@ function installStyleLayers(map: MapLibreMap, data: FeatureCollection): void {
 
 /** Atmosphere around the globe — decoration, and safe to skip if unsupported. */
 function applySky(map: MapLibreMap, dark: boolean): void {
+  const { sky } = paletteFor(dark);
   try {
     map.setSky({
-      "sky-color": dark ? "#0a1020" : "#8cb6e8",
+      "sky-color": sky.sky,
       "sky-horizon-blend": 0.6,
-      "horizon-color": dark ? "#1a2e50" : "#d6e4f6",
+      "horizon-color": sky.horizon,
       "horizon-fog-blend": 0.6,
-      "fog-color": dark ? "#101420" : "#dceafa",
+      "fog-color": sky.fog,
       "fog-ground-blend": 0.02,
       "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 0.9, 5, 0.5, 8, 0],
     });
@@ -309,6 +330,18 @@ export function TravelGlobe({
   const markerRef = useRef<Marker | null>(null);
 
   const [styleReady, setStyleReady] = useState(false);
+  /**
+   * Ticks on every `style.load`.
+   *
+   * Switching between light and dark replaces the entire style, which discards
+   * our sources and layers; `installStyleLayers` puts them back, but everything
+   * that had been *applied* to them since — which countries are painted, which
+   * pin is selected, whether the city layers are hidden — lived in effects keyed
+   * on `styleReady`, and `styleReady` was already true, so none of them re-ran.
+   * The re-added layers kept their empty defaults. A device in dark mode
+   * therefore showed no visited countries at all.
+   */
+  const [styleEpoch, setStyleEpoch] = useState(0);
   const [failure, setFailure] = useState<"load-failed" | null>(null);
   const [attempt, setAttempt] = useState(0);
 
@@ -440,8 +473,17 @@ export function TravelGlobe({
         }
         applySky(map, prefersDarkRef.current);
 
-        installStyleLayers(map, toFeatureCollection(placesRef.current));
+        // Recolour the vendor style before our own layers go on top of it, so
+        // the pins are always drawn against the ground they were designed for.
+        applyBasemapTheme(map, paletteFor(prefersDarkRef.current));
+
+        installStyleLayers(
+          map,
+          toFeatureCollection(placesRef.current),
+          overlayFor(prefersDarkRef.current),
+        );
         setStyleReady(true);
+        setStyleEpoch((epoch) => epoch + 1);
       });
 
       /* Long-press to drop a pin. `contextmenu` covers desktop right-click;
@@ -601,20 +643,38 @@ export function TravelGlobe({
     map.setStyle(styleFor(prefersDark));
   }, [prefersDark, styleReady]);
 
+  /* The scheme swap replaces the whole style, so every overlay colour is
+     re-applied here as well as at install time — the swap and this effect can
+     land in either order. */
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !styleReady || !map.getLayer(LAYER_PIN)) return;
+    if (!map || !styleReady) return;
+    const overlay = overlayFor(prefersDark);
     try {
-      map.setPaintProperty(LAYER_PIN, "text-color", prefersDark ? "#F4F5F8" : "#14161C");
-      map.setPaintProperty(
-        LAYER_PIN,
-        "text-halo-color",
-        prefersDark ? "rgba(4,6,12,0.85)" : "rgba(255,255,255,0.92)",
-      );
+      if (map.getLayer(LAYER_PIN)) {
+        map.setPaintProperty(LAYER_PIN, "text-color", overlay.label);
+        map.setPaintProperty(LAYER_PIN, "text-halo-color", overlay.labelHalo);
+      }
+      if (map.getLayer(LAYER_PIN_DOT)) {
+        map.setPaintProperty(LAYER_PIN_DOT, "circle-stroke-color", overlay.pinStroke);
+      }
+      if (map.getLayer(LAYER_CLUSTER)) {
+        map.setPaintProperty(LAYER_CLUSTER, "circle-color", overlay.cluster);
+        map.setPaintProperty(LAYER_CLUSTER, "circle-stroke-color", overlay.pinStroke);
+      }
+      if (map.getLayer(LAYER_CLUSTER_GLOW)) {
+        map.setPaintProperty(LAYER_CLUSTER_GLOW, "circle-color", overlay.clusterGlow);
+      }
+      if (map.getLayer(LAYER_COUNTRY_FILL)) {
+        map.setPaintProperty(LAYER_COUNTRY_FILL, "fill-color", overlay.country);
+      }
+      if (map.getLayer(LAYER_COUNTRY_LINE)) {
+        map.setPaintProperty(LAYER_COUNTRY_LINE, "line-color", overlay.countryLine);
+      }
     } catch {
       // Style may be mid-reload.
     }
-  }, [prefersDark, styleReady]);
+  }, [prefersDark, styleReady, styleEpoch]);
 
   /* ---------------------------------------------------------------------- */
   /* Data                                                                     */
@@ -641,7 +701,7 @@ export function TravelGlobe({
     } catch {
       // Highlighting is optional.
     }
-  }, [places, styleReady]);
+  }, [places, styleReady, styleEpoch]);
 
   /* Frame the traveller's world once the data has arrived, with a gentle
      arrival rather than a jump-cut. */
@@ -682,7 +742,7 @@ export function TravelGlobe({
     const selected = selectedFilter(selectedId);
 
     try {
-      map.setPaintProperty(LAYER_PIN_DOT, "circle-color", pinColor(selected));
+      map.setPaintProperty(LAYER_PIN_DOT, "circle-color", pinColor(selected, overlayFor(prefersDark)));
       map.setPaintProperty(LAYER_PIN_DOT, "circle-radius", pinRadius(selected));
       map.setPaintProperty(LAYER_PIN_DOT, "circle-stroke-width", pinStrokeWidth(selected));
 
@@ -694,7 +754,7 @@ export function TravelGlobe({
     } catch {
       // Style may be mid-reload.
     }
-  }, [selectedId, styleReady]);
+  }, [selectedId, styleReady, prefersDark, styleEpoch]);
 
   /* ---------------------------------------------------------------------- */
   /* Countries vs Cities                                                      */
@@ -723,7 +783,7 @@ export function TravelGlobe({
     } catch {
       // Style may be mid-reload.
     }
-  }, [mapView, styleReady]);
+  }, [mapView, styleReady, styleEpoch]);
 
   /* ---------------------------------------------------------------------- */
   /* Camera requests                                                          */
@@ -837,7 +897,10 @@ export function TravelGlobe({
   }
 
   return (
-    <div className="absolute inset-0">
+    // The space the planet sits in. Matched to the atmosphere nearest the edge
+    // of the screen, so a frame the renderer hasn't painted yet is never a flash
+    // of white behind a night globe — or of black behind a daylight one.
+    <div className="absolute inset-0" style={{ background: paletteFor(prefersDark).backdrop }}>
       <div
         ref={containerRef}
         className="size-full"
@@ -853,8 +916,9 @@ export function TravelGlobe({
           styleReady ? "opacity-0" : "opacity-100"
         }`}
         style={{
-          background:
-            "radial-gradient(circle at 50% 42%, #22355c 0%, #131f38 42%, #0a0f1c 72%, #06080f 100%)",
+          background: prefersDark
+            ? "radial-gradient(circle at 50% 42%, #1A2029 0%, #0C1119 55%, #05070B 100%)"
+            : "radial-gradient(circle at 50% 42%, #F3F6F9 0%, #E9EFF4 55%, #DCE4EC 100%)",
         }}
       />
       <span className="sr-only" role="status">

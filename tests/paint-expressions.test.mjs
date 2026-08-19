@@ -17,6 +17,7 @@ import {
 } from "@maplibre/maplibre-gl-style-spec";
 
 const paint = await import("../lib/maps/basemap.ts");
+const theme = await import("../lib/maps/theme.ts");
 
 let failures = 0;
 const check = (label, fn) => {
@@ -61,9 +62,13 @@ console.log("pin paint expressions (selected and unselected)");
 for (const selectedId of ["place-123", null]) {
   const state = selectedId ? "with a selection" : "with nothing selected";
   const selected = paint.selectedFilter(selectedId);
+  for (const dark of [false, true]) {
+    check(`circle-color ${state} (${dark ? "dark" : "light"})`, () =>
+      valid("circle-color", paint.pinColor(selected, paint.overlayFor(dark))));
+  }
 
   check(`circle-radius ${state}`, () => valid("circle-radius", paint.pinRadius(selected)));
-  check(`circle-color ${state}`, () => valid("circle-color", paint.pinColor(selected)));
+  check(`circle-color ${state}`, () => valid("circle-color", paint.pinColor(selected, paint.overlayFor(false))));
   check(`circle-stroke-width ${state}`, () =>
     valid("circle-stroke-width", paint.pinStrokeWidth(selected)));
   check(`text-opacity ${state}`, () => valid("text-opacity", paint.labelOpacity(selected)));
@@ -110,5 +115,109 @@ check("every label is readable once zoomed in", () => {
   assert.equal(expr.value.evaluate({ zoom: paint.LABEL_FADE_END }, { properties: { id: "y" } }), 1);
 });
 
-console.log(failures ? `\n${failures} failing.` : "\nAll paint expressions are valid.");
+
+console.log("the colour system's own rules");
+
+/** Relative luminance, per WCAG. */
+function luminance(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+const ratio = (a, b) => {
+  const [x, y] = [luminance(a), luminance(b)].sort((m, n) => n - m);
+  return (x + 0.05) / (y + 0.05);
+};
+
+check("dark land is lighter than dark sea, so the night globe has coastlines", () => {
+  const dark = theme.paletteFor(true);
+  assert.ok(
+    luminance(dark.land) > luminance(dark.water),
+    `land ${dark.land} is not lighter than water ${dark.water}`,
+  );
+  const contrast = ratio(dark.land, dark.water);
+  assert.ok(contrast >= 1.35, `land/water contrast is only ${contrast.toFixed(2)}:1`);
+});
+
+check("light keeps a land/water edge too", () => {
+  const light = theme.paletteFor(false);
+  const contrast = ratio(light.land, light.water);
+  assert.ok(contrast >= 1.35, `land/water contrast is only ${contrast.toFixed(2)}:1`);
+});
+
+check("the relief photograph is off in both schemes", () => {
+  assert.equal(theme.paletteFor(false).reliefOpacity, 0);
+  assert.equal(theme.paletteFor(true).reliefOpacity, 0);
+});
+
+check("roads are never in the pin's hue family", () => {
+  // A pin and a motorway must not be the same kind of mark. Compare hue by
+  // channel order: the pin is red-dominant, the roads must not be.
+  for (const dark of [false, true]) {
+    const { road, roadMinor } = theme.paletteFor(dark);
+    const { pin } = paint.overlayFor(dark);
+    const redDominant = (hex) => {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+      return r > g + 24 && r > b + 24;
+    };
+    assert.ok(redDominant(pin), `pin ${pin} should be red-dominant`);
+    assert.ok(!redDominant(road), `road ${road} shares the pin's hue`);
+    assert.ok(!redDominant(roadMinor), `minor road ${roadMinor} shares the pin's hue`);
+  }
+});
+
+check("the pin reads against land and water in both schemes", () => {
+  for (const dark of [false, true]) {
+    const ground = theme.paletteFor(dark);
+    const { pin } = paint.overlayFor(dark);
+    for (const [name, against] of [["land", ground.land], ["water", ground.water]]) {
+      const contrast = ratio(pin, against);
+      assert.ok(
+        contrast >= 2.4,
+        `${dark ? "dark" : "light"} pin vs ${name} is ${contrast.toFixed(2)}:1`,
+      );
+    }
+  }
+});
+
+check("visited countries are not in the water's hue family", () => {
+  // A blue country on a blue sea is the one adjacency this map cannot afford:
+  // at globe zoom most of a country's perimeter is coastline.
+  for (const dark of [false, true]) {
+    const { water } = theme.paletteFor(dark);
+    const { country } = paint.overlayFor(dark);
+    // Hue, not saturation: both a near-black navy and a desaturated blue-grey
+    // are unmistakably in the water family, and neither clears a ratio test.
+    const blueDominant = (hex) => {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+      return b === Math.max(r, g, b) && b - r >= 12;
+    };
+    assert.ok(blueDominant(water), `water ${water} should be blue-dominant`);
+    assert.ok(!blueDominant(country), `country ${country} shares the water's hue`);
+  }
+});
+
+check("the selected pin is distinguishable from an unselected one", () => {
+  for (const dark of [false, true]) {
+    const { pin, pinSelected } = paint.overlayFor(dark);
+    assert.notEqual(pin, pinSelected);
+    // Brighter in dark, darker in light: salience is measured against the
+    // ground, not in the abstract.
+    const brighter = luminance(pinSelected) > luminance(pin);
+    assert.equal(brighter, dark, `${dark ? "dark" : "light"} selection went the wrong way`);
+  }
+});
+
+check("the country outline contains the fill rather than competing with it", () => {
+  for (const dark of [false, true]) {
+    const { country, countryLine } = paint.overlayFor(dark);
+    const lighter = luminance(countryLine) > luminance(country);
+    // On a dark map the containing edge has to be the lighter of the two.
+    assert.equal(lighter, dark, `${dark ? "dark" : "light"} country outline went the wrong way`);
+  }
+});
+
+console.log(failures ? `\n${failures} failing.` : "\nAll paint and palette rules hold.");
 process.exit(failures ? 1 : 0);

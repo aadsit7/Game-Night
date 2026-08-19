@@ -4,7 +4,9 @@
   "private": true,
   "description": "A personal travel journal built around an interactive 3D globe.",
   "scripts": {
+    "predev": "node scripts/copy-map-worker.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/copy-map-worker.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -12,7 +14,8 @@
     "test": "node tests/run.mjs",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build",
     "icons": "node scripts/generate-icons.mjs",
-    "countries": "node scripts/build-countries.mjs"
+    "countries": "node scripts/build-countries.mjs",
+    "map-worker": "node scripts/copy-map-worker.mjs"
   },
   "dependencies": {
     "framer-motion": "^13.1.0",

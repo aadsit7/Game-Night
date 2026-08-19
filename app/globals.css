@@ -22,7 +22,7 @@
   --c-fill: rgba(118, 118, 128, 0.1);
   --c-fill-strong: rgba(118, 118, 128, 0.17);
   --c-scrim: rgba(16, 18, 22, 0.4);
-  --c-glass-border: rgba(255, 255, 255, 0.6);
+  --c-glass-border: rgba(60, 60, 67, 0.16);
 
   /* Accents */
   --c-accent: #007aff;
@@ -30,8 +30,8 @@
   --c-on-accent: #ffffff;
   --c-danger: #e0342a;
   --c-danger-soft: rgba(255, 59, 48, 0.12);
-  --c-pin: #ff5a3c;
-  --c-pin-deep: #e8391c;
+  --c-pin: #bf421f;
+  --c-pin-deep: #9c3316;
 
   /* Shape */
   --r-xs: 8px;
@@ -71,8 +71,8 @@
     --c-accent-soft: rgba(10, 132, 255, 0.2);
     --c-danger: #ff6961;
     --c-danger-soft: rgba(255, 69, 58, 0.18);
-    --c-pin: #ff6b4a;
-    --c-pin-deep: #ff4520;
+    --c-pin: #e0562c;
+    --c-pin-deep: #ff6b45;
 
     --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 20px rgba(0, 0, 0, 0.45);
     --shadow-float: 0 1px 3px rgba(0, 0, 0, 0.6), 0 14px 36px rgba(0, 0, 0, 0.55);
@@ -178,7 +178,8 @@ select {
 
 /* The renderer's own controls & attribution, re-skinned to sit quietly in the UI. */
 .maplibregl-ctrl-attrib.maplibregl-compact {
-  background: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 0 0 0.5px rgba(60, 60, 67, 0.14);
   backdrop-filter: blur(12px);
 }
 
@@ -300,8 +301,12 @@ select {
      the pin preview, action sheets. Things that float over the globe. */
   .glass {
     background: var(--c-sheet);
-    backdrop-filter: saturate(180%) blur(28px);
-    -webkit-backdrop-filter: saturate(180%) blur(28px);
+    /* The saturation boost was tuned against a vivid basemap. On a map whose
+       land now sits inside a four-step neutral band it only amplifies whatever
+       colour happens to be underneath. */
+    backdrop-filter: saturate(120%) blur(28px);
+    -webkit-backdrop-filter: saturate(120%) blur(28px);
+    box-shadow: 0 1px 3px rgba(28, 26, 22, 0.1), 0 8px 24px rgba(28, 26, 22, 0.1);
   }
 
   @supports not (backdrop-filter: blur(1px)) {

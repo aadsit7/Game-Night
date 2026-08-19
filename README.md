@@ -34,9 +34,11 @@ outlines are all keyless; `npm install && npm run dev` is the whole setup.
 | `npm run build`     | Production build                                |
 | `npm run typecheck` | `tsc --noEmit`                                  |
 | `npm run lint`      | ESLint                                          |
-| `npm run check`     | All three, in order                             |
+| `npm run test`      | Paint expressions and sync merge rules          |
+| `npm run check`     | All four, in order                              |
 | `npm run icons`     | Regenerates the app icons from `scripts/`       |
 | `npm run countries` | Rebuilds `public/geo/countries.json` from Natural Earth |
+| `npm run map-worker` | Copies MapLibre's worker into `public/` (runs automatically) |
 
 ### Where the map comes from
 
@@ -180,8 +182,41 @@ places, so finding somewhere you've been never means leaving the globe.
 
 City pins are small circles rather than large teardrops: at a hundred places a
 map should still read as a constellation instead of a pile of overlapping
-markers. Countries and pins use deliberately different hues so neither hides the
-other.
+markers.
+
+### Colour
+
+One rule decides everything: **the basemap is ground, your travel is figure.**
+The map you have not been to should be the quietest thing on the screen.
+
+OpenFreeMap's styles are built for general browsing, so they start in the
+opposite place, and `lib/maps/theme.ts` re-colours them layer by layer:
+
+- **The relief photograph is off.** At world scale Natural Earth II's shaded
+  terrain was the most saturated, most textured thing on the globe — and the
+  part of the picture you have no relationship with. Without it, the planet's
+  shape comes from the land/water edge, which is what a map is.
+- **Land is lighter than sea in dark mode.** The shipped dark style puts them
+  1.14:1 apart, which at globe zoom is a featureless black disc with no
+  coastlines. Graphite land over a blue-black ocean takes that to 1.43:1.
+- **Roads are not orange.** OpenFreeMap draws motorways in `hsl(26,87%,62%)` —
+  the pin's own hue — so at city zoom the road network and your places competed
+  as the same kind of mark. Light roads are white on warm grey; dark roads sit
+  *above* land rather than below it, the way every night map ships.
+- **Labels wait.** The dark style draws suburbs, villages and administrative
+  subdivisions from zoom 0, so a view of Africa arrived captioned SOUSS-MASSA
+  and LIKOUALA. Country names return at zoom 2.6, cities at 4, towns at 7. The
+  sprite dot each style draws beside every city name is hidden outright: on the
+  new land it measured 17.8:1 where your own pin measures 4.4:1.
+- **No borders across open ocean.** Maritime boundaries live in the same layer
+  as land borders, so lifting borders enough to read at globe zoom ruled pale
+  lines across empty sea.
+
+Visited countries are **teal**, not blue, because the ocean is blue and at globe
+zoom most of a country's perimeter is coastline rather than border. Pins are a
+deep vermilion. Both are split per scheme — a single hex cannot be the salient
+thing on two grounds seventy L\* apart — and the rules are asserted in
+`tests/paint-expressions.test.mjs` rather than left to taste.
 
 ### The globe
 
@@ -194,7 +229,15 @@ a parent re-render can never restart the map.
   style follows the system colour scheme.
 - Layers are installed by one idempotent function bound to `style.load`, so a
   light/dark swap — which replaces the entire style — rebuilds pins, clusters
-  and country fills automatically instead of losing them.
+  and country fills automatically instead of losing them. A `styleEpoch` counter
+  ticks on each load so everything *applied* to those layers since — which
+  countries are painted, which pin is selected, which layers the Countries view
+  hides — is re-applied too.
+- MapLibre's worker is served from `public/maplibre/` and pointed at with
+  `setWorkerUrl`. MapLibre locates it from `import.meta.url`, which a bundler
+  rewrites, leaving `new Worker("")` — and since every vector tile, GeoJSON
+  source and glyph is parsed in that worker, the map silently drew nothing but
+  its raster layer. `scripts/copy-map-worker.mjs` keeps the copy in step.
 - Pins are circle layers rather than sprites: at a hundred places the map should
   read as a constellation, and circles stay crisp at every pixel ratio.
 - A clustered GeoJSON source; tapping a cluster asks MapLibre for its expansion
