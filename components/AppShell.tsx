@@ -22,6 +22,7 @@ import { PlaceFormSheet } from "@/components/place/PlaceFormSheet";
 import { PlacesView } from "@/components/places/PlacesView";
 import { SheetSetupScreen } from "@/components/sync/SheetSetupScreen";
 import { SyncSettingsSheet } from "@/components/sync/SyncSettingsSheet";
+import { TimelineView } from "@/components/timeline/TimelineView";
 import { ActionSheet } from "@/components/ui/ActionSheet";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Toast, type ToastMessage } from "@/components/ui/Toast";
@@ -64,6 +65,19 @@ type PinSession = {
 };
 
 const UNDO_WINDOW_MS = 6000;
+
+/**
+ * Picks the honest wording for a save that has only reached this device.
+ *
+ * A save resolves as soon as the change is safe locally — the write to the
+ * sheet is queued behind it. Announcing "saved" with the network gone would
+ * contradict the status chip and, more to the point, claim something that
+ * hasn't happened yet. The queue means nothing is lost either way; the toast
+ * just has to say which of the two it is.
+ */
+function whenOffline(online: string, queued: string): string {
+  return typeof navigator !== "undefined" && navigator.onLine === false ? queued : online;
+}
 
 export function AppShell() {
   const {
@@ -316,7 +330,7 @@ export function AppShell() {
         const updated = await updatePlace(draft.id, input);
         setDraftBaseline(draft);
         popOverlay();
-        showToast("Changes saved");
+        showToast(whenOffline("Changes saved", "Saved here — it’ll sync when you’re back"));
         if (selectedId === updated.id) flyTo(updated, 7.5);
       } else {
         const created = await createPlace(input);
@@ -325,7 +339,12 @@ export function AppShell() {
         setMode("globe");
         setSelectedId(created.id);
         setPreviewOpen(true);
-        showToast(`${created.name} added to your globe`);
+        showToast(
+          whenOffline(
+            `${created.name} added to your globe`,
+            `${created.name} added — it’ll sync when you’re back`,
+          ),
+        );
         window.setTimeout(() => flyTo(created, 7), reduceMotion ? 0 : 220);
       }
     } catch (error) {
@@ -449,7 +468,7 @@ export function AppShell() {
         // Move the baseline too, so an already-persisted change never trips
         // the unsaved-changes guard on the way out of the form.
         setDraftBaseline((current) => ({ ...current, latitude, longitude }));
-        showToast("Pin location saved");
+        showToast(whenOffline("Pin location saved", "Pin saved here — it’ll sync when you’re back"));
 
         if (session.returnToForm) {
           setDraft((current) => ({ ...current, latitude, longitude }));
@@ -663,6 +682,31 @@ export function AppShell() {
               onShowGlobe={() => setMode("globe")}
               syncState={sync.state}
               onOpenSync={() => setSyncOpen(true)}
+            />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* The timeline slides over the globe the same way Places does. */}
+      <AnimatePresence>
+        {mode === "timeline" ? (
+          <motion.div
+            key="timeline"
+            className="absolute inset-0 z-20"
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 22 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 22 }}
+            transition={
+              reduceMotion ? { duration: 0 } : { duration: 0.3, ease: [0.2, 0.8, 0.3, 1] }
+            }
+          >
+            <TimelineView
+              places={places}
+              loading={status === "loading"}
+              bottomInset={tabBarHeight + 16}
+              onOpenPlace={openDetail}
+              onAdd={startCreate}
+              onShowGlobe={() => setMode("globe")}
             />
           </motion.div>
         ) : null}

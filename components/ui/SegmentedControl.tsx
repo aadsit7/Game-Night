@@ -49,7 +49,11 @@ export function SegmentedControl<T extends string>({
             onClick={() => onChange(option.value)}
             className={cn(
               "relative isolate flex min-h-11 flex-1 items-center justify-center gap-1.5",
-              "rounded-pill px-4 text-[15px] font-semibold transition-colors duration-200",
+              "rounded-pill text-[15px] font-semibold transition-colors duration-200",
+              // Three segments plus the add button is more than a narrow phone
+              // has room for at the roomier padding, and a truncated label is
+              // worse than a tighter one.
+              options.length > 2 ? "px-2" : "px-4",
               active ? "text-ink" : "text-ink-2",
             )}
           >

@@ -15,7 +15,8 @@
     "check": "npm run typecheck && npm run lint && npm run test && npm run build",
     "icons": "node scripts/generate-icons.mjs",
     "countries": "node scripts/build-countries.mjs",
-    "map-worker": "node scripts/copy-map-worker.mjs"
+    "map-worker": "node scripts/copy-map-worker.mjs",
+    "mock-sheet": "node scripts/mock-sheet.mjs"
   },
   "dependencies": {
     "framer-motion": "^13.1.0",
