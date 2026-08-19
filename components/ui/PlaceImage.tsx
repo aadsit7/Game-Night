@@ -1,23 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
-import { staticImageUrl } from "@/lib/maps/mapbox";
 import { isLocalPhotoRef, resolvePhotoUrl } from "@/lib/storage/photoStore";
 import { cn } from "@/lib/utils/cn";
-import { hasValidCoordinates } from "@/lib/utils/geo";
 
 /**
- * Imagery for a place, with a graceful ladder of fallbacks:
- *
- *   1. the photograph the traveller attached;
- *   2. failing that, satellite imagery of the exact coordinates — a small
- *      postcard of the spot rather than an empty grey rectangle;
- *   3. failing that (no token, offline), a calm tinted gradient derived from
- *      the place name, so no card ever shows a broken-image icon.
+ * Imagery for a place: the photograph the traveller attached, or — when there
+ * isn't one, or it fails to load — a calm tinted gradient keyed off the place
+ * name, with a small pin mark. No card ever shows a broken-image icon.
  */
 
-type Source = "photo" | "satellite" | "gradient";
+type Source = "photo" | "gradient";
 
 export type PlaceImageSubject = {
   name: string;
@@ -38,21 +32,15 @@ function hue(seed: string): number {
 export function PlaceImage({
   place,
   className,
-  width = 800,
-  height = 500,
-  zoom,
   priority = false,
   alt,
 }: {
   place: PlaceImageSubject;
   className?: string;
-  width?: number;
-  height?: number;
-  zoom?: number;
   priority?: boolean;
   alt?: string;
 }) {
-  const [source, setSource] = useState<Source>(place.coverImage ? "photo" : "satellite");
+  const [source, setSource] = useState<Source>(place.coverImage ? "photo" : "gradient");
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -64,24 +52,10 @@ export function PlaceImage({
   // the old image never flashes for a frame before being replaced.
   if (renderedKey !== subjectKey) {
     setRenderedKey(subjectKey);
-    setSource(coverRef ? "photo" : "satellite");
+    setSource(coverRef ? "photo" : "gradient");
     setObjectUrl(null);
     setLoaded(false);
   }
-
-  const satelliteUrl = useMemo(
-    () =>
-      hasValidCoordinates(place)
-        ? staticImageUrl({
-            latitude: place.latitude,
-            longitude: place.longitude,
-            width,
-            height,
-            zoom,
-          })
-        : null,
-    [place, width, height, zoom],
-  );
 
   // Local photos are blobs in IndexedDB; turn them into object URLs on demand.
   useEffect(() => {
@@ -99,7 +73,7 @@ export function PlaceImage({
         created = url;
         setObjectUrl(url);
       } else {
-        setSource("satellite");
+        setSource("gradient");
       }
     });
 
@@ -110,7 +84,7 @@ export function PlaceImage({
   }, [coverRef]);
 
   const photoUrl = coverRef && !isLocalPhotoRef(coverRef) ? coverRef : objectUrl;
-  const src = source === "photo" ? photoUrl : source === "satellite" ? satelliteUrl : null;
+  const src = source === "photo" ? photoUrl : null;
   const showGradient = source === "gradient" || !src;
   // A narrow band of cool, dusk-like hues keyed off the name: distinct enough
   // to tell two cards apart, quiet enough never to shout.
@@ -137,7 +111,7 @@ export function PlaceImage({
           onLoad={() => setLoaded(true)}
           onError={() => {
             setLoaded(false);
-            setSource((current) => (current === "photo" ? "satellite" : "gradient"));
+            setSource("gradient");
           }}
           className={cn(
             "absolute inset-0 size-full object-cover transition-opacity duration-500",

@@ -38,8 +38,6 @@ export function PlaceCard({
         <PlaceImage
           place={place}
           alt=""
-          width={860}
-          height={560}
           priority={priority}
           className="aspect-[16/10] w-full rounded-[20px]"
         />

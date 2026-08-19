@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 
 import { PlacesProvider } from "@/lib/store/PlacesProvider";
 
-import "mapbox-gl/dist/mapbox-gl.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
 
 export const metadata: Metadata = {

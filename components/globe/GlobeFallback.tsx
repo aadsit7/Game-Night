@@ -5,20 +5,11 @@ import { Globe2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
 /**
- * Shown instead of the map when Mapbox can't run — no token, a blocked
- * network, a style that failed to load. It stays on-brand rather than looking
- * like a crash, and it says exactly what to do next. The Places view keeps
- * working the whole time.
+ * Shown instead of the map when the renderer can't run — a blocked network, a
+ * tile host that's down, a browser without WebGL. It stays on-brand rather than
+ * looking like a crash, and the Places view keeps working the whole time.
  */
-export function GlobeFallback({
-  reason,
-  onRetry,
-}: {
-  reason: "missing-token" | "load-failed";
-  onRetry?: () => void;
-}) {
-  const missingToken = reason === "missing-token";
-
+export function GlobeFallback({ onRetry }: { onRetry?: () => void }) {
   return (
     <div className="absolute inset-0 grid place-items-center overflow-hidden bg-[#080b14] px-8 text-center">
       {/* A quiet stand-in for the Earth, drawn in CSS so it always renders. */}
@@ -56,22 +47,15 @@ export function GlobeFallback({
         </div>
 
         <h2 className="text-balance text-[24px] font-semibold tracking-[-0.02em] text-white">
-          {missingToken ? "The globe needs a map key" : "The globe couldn’t load"}
+          The globe couldn’t load
         </h2>
 
         <p className="mx-auto mt-2.5 max-w-[36ch] text-balance text-[15px] leading-relaxed text-white/60">
-          {missingToken
-            ? "Add a Mapbox public token and the Earth will appear here. Everything else — your places, search, adding and editing — keeps working."
-            : "Something went wrong reaching the map service. Your places are safe, and the Places tab still works."}
+          Something went wrong reaching the map. Your places are safe, and the Places tab
+          still works.
         </p>
 
-        {missingToken ? (
-          <div className="mx-auto mt-5 w-fit max-w-full overflow-x-auto rounded-[14px] border border-white/10 bg-black/40 px-4 py-3 text-left">
-            <code className="whitespace-pre text-[12.5px] leading-relaxed text-white/70">
-              {"# .env.local\nNEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=pk.…"}
-            </code>
-          </div>
-        ) : onRetry ? (
+        {onRetry ? (
           <div className="mt-6 flex justify-center">
             <Button
               variant="secondary"

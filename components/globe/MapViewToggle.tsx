@@ -3,7 +3,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
-import type { MapView } from "@/lib/maps/mapbox";
+import type { MapView } from "@/lib/maps/basemap";
 
 /**
  * Countries or Cities — the two ways people actually read a travel map.

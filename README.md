@@ -19,12 +19,14 @@ and every change lands in both views on the same frame.
 
 ```bash
 npm install
-cp .env.example .env.local     # then paste your Mapbox token in
 npm run dev
 ```
 
 Open <http://localhost:3000> — and open it in a phone-sized viewport, that’s
 what it’s designed for.
+
+**There are no API keys to set up.** The map, the place search and the country
+outlines are all keyless; `npm install && npm run dev` is the whole setup.
 
 | Command             | What it does                                    |
 | ------------------- | ----------------------------------------------- |
@@ -34,17 +36,31 @@ what it’s designed for.
 | `npm run lint`      | ESLint                                          |
 | `npm run check`     | All three, in order                             |
 | `npm run icons`     | Regenerates the app icons from `scripts/`       |
+| `npm run countries` | Rebuilds `public/geo/countries.json` from Natural Earth |
+
+### Where the map comes from
+
+| Service                                                | Used for                             | Key needed |
+| ------------------------------------------------------ | ------------------------------------ | ---------- |
+| [OpenFreeMap](https://openfreemap.org/)                 | Vector basemap tiles (light and dark) | No |
+| [Photon](https://photon.komoot.io/)                     | Place search and reverse geocoding    | No |
+| [Natural Earth](https://www.naturalearthdata.com/) 110m | Country outlines, bundled as a 164 KB asset | No |
+
+All three are open and free to use without an account, so the globe works on a
+fresh clone and on the deployed site with nothing to configure. The country
+outlines are checked in — `npm run countries` regenerates them, and only needs
+running if you want a different resolution.
 
 ### Environment
 
-| Variable                          | Required | Purpose                                              |
-| --------------------------------- | -------- | ---------------------------------------------------- |
-| `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` | For the globe | Globe rendering, location search, reverse geocoding, and the satellite imagery used when a place has no photo. Get one at [account.mapbox.com](https://account.mapbox.com/access-tokens/). |
-| `NEXT_PUBLIC_SEED_SAMPLE_DATA`    | No       | `false` starts with an empty history. Anything else seeds fourteen sample places once, on first run. |
+| Variable                       | Required | Purpose                                              |
+| ------------------------------ | -------- | ---------------------------------------------------- |
+| `NEXT_PUBLIC_SEED_SAMPLE_DATA` | No       | `false` starts with an empty history. Anything else seeds fourteen sample places once, on first run. |
 
-**Without a token the app still works.** The globe shows a designed explanation
-instead of a crash, and Places, search, adding, editing, moving and deleting all
-keep working — a place can be entered by hand, coordinates included.
+**If the map can't be reached at all** — an offline device, a blocked network —
+the globe shows a designed explanation instead of a crash, and Places, search,
+adding, editing, moving and deleting all keep working. A place can always be
+entered by hand, coordinates included.
 
 ---
 
@@ -63,12 +79,10 @@ Two environment variables drive the build, both set by the workflow:
   for a project site) so assets resolve under the subpath. Both are opt-in, so
   `npm run dev` and a plain `npm run build` still serve from `/`.
 
-**To light up the globe on the deployed site**, add a repository secret named
-`NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` (Settings → Secrets and variables → Actions)
-and re-run the workflow. Note that anything prefixed `NEXT_PUBLIC_` is compiled
-into the JavaScript that ships to the browser — which is unavoidable for a
-client-side map. Use a Mapbox **public** token and restrict it to this URL in
-the Mapbox dashboard.
+No secrets are configured for the deploy, and none are needed: the map has no
+key to leak. That is the point of the keyless stack — anything prefixed
+`NEXT_PUBLIC_` is compiled into the JavaScript that ships to every visitor, so
+the safest credential is the one that doesn't exist.
 
 ---
 
@@ -83,7 +97,10 @@ device pulls the current file — no sign-in, nothing to configure. The app pull
 on load, whenever the tab regains focus, and on a slow timer while it's open.
 Token-less devices read through `raw.githubusercontent.com` rather than the
 API: the unauthenticated Contents API allows only 60 requests an hour per IP,
-which two read-only devices polling for updates would exhaust between them.
+which two read-only devices polling for updates would exhaust between them. The
+trade is that the CDN caches for five minutes, so a device that only reads can
+be that far behind; a device with a token goes through the API and sees writes
+immediately.
 
 **Saving needs a token, once per device.** Open Sync (the ⚙ next to the map
 search, or the chip beside "My Places") and paste a
@@ -168,29 +185,34 @@ other.
 
 ### The globe
 
-`components/globe/TravelGlobe.tsx` creates the Mapbox instance exactly once and
-never tears it down — switching to Places slides that view *over* the globe
+`components/globe/TravelGlobe.tsx` creates the MapLibre instance exactly once
+and never tears it down — switching to Places slides that view *over* the globe
 rather than unmounting it. Callbacks and layout values are read through refs so
 a parent re-render can never restart the map.
 
-- `mapbox://styles/mapbox/standard` with globe projection; the light preset
-  follows the system colour scheme (`day` / `night`).
-- Pins are drawn to a canvas at 2× and registered as style images, so the
-  selected and unselected states stay in exact proportion.
-- A clustered GeoJSON source; tapping a cluster asks Mapbox for its expansion
-  zoom and eases there.
-- Visited countries get a whisper of colour at globe scale that fades out
-  entirely by zoom 6 — subordinate to the pins, never a choropleth.
+- OpenFreeMap's `liberty` / `dark` styles with MapLibre's globe projection; the
+  style follows the system colour scheme.
+- Layers are installed by one idempotent function bound to `style.load`, so a
+  light/dark swap — which replaces the entire style — rebuilds pins, clusters
+  and country fills automatically instead of losing them.
+- Pins are circle layers rather than sprites: at a hundred places the map should
+  read as a constellation, and circles stay crisp at every pixel ratio.
+- A clustered GeoJSON source; tapping a cluster asks MapLibre for its expansion
+  zoom (a promise, not a callback — MapLibre differs from Mapbox here) and eases
+  there.
+- Visited countries are painted from a bundled Natural Earth asset, strong in
+  Countries view and a whisper in Cities so pins always win.
 - Bearing and pitch are locked. Free rotation on a sphere is disorienting and
   easy to trigger by accident; this globe spins and zooms.
 
 ### Finding real places
 
-`lib/maps/geocoding.ts` uses the Mapbox **Search Box** API, which returns points
-of interest alongside cities and countries — so "Sagrada Família" resolves to
-the basilica in Barcelona, not just to Barcelona. The Geocoding v6 API is a
-fallback for accounts or networks where Search Box is unavailable. Choosing a
-result fills in name, city, region, country, country code and coordinates.
+`lib/maps/geocoding.ts` uses **Photon**, an open geocoder over OpenStreetMap
+data. Raw OSM results lean heavily towards street addresses, so results are
+re-ranked to put cities and points of interest first — "Sagrada Família"
+resolves to the basilica in Barcelona, not to a street near it. Searches are
+biased towards where the map is currently looking. Choosing a result fills in
+name, city, region, country, country code and coordinates.
 
 ### Layout
 
@@ -205,14 +227,16 @@ components/
   place/                 detail, form, location search, photos, pin bar
   ui/                    BottomSheet, SegmentedControl, dialogs, imagery
 lib/
-  maps/                  mapbox setup, pin sprites, geocoding
+  maps/                  basemap config and layer ids, geocoding
   storage/               placeRepository, photoStore
   store/                 PlacesProvider, draft
   sync/                  GitHub storage, merge rules, sync hook
   hooks/  utils/
 types/place.ts           the VisitedPlace model
 data/samplePlaces.ts     seed data, isolated so it can be deleted outright
+public/geo/countries.json  country outlines (generated, checked in)
 scripts/generate-icons.mjs
+scripts/build-countries.mjs
 ```
 
 ---
@@ -239,10 +263,11 @@ scripts/generate-icons.mjs
 
 ## Photography
 
-A place with no photograph still gets a picture: satellite imagery of its exact
-coordinates, generated from data the app already has. If that is unavailable
-too, a calm gradient keyed off the place name. No card ever shows a broken
-image.
+Attached photographs are downscaled and kept in IndexedDB. A place without one
+still gets a picture rather than a hole in the layout: a calm gradient keyed off
+the place name, with a small pin mark. The gradient sits underneath the image at
+all times, so a slow or failed load reveals something intentional — no card ever
+shows a broken-image icon.
 
 ## Deliberately not built yet
 

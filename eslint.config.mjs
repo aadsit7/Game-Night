@@ -7,11 +7,10 @@ const eslintConfig = defineConfig([
   ...nextTs,
   {
     rules: {
-      // Every image in this app is either an object URL for a blob held in
-      // IndexedDB or a Mapbox static-image URL that is already sized and
-      // cached at the edge. `next/image` cannot optimise the former and adds
-      // a second round trip to the latter, so plain `<img>` with explicit
-      // dimensions and lazy loading is the right call here.
+      // Every image in this app is an object URL for a blob held in IndexedDB,
+      // already downscaled on the way in. `next/image` cannot optimise those,
+      // and the app ships as a static export with no image server anyway, so
+      // plain `<img>` with explicit dimensions and lazy loading is right here.
       "@next/next/no-img-element": "off",
     },
   },

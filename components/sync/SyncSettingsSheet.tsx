@@ -54,7 +54,11 @@ export function SyncSettingsSheet({
     setChecking(true);
     setResult(null);
     try {
-      const { canWrite } = await verifyAccess(toConfig({ ...draft, enabled: true }));
+      // A hung request would leave this button spinning with no way out.
+      const { canWrite } = await verifyAccess(
+        toConfig({ ...draft, enabled: true }),
+        typeof AbortSignal?.timeout === "function" ? AbortSignal.timeout(15_000) : undefined,
+      );
       if (canWrite === false) {
         setResult({
           ok: false,

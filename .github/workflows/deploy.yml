@@ -50,10 +50,8 @@ jobs:
           # "/Game-Night" for a project site, "" for a user site — derived
           # rather than hard-coded, so a rename doesn't break the asset paths.
           NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
-          # Optional. Without it the globe shows its designed fallback and the
-          # rest of the app still works. Set it as a repository secret named
-          # NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN to light up the globe.
-          NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN: ${{ secrets.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN }}
+          # No map secret here on purpose — the basemap, geocoder and country
+          # outlines are all keyless, so there is no credential to ship.
         run: npm run build
 
       # Pages runs Jekyll over branch-served sites, and Jekyll skips any

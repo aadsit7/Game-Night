@@ -1,185 +1,193 @@
-import { MAPBOX_TOKEN, hasMapboxToken } from "@/lib/maps/mapbox";
 import type { LocationResult } from "@/types/place";
 
 /**
- * Real-world location lookup.
+ * Real-world location lookup, without an API key.
  *
- * Primary: the Mapbox Search Box API, because it returns points of interest —
- * "Sagrada Família", "Blue Bottle", "Table Mountain" — alongside cities and
- * countries. The Geocoding v6 API is kept as a fallback: it has no POI
- * coverage, but it keeps city/country search working if Search Box is
- * unavailable on an account or blocked by a network.
+ * Photon is Komoot's open geocoder over OpenStreetMap data. It needs no
+ * account and no token, which keeps the promise that opening the URL is all
+ * the setup there is. It searches cities, countries, neighbourhoods, addresses
+ * and points of interest, so "Sagrada Família" and "Florence" both resolve.
+ *
+ * OpenStreetMap ranking is blunter than a commercial geocoder's, so results
+ * are biased toward the current view and re-ordered to favour the kinds of
+ * place a travel journal is actually about.
  */
 
+const PHOTON = "https://photon.komoot.io";
+
 export class GeocodingError extends Error {
-  constructor(message: string, readonly cause?: unknown) {
+  readonly cause?: unknown;
+
+  constructor(message: string, cause?: unknown) {
     super(message);
     this.name = "GeocodingError";
+    this.cause = cause;
   }
 }
 
 export const GEOCODING_UNAVAILABLE =
-  "Location search needs a Mapbox access token. You can still add a place by name.";
+  "Location search isn’t responding. You can still add a place by name.";
 
-const SEARCH_BOX = "https://api.mapbox.com/search/searchbox/v1";
-const GEOCODE_V6 = "https://api.mapbox.com/search/geocode/v6";
-
-const SEARCH_TYPES = [
-  "country",
-  "region",
-  "district",
-  "place",
-  "locality",
-  "neighborhood",
-  "street",
-  "address",
-  "poi",
-].join(",");
-
-/** Both APIs return the same context shape, so one parser serves both. */
-type ContextEntry = { name?: string; country_code?: string; region_code?: string };
-
-type FeatureProperties = {
-  mapbox_id?: string;
+/** Photon returns OSM tags; these map onto the icon and ranking we want. */
+type PhotonProperties = {
+  osm_id?: number;
+  osm_type?: string;
+  osm_key?: string;
+  osm_value?: string;
+  type?: string;
   name?: string;
-  name_preferred?: string;
-  place_formatted?: string;
-  full_address?: string;
-  feature_type?: string;
-  poi_category?: string[];
-  coordinates?: { longitude?: number; latitude?: number };
-  context?: {
-    country?: ContextEntry;
-    region?: ContextEntry;
-    postcode?: ContextEntry;
-    district?: ContextEntry;
-    place?: ContextEntry;
-    locality?: ContextEntry;
-    neighborhood?: ContextEntry;
-    street?: ContextEntry;
-  };
+  street?: string;
+  housenumber?: string;
+  city?: string;
+  district?: string;
+  county?: string;
+  state?: string;
+  country?: string;
+  countrycode?: string;
+  postcode?: string;
 };
 
-type Feature = {
-  id?: string;
-  properties?: FeatureProperties;
+type PhotonFeature = {
+  properties?: PhotonProperties;
   geometry?: { coordinates?: [number, number] };
 };
 
-function toResult(feature: Feature, index: number): LocationResult | null {
-  const props = feature.properties ?? {};
-  const coords = feature.geometry?.coordinates;
-  const longitude = props.coordinates?.longitude ?? (coords ? coords[0] : undefined);
-  const latitude = props.coordinates?.latitude ?? (coords ? coords[1] : undefined);
-
-  if (
-    typeof longitude !== "number" ||
-    typeof latitude !== "number" ||
-    !Number.isFinite(longitude) ||
-    !Number.isFinite(latitude)
-  ) {
-    return null;
-  }
-
-  const name = props.name_preferred || props.name;
-  if (!name) return null;
-
-  const context = props.context ?? {};
-  const type = props.feature_type;
-
-  const country = context.country?.name ?? (type === "country" ? name : undefined);
-  const region = context.region?.name ?? (type === "region" ? name : undefined);
-  const city =
-    context.place?.name ??
-    context.locality?.name ??
-    (type === "place" || type === "locality" ? name : undefined);
-
-  // Prefer the geocoder's own subtitle; fall back to assembling one.
-  const subtitle =
-    props.place_formatted ??
-    [city, region, country].filter((part) => part && part !== name).join(", ");
-
-  return {
-    id: props.mapbox_id ?? feature.id ?? `result-${index}`,
-    name,
-    context: subtitle,
-    city,
-    region,
-    country,
-    countryCode: context.country?.country_code?.toUpperCase(),
-    latitude,
-    longitude,
-    kind: type,
-  };
-}
-
-function parseCollection(payload: unknown): LocationResult[] {
-  const features = (payload as { features?: Feature[] })?.features;
-  if (!Array.isArray(features)) return [];
-  return features
-    .map(toResult)
-    .filter((result): result is LocationResult => result !== null);
-}
-
-async function fetchJson(url: string, signal?: AbortSignal): Promise<unknown> {
-  const response = await fetch(url, { signal });
-  if (!response.ok) {
-    throw new GeocodingError(`Search failed with status ${response.status}`);
-  }
-  return response.json();
-}
-
-/** Best-effort browser language, so results come back localised. */
-function language(): string {
-  if (typeof navigator === "undefined") return "en";
-  return navigator.language?.split("-")[0] || "en";
+/** Broad category, used only to pick an icon and to rank results. */
+function kindOf(props: PhotonProperties): string {
+  const type = props.type;
+  if (type === "country") return "country";
+  if (type === "state") return "region";
+  if (type === "city" || type === "district" || type === "locality") return "place";
+  if (type === "street" || type === "house") return "address";
+  if (props.osm_key === "tourism" || props.osm_key === "historic") return "poi";
+  if (props.osm_key === "amenity" || props.osm_key === "leisure") return "poi";
+  return type ?? "place";
 }
 
 /**
- * Forward search. `proximity` biases results toward the current camera, which
- * matters a lot for ambiguous names like "Springfield" or "Santa Cruz".
+ * A travel journal is mostly about cities, countries and landmarks, so those
+ * come first; house numbers and postcodes are almost never what was meant.
  */
+const RANK: Record<string, number> = {
+  city: 0,
+  place: 0,
+  country: 1,
+  region: 2,
+  poi: 1,
+  address: 4,
+};
+
+function toResult(feature: PhotonFeature, index: number): LocationResult | null {
+  const props = feature.properties ?? {};
+  const coords = feature.geometry?.coordinates;
+  if (!coords || coords.length < 2) return null;
+
+  const [longitude, latitude] = coords;
+  if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return null;
+
+  const kind = kindOf(props);
+  const street = props.street
+    ? [props.housenumber, props.street].filter(Boolean).join(" ")
+    : undefined;
+
+  const name = props.name ?? street ?? props.city ?? props.country;
+  if (!name) return null;
+
+  const city = props.city ?? (kind === "place" ? props.name : undefined);
+  const region = props.state;
+  const country = props.country;
+
+  // "Barcelona, Catalonia, Spain" — skipping anything that repeats the name.
+  const context = [city, region, country]
+    .filter((part, position, all): part is string =>
+      Boolean(part) && part !== name && all.indexOf(part) === position,
+    )
+    .join(", ");
+
+  return {
+    id: `${props.osm_type ?? "x"}${props.osm_id ?? index}`,
+    name,
+    context,
+    city,
+    region,
+    country,
+    countryCode: props.countrycode?.toUpperCase(),
+    latitude,
+    longitude,
+    kind,
+  };
+}
+
+function parse(payload: unknown): LocationResult[] {
+  const features = (payload as { features?: PhotonFeature[] })?.features;
+  if (!Array.isArray(features)) return [];
+
+  const results = features
+    .map(toResult)
+    .filter((result): result is LocationResult => result !== null);
+
+  // Stable sort: keep the geocoder's own ordering within each rank band.
+  return results
+    .map((result, index) => ({ result, index }))
+    .sort(
+      (a, b) =>
+        (RANK[a.result.kind ?? ""] ?? 3) - (RANK[b.result.kind ?? ""] ?? 3) ||
+        a.index - b.index,
+    )
+    .map((entry) => entry.result);
+}
+
+function language(): string {
+  if (typeof navigator === "undefined") return "en";
+  const code = navigator.language?.split("-")[0] ?? "en";
+  // Photon only carries a handful of localisations; anything else falls back.
+  return ["en", "de", "fr", "it"].includes(code) ? code : "en";
+}
+
+const REQUEST_TIMEOUT_MS = 12_000;
+
+/**
+ * Search must never spin forever. A request that hangs — a captive portal, a
+ * network that vanished mid-flight — is abandoned on its own deadline, which
+ * surfaces as "isn't responding" rather than an endless spinner. The caller's
+ * signal still wins immediately, so a fresh keystroke supersedes the old query.
+ */
+async function fetchJson(url: string, signal?: AbortSignal): Promise<unknown> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort(new DOMException("Timed out", "TimeoutError"));
+  }, REQUEST_TIMEOUT_MS);
+  const relay = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", relay);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new GeocodingError(`Search failed with ${response.status}`);
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", relay);
+  }
+}
+
 export async function searchLocations(
   query: string,
   options: { signal?: AbortSignal; proximity?: [number, number] } = {},
 ): Promise<LocationResult[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
-  if (!hasMapboxToken) throw new GeocodingError(GEOCODING_UNAVAILABLE);
 
-  const params = new URLSearchParams({
-    q: trimmed,
-    access_token: MAPBOX_TOKEN,
-    limit: "8",
-    language: language(),
-    types: SEARCH_TYPES,
-  });
+  const params = new URLSearchParams({ q: trimmed, limit: "10", lang: language() });
+  // Biasing toward the current view is what separates "Springfield" the one
+  // you meant from the eleven you didn't.
   if (options.proximity) {
-    params.set("proximity", `${options.proximity[0]},${options.proximity[1]}`);
+    params.set("lon", options.proximity[0].toFixed(4));
+    params.set("lat", options.proximity[1].toFixed(4));
   }
 
   try {
-    const payload = await fetchJson(`${SEARCH_BOX}/forward?${params}`, options.signal);
-    const results = parseCollection(payload);
-    if (results.length > 0) return results;
-  } catch (error) {
-    if ((error as Error)?.name === "AbortError") throw error;
-    // Fall through to the geocoder below.
-  }
-
-  const fallbackParams = new URLSearchParams({
-    q: trimmed,
-    access_token: MAPBOX_TOKEN,
-    limit: "8",
-    language: language(),
-  });
-  if (options.proximity) {
-    fallbackParams.set("proximity", `${options.proximity[0]},${options.proximity[1]}`);
-  }
-
-  try {
-    const payload = await fetchJson(`${GEOCODE_V6}/forward?${fallbackParams}`, options.signal);
-    return parseCollection(payload);
+    const payload = await fetchJson(`${PHOTON}/api/?${params}`, options.signal);
+    return parse(payload).slice(0, 8);
   } catch (error) {
     if ((error as Error)?.name === "AbortError") throw error;
     throw new GeocodingError("Location search isn’t responding right now.", error);
@@ -189,39 +197,23 @@ export async function searchLocations(
 /**
  * Reverse lookup for a point dropped on the globe. Returns `null` rather than
  * throwing when the point is in open ocean or the service is unreachable — the
- * user can always name the place themselves.
+ * place can always be named by hand.
  */
 export async function reverseGeocode(
   longitude: number,
   latitude: number,
   options: { signal?: AbortSignal } = {},
 ): Promise<LocationResult | null> {
-  if (!hasMapboxToken) return null;
-
-  const base = {
-    longitude: longitude.toFixed(6),
-    latitude: latitude.toFixed(6),
-    access_token: MAPBOX_TOKEN,
-    language: language(),
-  };
+  const params = new URLSearchParams({
+    lon: longitude.toFixed(6),
+    lat: latitude.toFixed(6),
+    limit: "1",
+    lang: language(),
+  });
 
   try {
-    const params = new URLSearchParams({ ...base, limit: "1" });
-    const payload = await fetchJson(`${SEARCH_BOX}/reverse?${params}`, options.signal);
-    const [first] = parseCollection(payload);
-    if (first) return first;
-  } catch (error) {
-    if ((error as Error)?.name === "AbortError") throw error;
-  }
-
-  try {
-    const params = new URLSearchParams({
-      ...base,
-      types: "place,locality,region,country",
-    });
-    const payload = await fetchJson(`${GEOCODE_V6}/reverse?${params}`, options.signal);
-    const [first] = parseCollection(payload);
-    return first ?? null;
+    const payload = await fetchJson(`${PHOTON}/reverse?${params}`, options.signal);
+    return parse(payload)[0] ?? null;
   } catch (error) {
     if ((error as Error)?.name === "AbortError") throw error;
     return null;

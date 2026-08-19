@@ -5,8 +5,7 @@ import { Building2, Globe2, Landmark, MapPin, PencilLine, Search, X } from "luci
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
-import { GEOCODING_UNAVAILABLE, searchLocations } from "@/lib/maps/geocoding";
-import { hasMapboxToken } from "@/lib/maps/mapbox";
+import { searchLocations } from "@/lib/maps/geocoding";
 import { cn } from "@/lib/utils/cn";
 import type { LocationResult } from "@/types/place";
 
@@ -32,6 +31,7 @@ export function LocationSearchSheet({
   onSelect,
   onPickOnGlobe,
   onManualEntry,
+  mapAvailable,
   proximity,
   title,
 }: {
@@ -39,8 +39,10 @@ export function LocationSearchSheet({
   onClose: () => void;
   onSelect: (result: LocationResult) => void;
   onPickOnGlobe: () => void;
-  /** Used when there is no map to search or drop a pin on. */
+  /** Used when there is no map to drop a pin on. */
   onManualEntry: () => void;
+  /** False when the map failed to load — offline, or a blocked network. */
+  mapAvailable: boolean;
   proximity?: [number, number];
   title: string;
 }) {
@@ -74,12 +76,6 @@ export function LocationSearchSheet({
       setResults([]);
       setStatus("idle");
       setError(null);
-      return;
-    }
-
-    if (!hasMapboxToken) {
-      setStatus("error");
-      setError(GEOCODING_UNAVAILABLE);
       return;
     }
 
@@ -203,7 +199,8 @@ export function LocationSearchSheet({
           <div className="px-1 py-6 text-center">
             <p className="text-[16px] font-medium text-ink">No matches</p>
             <p className="mx-auto mt-1 max-w-[30ch] text-[14px] leading-relaxed text-ink-2">
-              Try a different spelling, or drop a pin on the globe instead.
+              Try a different spelling, or{" "}
+              {mapAvailable ? "drop a pin on the globe" : "enter it by hand"} instead.
             </p>
           </div>
         ) : (
@@ -220,11 +217,11 @@ export function LocationSearchSheet({
         <div className="mt-3 border-t border-separator pt-3">
           <button
             type="button"
-            onClick={hasMapboxToken ? onPickOnGlobe : onManualEntry}
+            onClick={mapAvailable ? onPickOnGlobe : onManualEntry}
             className="flex w-full items-center gap-3 rounded-sm py-2.5 pr-2 text-left transition-colors active:bg-fill"
           >
             <span className="grid size-9 shrink-0 place-items-center rounded-full bg-fill text-ink-2">
-              {hasMapboxToken ? (
+              {mapAvailable ? (
                 <Globe2 size={17} aria-hidden="true" />
               ) : (
                 <PencilLine size={17} aria-hidden="true" />
@@ -232,10 +229,10 @@ export function LocationSearchSheet({
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[16px] font-medium text-ink">
-                {hasMapboxToken ? "Drop a pin on the globe" : "Enter this place manually"}
+                {mapAvailable ? "Drop a pin on the globe" : "Enter this place manually"}
               </span>
               <span className="block truncate text-[13.5px] text-ink-2">
-                {hasMapboxToken
+                {mapAvailable
                   ? "For anywhere search can’t find"
                   : "Type the name and coordinates yourself"}
               </span>

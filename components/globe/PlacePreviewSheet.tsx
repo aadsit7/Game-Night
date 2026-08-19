@@ -47,9 +47,6 @@ export function PlacePreviewSheet({
             <PlaceImage
               place={place}
               alt=""
-              width={220}
-              height={220}
-              zoom={12.5}
               className="size-[72px] shrink-0 rounded-[18px]"
             />
 

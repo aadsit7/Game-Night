@@ -7,30 +7,40 @@ import type {
   FilterSpecification,
   GeoJSONSource,
   LngLat,
-  Map as MapboxMap,
+  Map as MapLibreMap,
   MapMouseEvent,
   Marker,
-} from "mapbox-gl";
+} from "maplibre-gl";
 
 import { GlobeFallback } from "@/components/globe/GlobeFallback";
 import { usePrefersDark, usePrefersReducedMotion } from "@/lib/hooks/useMediaQuery";
 import {
+  CITY_LAYERS,
+  CLUSTER_COLOR,
+  COUNTRIES_URL,
+  COUNTRY_COLOR,
+  COUNTRY_FILL_OPACITY,
+  COUNTRY_LINE_OPACITY,
   DEFAULT_CAMERA,
+  FONT_BOLD,
   INTERACTIVE_LAYERS,
   LAYER_CLUSTER,
   LAYER_CLUSTER_COUNT,
   LAYER_CLUSTER_GLOW,
-  CITY_LAYERS,
   LAYER_COUNTRY_FILL,
   LAYER_COUNTRY_LINE,
   LAYER_PIN,
   LAYER_PIN_DOT,
-  MAPBOX_STYLE,
+  PIN_COLOR,
+  PIN_COLOR_SELECTED,
+  SOURCE_COUNTRIES,
   SOURCE_ID,
-  hasMapboxToken,
-  loadMapbox,
+  STYLE_URLS,
+  assetUrl,
+  loadMapLibre,
+  styleFor,
   type MapView,
-} from "@/lib/maps/mapbox";
+} from "@/lib/maps/basemap";
 import { boundsForPlaces, hasValidCoordinates, placeSubtitle } from "@/lib/utils/geo";
 import type { VisitedPlace } from "@/types/place";
 
@@ -76,14 +86,6 @@ type Props = {
 
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
-/** Countries and pins are deliberately different hues so neither hides the other. */
-const COUNTRY_COLOR = "#2F6BFF";
-const PIN_COLOR = "#FF5A3C";
-const PIN_COLOR_SELECTED = "#0A84FF";
-
-const COUNTRY_FILL_OPACITY = { countries: 0.55, cities: 0.1 } as const;
-const COUNTRY_LINE_OPACITY = { countries: 0.85, cities: 0 } as const;
-
 /** Label visibility ramp: pins speak for themselves at world scale. */
 const LABEL_RAMP: ExpressionSpecification = [
   "interpolate",
@@ -93,6 +95,18 @@ const LABEL_RAMP: ExpressionSpecification = [
   0,
   4.4,
   1,
+];
+
+const DOT_RADIUS: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  1,
+  4.5,
+  4,
+  6,
+  10,
+  8,
 ];
 
 function toFeatureCollection(places: VisitedPlace[]): FeatureCollection {
@@ -111,14 +125,14 @@ function toFeatureCollection(places: VisitedPlace[]): FeatureCollection {
 }
 
 /** Guards against re-attaching hover handlers when a style reloads. */
-const wiredMaps = new WeakSet<MapboxMap>();
+const wiredMaps = new WeakSet<MapLibreMap>();
 
 /**
- * Everything the style owns: the pin sprites, the clustered source, the two
- * cluster layers, the pin layer, and the whisper of colour over visited
- * countries. Runs on every `style.load`, so it must be idempotent.
+ * Everything the style owns: the clustered source, the country polygons, and
+ * the layers over both. Runs on every `style.load` — including after a
+ * light/dark style swap, which discards all of it — so it must be idempotent.
  */
-function installStyleLayers(map: MapboxMap, data: FeatureCollection): void {
+function installStyleLayers(map: MapLibreMap, data: FeatureCollection): void {
   if (map.getSource(SOURCE_ID)) {
     (map.getSource(SOURCE_ID) as GeoJSONSource).setData(data);
   } else {
@@ -131,23 +145,19 @@ function installStyleLayers(map: MapboxMap, data: FeatureCollection): void {
     });
   }
 
-  // Visited countries: barely-there colour at globe scale that fades out
-  // completely once you are close enough to read individual pins.
+  // OpenStreetMap tiles carry boundary lines but not country polygons, so the
+  // Countries view brings its own geometry — public-domain Natural Earth,
+  // simplified to about a kilometre, which is invisible at these zooms.
   try {
-    if (!map.getSource("country-boundaries")) {
-      map.addSource("country-boundaries", {
-        type: "vector",
-        url: "mapbox://mapbox.country-boundaries-v1",
-      });
+    if (!map.getSource(SOURCE_COUNTRIES)) {
+      map.addSource(SOURCE_COUNTRIES, { type: "geojson", data: assetUrl(COUNTRIES_URL) });
     }
     if (!map.getLayer(LAYER_COUNTRY_FILL)) {
       map.addLayer({
         id: LAYER_COUNTRY_FILL,
         type: "fill",
-        source: "country-boundaries",
-        "source-layer": "country_boundaries",
-        slot: "middle",
-        filter: ["in", ["get", "iso_3166_1"], ["literal", []]] as FilterSpecification,
+        source: SOURCE_COUNTRIES,
+        filter: ["in", ["get", "code"], ["literal", []]] as FilterSpecification,
         paint: {
           "fill-color": COUNTRY_COLOR,
           "fill-opacity": COUNTRY_FILL_OPACITY.cities,
@@ -159,10 +169,8 @@ function installStyleLayers(map: MapboxMap, data: FeatureCollection): void {
       map.addLayer({
         id: LAYER_COUNTRY_LINE,
         type: "line",
-        source: "country-boundaries",
-        "source-layer": "country_boundaries",
-        slot: "middle",
-        filter: ["in", ["get", "iso_3166_1"], ["literal", []]] as FilterSpecification,
+        source: SOURCE_COUNTRIES,
+        filter: ["in", ["get", "code"], ["literal", []]] as FilterSpecification,
         paint: {
           "line-color": COUNTRY_COLOR,
           "line-width": ["interpolate", ["linear"], ["zoom"], 0, 0.6, 4, 1.4],
@@ -180,10 +188,9 @@ function installStyleLayers(map: MapboxMap, data: FeatureCollection): void {
       id: LAYER_CLUSTER_GLOW,
       type: "circle",
       source: SOURCE_ID,
-      slot: "top",
       filter: ["has", "point_count"],
       paint: {
-        "circle-color": "#FF6A4D",
+        "circle-color": PIN_COLOR,
         "circle-opacity": 0.18,
         "circle-radius": ["step", ["get", "point_count"], 26, 5, 31, 15, 37, 40, 43],
       },
@@ -195,10 +202,9 @@ function installStyleLayers(map: MapboxMap, data: FeatureCollection): void {
       id: LAYER_CLUSTER,
       type: "circle",
       source: SOURCE_ID,
-      slot: "top",
       filter: ["has", "point_count"],
       paint: {
-        "circle-color": "#F04A28",
+        "circle-color": CLUSTER_COLOR,
         "circle-radius": ["step", ["get", "point_count"], 17, 5, 21, 15, 26, 40, 31],
         "circle-stroke-width": 2.5,
         "circle-stroke-color": "rgba(255,255,255,0.92)",
@@ -211,11 +217,10 @@ function installStyleLayers(map: MapboxMap, data: FeatureCollection): void {
       id: LAYER_CLUSTER_COUNT,
       type: "symbol",
       source: SOURCE_ID,
-      slot: "top",
       filter: ["has", "point_count"],
       layout: {
         "text-field": ["get", "point_count_abbreviated"],
-        "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
+        "text-font": FONT_BOLD,
         "text-size": ["step", ["get", "point_count"], 13, 15, 14, 40, 15],
         "text-allow-overlap": true,
         "text-ignore-placement": true,
@@ -229,12 +234,11 @@ function installStyleLayers(map: MapboxMap, data: FeatureCollection): void {
       id: LAYER_PIN_DOT,
       type: "circle",
       source: SOURCE_ID,
-      slot: "top",
       filter: ["!", ["has", "point_count"]],
       paint: {
         // Small, round and dense on purpose: a hundred places should still
         // read as a constellation rather than a pile of overlapping markers.
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 4.5, 4, 6, 10, 8],
+        "circle-radius": DOT_RADIUS,
         "circle-color": PIN_COLOR,
         "circle-stroke-width": 2,
         "circle-stroke-color": "rgba(255,255,255,0.95)",
@@ -248,11 +252,10 @@ function installStyleLayers(map: MapboxMap, data: FeatureCollection): void {
       id: LAYER_PIN,
       type: "symbol",
       source: SOURCE_ID,
-      slot: "top",
       filter: ["!", ["has", "point_count"]],
       layout: {
         "text-field": ["get", "name"],
-        "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
+        "text-font": FONT_BOLD,
         "text-size": 12.5,
         "text-anchor": "top",
         "text-offset": [0, 0.7],
@@ -284,6 +287,23 @@ function installStyleLayers(map: MapboxMap, data: FeatureCollection): void {
   }
 }
 
+/** Atmosphere around the globe — decoration, and safe to skip if unsupported. */
+function applySky(map: MapLibreMap, dark: boolean): void {
+  try {
+    map.setSky({
+      "sky-color": dark ? "#0a1020" : "#8cb6e8",
+      "sky-horizon-blend": 0.6,
+      "horizon-color": dark ? "#1a2e50" : "#d6e4f6",
+      "horizon-fog-blend": 0.6,
+      "fog-color": dark ? "#101420" : "#dceafa",
+      "fog-ground-blend": 0.02,
+      "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 0.9, 5, 0.5, 8, 0],
+    });
+  } catch {
+    // Older renderers simply don't draw one.
+  }
+}
+
 export function TravelGlobe({
   places,
   dataReady,
@@ -302,13 +322,11 @@ export function TravelGlobe({
   handleRef,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<MapboxMap | null>(null);
+  const mapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
 
   const [styleReady, setStyleReady] = useState(false);
-  const [failure, setFailure] = useState<"missing-token" | "load-failed" | null>(
-    hasMapboxToken ? null : "missing-token",
-  );
+  const [failure, setFailure] = useState<"load-failed" | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   const prefersDark = usePrefersDark();
@@ -325,6 +343,7 @@ export function TravelGlobe({
   const onCountryTapRef = useRef(onCountryTap);
   const bottomInsetRef = useRef(bottomInset);
   const reduceMotionRef = useRef(reduceMotion);
+  const prefersDarkRef = useRef(prefersDark);
   const placesRef = useRef(places);
   const draggingRef = useRef(false);
   const framedRef = useRef(false);
@@ -339,6 +358,7 @@ export function TravelGlobe({
     onCountryTapRef.current = onCountryTap;
     bottomInsetRef.current = bottomInset;
     reduceMotionRef.current = reduceMotion;
+    prefersDarkRef.current = prefersDark;
     placesRef.current = places;
   });
 
@@ -363,17 +383,15 @@ export function TravelGlobe({
   /* ---------------------------------------------------------------------- */
 
   useEffect(() => {
-    if (!hasMapboxToken) return;
-
     let cancelled = false;
-    let map: MapboxMap | null = null;
+    let map: MapLibreMap | null = null;
     let loadTimer = 0;
     let detachPress: (() => void) | undefined;
 
     void (async () => {
-      let mapboxgl: Awaited<ReturnType<typeof loadMapbox>>;
+      let maplibregl: Awaited<ReturnType<typeof loadMapLibre>>;
       try {
-        mapboxgl = await loadMapbox();
+        maplibregl = await loadMapLibre();
       } catch {
         if (!cancelled) setFailure("load-failed");
         return;
@@ -381,16 +399,14 @@ export function TravelGlobe({
       if (cancelled || !containerRef.current) return;
 
       try {
-        map = new mapboxgl.Map({
+        map = new maplibregl.Map({
           container: containerRef.current,
-          style: MAPBOX_STYLE,
-          projection: "globe",
+          style: styleFor(prefersDarkRef.current),
           center: DEFAULT_CAMERA.center,
           zoom: DEFAULT_CAMERA.zoom,
           minZoom: 0.4,
           maxZoom: 17,
           attributionControl: false,
-          logoPosition: "bottom-left",
           // A travel globe should spin and zoom, not tilt and rotate: free
           // bearing on a sphere is disorienting and easy to trigger by accident.
           dragRotate: false,
@@ -405,29 +421,43 @@ export function TravelGlobe({
 
       mapRef.current = map;
       map.touchZoomRotate.disableRotation();
-      map.addControl(new mapboxgl.AttributionControl({ compact: true }), "bottom-right");
+      map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
 
-      // A bad or missing token surfaces as an auth error on the first request.
-      map.on("error", (event) => {
-        const message = String((event as { error?: { message?: string } })?.error?.message ?? "");
-        if (/401|403|Unauthorized|access token|Not Authorized/i.test(message)) {
-          if (!cancelled) setFailure("missing-token");
-        }
-      });
-
+      // The backstop, for a style request that neither answers nor fails.
       loadTimer = window.setTimeout(() => {
         if (!cancelled && !map?.isStyleLoaded()) setFailure("load-failed");
       }, 20_000);
 
+      // Individual tiles fail all the time — a slow connection, a gap in
+      // coverage — and the map carries on regardless. A style that can't be
+      // fetched is different: there is no map at all, and waiting out the
+      // backstop just to say so leaves someone staring at nothing.
+      map.on("error", (event) => {
+        if (cancelled || !map || map.isStyleLoaded()) return;
+        const url = (event?.error as { url?: string } | undefined)?.url;
+        if (!url || !STYLE_URLS.includes(url)) return;
+        window.clearTimeout(loadTimer);
+        setFailure("load-failed");
+      });
+
       map.on("style.load", () => {
         if (cancelled || !map) return;
         window.clearTimeout(loadTimer);
+
+        // The whole point of the thing.
+        try {
+          map.setProjection({ type: "globe" });
+        } catch {
+          // An older renderer falls back to a flat map, which still works.
+        }
+        applySky(map, prefersDarkRef.current);
+
         installStyleLayers(map, toFeatureCollection(placesRef.current));
         setStyleReady(true);
       });
 
-      /* Long-press to drop a pin. Mapbox's `contextmenu` covers desktop
-         right-click; touch needs a timer because Safari won't fire it. */
+      /* Long-press to drop a pin. `contextmenu` covers desktop right-click;
+         touch needs a timer because Safari won't fire it. */
       const canvasContainer = map.getCanvasContainer();
       let pressTimer = 0;
       let origin: { x: number; y: number } | null = null;
@@ -488,8 +518,8 @@ export function TravelGlobe({
         fire(event.lngLat);
       });
 
-      /* One click handler for the whole map: pick mode, pins, clusters, then
-         empty space to dismiss — decided in that order. */
+      /* One click handler for the whole map: pick mode, countries, pins,
+         clusters, then empty space to dismiss — decided in that order. */
       map.on("click", (event: MapMouseEvent) => {
         if (!map) return;
 
@@ -505,7 +535,7 @@ export function TravelGlobe({
           const hit = map.queryRenderedFeatures(event.point, {
             layers: [LAYER_COUNTRY_FILL],
           })[0];
-          const code = hit?.properties?.iso_3166_1;
+          const code = hit?.properties?.code;
           if (code) {
             onCountryTapRef.current?.(String(code));
           } else {
@@ -535,15 +565,20 @@ export function TravelGlobe({
           const clusterId = Number(cluster.properties?.cluster_id);
           const coordinates = (cluster.geometry as GeoPoint).coordinates as [number, number];
           if (source && Number.isFinite(clusterId)) {
-            source.getClusterExpansionZoom(clusterId, (error, zoom) => {
-              if (error || !map || typeof zoom !== "number") return;
-              map.easeTo({
-                center: coordinates,
-                zoom: Math.min(zoom + 0.35, 16),
-                duration: reduceMotionRef.current ? 0 : 900,
-                padding: cameraPadding(),
+            void source
+              .getClusterExpansionZoom(clusterId)
+              .then((zoom) => {
+                if (!map || typeof zoom !== "number") return;
+                map.easeTo({
+                  center: coordinates,
+                  zoom: Math.min(zoom + 0.35, 16),
+                  duration: reduceMotionRef.current ? 0 : 900,
+                  padding: cameraPadding(),
+                });
+              })
+              .catch(() => {
+                // A cluster that can't expand is not worth an error.
               });
-            });
           }
           return;
         }
@@ -566,44 +601,28 @@ export function TravelGlobe({
   }, [attempt, cameraPadding]);
 
   /* ---------------------------------------------------------------------- */
-  /* Theme                                                                    */
+  /* Theme — a whole style swap, which discards and re-adds our layers        */
   /* ---------------------------------------------------------------------- */
+
+  const themedOnce = useRef(prefersDark);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleReady || themedOnce.current === prefersDark) return;
+    themedOnce.current = prefersDark;
+    // `style.load` fires again afterwards and reinstalls every layer.
+    map.setStyle(styleFor(prefersDark));
+  }, [prefersDark, styleReady]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !styleReady) return;
-
+    if (!map || !styleReady || !map.getLayer(LAYER_PIN)) return;
     try {
-      map.setConfigProperty("basemap", "lightPreset", prefersDark ? "night" : "day");
-      map.setConfigProperty("basemap", "showPointOfInterestLabels", false);
-      map.setConfigProperty("basemap", "showTransitLabels", false);
-      map.setConfigProperty("basemap", "showRoadLabels", false);
-      map.setConfigProperty("basemap", "showPlaceLabels", true);
-    } catch {
-      // Older or custom styles may not expose these knobs.
-    }
-
-    try {
-      map.setFog({
-        color: prefersDark ? "rgb(16,20,32)" : "rgb(214,228,246)",
-        "high-color": prefersDark ? "rgb(26,46,80)" : "rgb(136,178,232)",
-        "horizon-blend": 0.045,
-        "space-color": prefersDark ? "rgb(3,5,11)" : "rgb(9,13,24)",
-        "star-intensity": prefersDark ? 0.35 : 0.08,
-      });
-    } catch {
-      // Fog is decoration.
-    }
-
-    try {
-      if (map.getLayer(LAYER_PIN)) {
-        map.setPaintProperty(LAYER_PIN, "text-color", prefersDark ? "#F4F5F8" : "#14161C");
-        map.setPaintProperty(
-          LAYER_PIN,
-          "text-halo-color",
-          prefersDark ? "rgba(4,6,12,0.85)" : "rgba(255,255,255,0.92)",
-        );
-      }
+      map.setPaintProperty(LAYER_PIN, "text-color", prefersDark ? "#F4F5F8" : "#14161C");
+      map.setPaintProperty(
+        LAYER_PIN,
+        "text-halo-color",
+        prefersDark ? "rgba(4,6,12,0.85)" : "rgba(255,255,255,0.92)",
+      );
     } catch {
       // Style may be mid-reload.
     }
@@ -624,15 +643,11 @@ export function TravelGlobe({
       const codes = [
         ...new Set(
           places
-            .map((place) => place.countryCode)
+            .map((place) => place.countryCode?.toUpperCase())
             .filter((code): code is string => Boolean(code && code.length === 2)),
         ),
       ];
-      const filter = [
-        "in",
-        ["get", "iso_3166_1"],
-        ["literal", codes],
-      ] as FilterSpecification;
+      const filter = ["in", ["get", "code"], ["literal", codes]] as FilterSpecification;
       if (map.getLayer(LAYER_COUNTRY_FILL)) map.setFilter(LAYER_COUNTRY_FILL, filter);
       if (map.getLayer(LAYER_COUNTRY_LINE)) map.setFilter(LAYER_COUNTRY_LINE, filter);
     } catch {
@@ -654,7 +669,7 @@ export function TravelGlobe({
     }
 
     try {
-      // Let Mapbox solve the framing, then rewind and fly into it.
+      // Let the renderer solve the framing, then rewind and fly into it.
       map.fitBounds(bounds, { padding: cameraPadding(), maxZoom: 3.4, duration: 0 });
       const center = map.getCenter();
       const zoom = map.getZoom();
@@ -694,7 +709,7 @@ export function TravelGlobe({
         "case",
         isSelected,
         11,
-        ["interpolate", ["linear"], ["zoom"], 1, 4.5, 4, 6, 10, 8],
+        DOT_RADIUS,
       ] as ExpressionSpecification);
 
       map.setPaintProperty(LAYER_PIN_DOT, "circle-stroke-width", [
@@ -704,8 +719,8 @@ export function TravelGlobe({
         2,
       ] as ExpressionSpecification);
 
-      // The selected place always shows its name, whatever the zoom.
       if (map.getLayer(LAYER_PIN)) {
+        // The selected place always shows its name, whatever the zoom.
         map.setPaintProperty(LAYER_PIN, "text-opacity", [
           "case",
           isSelected,
@@ -799,7 +814,7 @@ export function TravelGlobe({
     }
 
     let cancelled = false;
-    void loadMapbox().then((mapboxgl) => {
+    void loadMapLibre().then((maplibregl) => {
       if (cancelled || !mapRef.current || markerRef.current) return;
 
       const element = document.createElement("div");
@@ -808,11 +823,7 @@ export function TravelGlobe({
       element.innerHTML =
         '<span class="picker-pin__pulse"></span><span class="picker-pin__body"></span>';
 
-      const marker = new mapboxgl.Marker({
-        element,
-        anchor: "bottom",
-        draggable: true,
-      })
+      const marker = new maplibregl.Marker({ element, anchor: "bottom", draggable: true })
         .setLngLat([pickerPosition.longitude, pickerPosition.latitude])
         .addTo(mapRef.current);
 
@@ -858,17 +869,12 @@ export function TravelGlobe({
   if (failure) {
     return (
       <GlobeFallback
-        reason={failure}
-        onRetry={
-          failure === "load-failed"
-            ? () => {
-                setFailure(null);
-                setStyleReady(false);
-                framedRef.current = false;
-                setAttempt((value) => value + 1);
-              }
-            : undefined
-        }
+        onRetry={() => {
+          setFailure(null);
+          setStyleReady(false);
+          framedRef.current = false;
+          setAttempt((value) => value + 1);
+        }}
       />
     );
   }
@@ -878,8 +884,8 @@ export function TravelGlobe({
       <div
         ref={containerRef}
         className="size-full"
-        // Mapbox handles its own gestures; telling the browser to keep its
-        // hands off keeps a pinch from scrolling the page underneath.
+        // The renderer handles its own gestures; telling the browser to keep
+        // its hands off keeps a pinch from scrolling the page underneath.
         style={{ touchAction: "none" }}
       />
 

@@ -6,8 +6,6 @@ import { Globe2, Pencil, Trash2, X } from "lucide-react";
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { PlaceImage } from "@/components/ui/PlaceImage";
-import { usePrefersDark } from "@/lib/hooks/useMediaQuery";
-import { locatorImageUrl } from "@/lib/maps/mapbox";
 import { formatVisitRange } from "@/lib/utils/date";
 import { countryFlag, formatCoordinates, placeSubtitle } from "@/lib/utils/geo";
 import type { VisitedPlace } from "@/types/place";
@@ -34,7 +32,6 @@ export function PlaceDetailSheet({
   onDelete: () => void;
   recessed?: boolean;
 }) {
-  const prefersDark = usePrefersDark();
   const [lightbox, setLightbox] = useState<string | null>(null);
   const reduceMotion = useReducedMotion();
 
@@ -49,16 +46,6 @@ export function PlaceDetailSheet({
   const subtitle = place ? placeSubtitle(place) : "";
   const flag = place ? countryFlag(place.countryCode) : null;
   const extraPhotos = place?.photos ?? [];
-
-  const locator = place
-    ? locatorImageUrl({
-        latitude: place.latitude,
-        longitude: place.longitude,
-        width: 640,
-        height: 320,
-        dark: prefersDark,
-      })
-    : null;
 
   return (
     <>
@@ -100,8 +87,6 @@ export function PlaceDetailSheet({
             <PlaceImage
               place={place}
               alt={`${place.name}`}
-              width={900}
-              height={640}
               priority
               className="mt-4 aspect-[4/3] w-full rounded-[22px]"
             />
@@ -129,8 +114,6 @@ export function PlaceDetailSheet({
                       <PlaceImage
                         place={{ ...place, coverImage: photo }}
                         alt=""
-                        width={360}
-                        height={360}
                         className="size-[132px] rounded-[16px]"
                       />
                     </button>
@@ -146,32 +129,17 @@ export function PlaceDetailSheet({
               <button
                 type="button"
                 onClick={onShowOnGlobe}
-                className="pressable block w-full overflow-hidden rounded-[18px] bg-fill text-left"
+                className="pressable flex w-full items-center justify-between gap-3 rounded-[18px] bg-fill px-4 py-3.5 text-left"
               >
-                {locator ? (
-                  <img
-                    src={locator}
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                    className="aspect-[2/1] w-full object-cover"
-                  />
-                ) : (
-                  <div className="grid aspect-[2/1] w-full place-items-center text-ink-3">
-                    <Globe2 size={26} aria-hidden="true" />
-                  </div>
-                )}
-                <span className="flex items-center justify-between gap-3 px-4 py-3">
-                  <span className="min-w-0">
-                    <span className="block truncate text-[15px] font-medium text-ink">
-                      Show on Globe
-                    </span>
-                    <span className="block truncate text-[12.5px] tabular-nums text-ink-3">
-                      {formatCoordinates(place.latitude, place.longitude)}
-                    </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[15px] font-medium text-ink">
+                    Show on Globe
                   </span>
-                  <Globe2 size={18} aria-hidden="true" className="shrink-0 text-accent" />
+                  <span className="block truncate text-[12.5px] tabular-nums text-ink-3">
+                    {formatCoordinates(place.latitude, place.longitude)}
+                  </span>
                 </span>
+                <Globe2 size={18} aria-hidden="true" className="shrink-0 text-accent" />
               </button>
             </section>
 
@@ -224,8 +192,6 @@ export function PlaceDetailSheet({
             <PlaceImage
               place={{ ...place, coverImage: lightbox }}
               alt={`Photo of ${place.name}`}
-              width={1200}
-              height={1200}
               priority
               className="pointer-events-none relative max-h-[80dvh] w-full max-w-[560px] rounded-[20px] [&>img]:object-contain"
             />

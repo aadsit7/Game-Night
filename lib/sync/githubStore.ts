@@ -117,8 +117,13 @@ function parseFile(text: string): VisitedPlace[] {
  *
  * Used by devices with no token. The unauthenticated Contents API allows only
  * 60 requests an hour *per IP*, which a couple of read-only devices polling for
- * updates would exhaust between them. The CDN caches for a few minutes and
- * doesn't report a blob SHA, but a device that never writes has no use for one.
+ * updates would exhaust between them. It doesn't report a blob SHA, but a
+ * device that never writes has no use for one.
+ *
+ * The trade is staleness: the CDN sends `max-age=300` and keys its cache on the
+ * path alone, so the query below defeats the *browser's* cache but not GitHub's
+ * — a read-only device can be up to five minutes behind. Devices with a token
+ * go through the API instead and see writes immediately.
  */
 async function readViaCdn(
   config: GithubConfig,
@@ -237,11 +242,15 @@ export async function writeRemote(
  */
 export async function verifyAccess(
   config: GithubConfig,
+  signal?: AbortSignal,
 ): Promise<{ canWrite: boolean | null }> {
   const response = await fetch(
     `${API}/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}`,
-    { headers: headers(config.token), cache: "no-store" },
+    { headers: headers(config.token), cache: "no-store", signal },
   ).catch((error) => {
+    if ((error as Error)?.name === "AbortError" || (error as Error)?.name === "TimeoutError") {
+      throw new SyncError("GitHub didn’t answer in time.", "network", error);
+    }
     throw new SyncError("Couldn’t reach GitHub.", "network", error);
   });
 

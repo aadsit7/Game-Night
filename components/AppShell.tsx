@@ -25,7 +25,7 @@ import { ActionSheet } from "@/components/ui/ActionSheet";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Toast, type ToastMessage } from "@/components/ui/Toast";
 import { reverseGeocode } from "@/lib/maps/geocoding";
-import { hasMapboxToken, type MapView } from "@/lib/maps/mapbox";
+import type { MapView } from "@/lib/maps/basemap";
 import { usePlaces } from "@/lib/store/PlacesProvider";
 import {
   applyLocation,
@@ -129,7 +129,7 @@ export function AppShell() {
     return () => observer.disconnect();
   }, []);
 
-  /* Keep Mapbox's logo and attribution above the tab bar. */
+  /* Keep the map's attribution control above the tab bar. */
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--map-chrome-bottom",
@@ -590,8 +590,8 @@ export function AppShell() {
 
       <GlobeSearch
         places={places}
-        // Searching saved places doesn't need Mapbox, so this stays available
-        // even when the map itself can't load.
+        // Searching saved places is local, so this stays available even when
+        // the map itself can't load.
         visible={mode === "globe" && !pinSession && overlays.length === 0 && !loadError}
         onSelect={showOnGlobe}
         onOpenSettings={() => setSyncOpen(true)}
@@ -741,6 +741,9 @@ export function AppShell() {
         proximity={proximity}
         onClose={popOverlay}
         onSelect={handleLocationChosen}
+        // With no map to drop a pin on, the same row becomes manual entry —
+        // adding a place must never be a dead end.
+        mapAvailable={globeStatus !== "failed"}
         onManualEntry={() =>
           setOverlays((current) => {
             const withoutSearch = current.filter((overlay) => overlay.kind !== "search");
@@ -792,7 +795,6 @@ export function AppShell() {
           {
             label: "Adjust Pin",
             icon: <MapPin size={18} />,
-            disabled: !hasMapboxToken,
             onSelect: () => {
               if (!actionsPlace) return;
               beginPinSession({

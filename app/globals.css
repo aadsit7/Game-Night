@@ -176,25 +176,25 @@ select {
   background: var(--c-accent-soft);
 }
 
-/* Mapbox's own controls & attribution, re-skinned to sit quietly in the UI. */
-.mapboxgl-ctrl-attrib.mapboxgl-compact {
+/* The renderer's own controls & attribution, re-skinned to sit quietly in the UI. */
+.maplibregl-ctrl-attrib.maplibregl-compact {
   background: rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(12px);
 }
 
 @media (prefers-color-scheme: dark) {
-  .mapboxgl-ctrl-attrib.mapboxgl-compact {
+  .maplibregl-ctrl-attrib.maplibregl-compact {
     background: rgba(0, 0, 0, 0.45);
   }
-  .mapboxgl-ctrl-attrib a,
-  .mapboxgl-ctrl-attrib {
+  .maplibregl-ctrl-attrib a,
+  .maplibregl-ctrl-attrib {
     color: rgba(255, 255, 255, 0.7) !important;
   }
 }
 
-/* Lift Mapbox's logo and attribution clear of the floating tab bar. */
-.mapboxgl-ctrl-bottom-right,
-.mapboxgl-ctrl-bottom-left {
+/* Lift the map attribution clear of the floating tab bar. */
+.maplibregl-ctrl-bottom-right,
+.maplibregl-ctrl-bottom-left {
   z-index: 1 !important;
   bottom: var(--map-chrome-bottom, 0px) !important;
   transition: bottom 260ms cubic-bezier(0.2, 0.8, 0.3, 1);
@@ -275,7 +275,7 @@ select {
   }
 }
 
-.mapboxgl-canvas:focus-visible {
+.maplibregl-canvas:focus-visible {
   outline: 2px solid var(--c-accent);
   outline-offset: -4px;
 }

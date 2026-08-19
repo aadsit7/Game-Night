@@ -43,6 +43,25 @@ export type SyncState = {
 
 const PUSH_DEBOUNCE_MS = 1800;
 const POLL_INTERVAL_MS = 90_000;
+const REQUEST_TIMEOUT_MS = 15_000;
+const FIRST_PULL_TIMEOUT_MS = 6_000;
+
+/**
+ * Every request gets a deadline.
+ *
+ * A `fetch` that hangs — a captive portal, a network that went away mid-flight,
+ * a handoff between wifi and cellular — never rejects on its own. Without this,
+ * one such request leaves `busy` set forever: focus pulls and the poll timer
+ * both no-op, and the first pull never settles, so the things waiting on it
+ * (sample data, most visibly) never happen either.
+ */
+function deadline(ms: number): AbortSignal | undefined {
+  if (typeof AbortSignal === "undefined") return undefined;
+  if (typeof AbortSignal.timeout === "function") return AbortSignal.timeout(ms);
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
+}
 
 export function useGithubSync({
   ready,
@@ -99,6 +118,9 @@ export function useGithubSync({
 
   const describe = (error: unknown): string => {
     if (error instanceof SyncError) return error.message;
+    if ((error as Error)?.name === "AbortError" || (error as Error)?.name === "TimeoutError") {
+      return "GitHub didn’t answer in time. Your places are still saved on this device.";
+    }
     return "Syncing didn’t work. Your places are still saved on this device.";
   };
 
@@ -120,14 +142,26 @@ export function useGithubSync({
       const message = `Update travel places (${local.filter((p) => !p.deletedAt).length} saved)`;
 
       try {
-        shaRef.current = await writeRemote(current, local, shaRef.current, message);
+        shaRef.current = await writeRemote(
+          current,
+          local,
+          shaRef.current,
+          message,
+          deadline(REQUEST_TIMEOUT_MS),
+        );
       } catch (error) {
         // Someone else wrote first: take their version, fold ours in, try again.
         if (error instanceof SyncError && error.kind === "conflict") {
-          const snapshot = await readRemote(current);
+          const snapshot = await readRemote(current, deadline(REQUEST_TIMEOUT_MS));
           const merged = pruneTombstones(mergePlaces(local, snapshot.places));
           await applyMerged(merged);
-          shaRef.current = await writeRemote(current, merged, snapshot.sha, message);
+          shaRef.current = await writeRemote(
+            current,
+            merged,
+            snapshot.sha,
+            message,
+            deadline(REQUEST_TIMEOUT_MS),
+          );
         } else {
           throw error;
         }
@@ -160,7 +194,10 @@ export function useGithubSync({
   }, [config, push]);
 
   const pull = useCallback(
-    async ({ quiet = false }: { quiet?: boolean } = {}) => {
+    async ({
+      quiet = false,
+      timeoutMs = REQUEST_TIMEOUT_MS,
+    }: { quiet?: boolean; timeoutMs?: number } = {}) => {
       const current = config();
       if (!current || busy.current) return;
 
@@ -168,7 +205,7 @@ export function useGithubSync({
       if (!quiet) setState((s) => ({ ...s, phase: "pulling", error: null }));
 
       try {
-        const snapshot = await readRemote(current);
+        const snapshot = await readRemote(current, deadline(timeoutMs));
         shaRef.current = snapshot.sha;
 
         const local = await placeRepository.getAllIncludingDeleted();
@@ -203,8 +240,10 @@ export function useGithubSync({
   useEffect(() => {
     if (!ready || !settings || pulledOnce.current) return;
     pulledOnce.current = true;
+    // Shorter than the rest: a first run sits on an empty globe until this
+    // resolves, and a read of one small file has no business taking seconds.
     // `pull` handles its own errors, so this settles either way.
-    void pull().finally(() => onSettledRef.current?.());
+    void pull({ timeoutMs: FIRST_PULL_TIMEOUT_MS }).finally(() => onSettledRef.current?.());
   }, [ready, settings, pull]);
 
   // Coming back to the tab is the moment another device's change matters most.

@@ -6,7 +6,6 @@ import { CalendarRange, ChevronRight, MapPin, Trash2 } from "lucide-react";
 import { PhotoPicker } from "@/components/place/PhotoPicker";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { Button } from "@/components/ui/Button";
-import { hasMapboxToken } from "@/lib/maps/mapbox";
 import { isDraftValid, type PlaceDraft } from "@/lib/store/draft";
 import { cn } from "@/lib/utils/cn";
 import { formatCoordinates, isValidLatitude, isValidLongitude } from "@/lib/utils/geo";
@@ -152,7 +151,7 @@ export function PlaceFormSheet({
             <button
               type="button"
               onClick={onAdjustPin}
-              disabled={!hasPosition || !hasMapboxToken}
+              disabled={!hasPosition}
               className="flex min-h-[50px] w-full items-center justify-between px-4 text-left text-[16px] text-accent transition-colors active:bg-fill-strong disabled:text-ink-3"
             >
               Adjust Pin
