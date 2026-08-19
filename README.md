@@ -34,7 +34,7 @@ outlines are all keyless; `npm install && npm run dev` is the whole setup.
 | `npm run build`     | Production build                                |
 | `npm run typecheck` | `tsc --noEmit`                                  |
 | `npm run lint`      | ESLint                                          |
-| `npm run test`      | Paint expressions and sync merge rules          |
+| `npm run test`      | Paint expressions, sheet column mapping, write queue |
 | `npm run check`     | All four, in order                              |
 | `npm run icons`     | Regenerates the app icons from `scripts/`       |
 | `npm run countries` | Rebuilds `public/geo/countries.json` from Natural Earth |
@@ -55,9 +55,11 @@ running if you want a different resolution.
 
 ### Environment
 
-| Variable                       | Required | Purpose                                              |
-| ------------------------------ | -------- | ---------------------------------------------------- |
-| `NEXT_PUBLIC_SEED_SAMPLE_DATA` | No       | `false` starts with an empty history. Anything else seeds fourteen sample places once, on first run. |
+Nothing to configure. The map services need no key, and the Google Sheet
+connection is deliberately *not* an environment variable — a static site has no
+server to read one on, and this repository is public, so any value compiled in
+would ship to every visitor. The sheet address and access code are typed into
+each browser once instead. See [docs/SHEET-SETUP.md](docs/SHEET-SETUP.md).
 
 **If the map can't be reached at all** — an offline device, a blocked network —
 the globe shows a designed explanation instead of a crash, and Places, search,
@@ -88,46 +90,47 @@ the safest credential is the one that doesn't exist.
 
 ---
 
-## Syncing across devices
+## Where your data lives
 
-Your places live in `data/places.json` **in this repository**. That file is the
-shared copy, and it is what makes the same URL show the same travel history on
-a phone, a laptop and a tablet.
+Your places live in a **Google Sheet**, reached through a Google Apps Script web
+app. That sheet is the single source of truth: the app loads from it on open,
+writes back to it on every change, and any browser on any device sees the same
+data.
 
-**Reading takes no setup.** The repository is public, so opening the site on any
-device pulls the current file — no sign-in, nothing to configure. The app pulls
-on load, whenever the tab regains focus, and on a slow timer while it's open.
-Token-less devices read through `raw.githubusercontent.com` rather than the
-API: the unauthenticated Contents API allows only 60 requests an hour per IP,
-which two read-only devices polling for updates would exhaust between them. The
-trade is that the CDN caches for five minutes, so a device that only reads can
-be that far behind; a device with a token goes through the API and sees writes
-immediately.
+Setup is two fields, once per browser — the web app address and an access code.
+[**docs/SHEET-SETUP.md**](docs/SHEET-SETUP.md) covers publishing the script,
+what the deployment settings mean, and the re-deploy trap.
 
-**Saving needs a token, once per device.** Open Sync (the ⚙ next to the map
-search, or the chip beside "My Places") and paste a
-[fine-grained token](https://github.com/settings/personal-access-tokens/new)
-scoped to this repository with **Contents: read and write**. Edits are then
-debounced and committed for you — a burst of typing becomes one commit, not one
-per keystroke.
+> **Why Apps Script and not the Sheets API directly?** Because this is a static
+> site: any credential compiled into it is delivered to every visitor's browser
+> and can be read straight out of the page source. Apps Script runs on Google's
+> servers under the sheet owner's own account, so no Google credential ever
+> reaches the browser and the sheet itself stays private. The access code that
+> guards the endpoint is per-browser, in localStorage, and never committed.
 
-> **Why isn't the token just built in?** Because this is a static site: any
-> value compiled into it is delivered to every visitor's browser and can be read
-> straight out of the page source. A token in the bundle would hand write access
-> to the repository to anyone who opened the URL, and GitHub would revoke it on
-> sight. Keeping it per-device is the only version of this that is actually safe.
+**On open**, one request pulls every data tab at once. **On change**, the record
+is written back immediately — there is no Save button. A localStorage copy is
+kept purely as a cache so the app shows something offline; a successful load
+overwrites it wholesale, because the sheet always wins.
 
-Devices reconcile by last-write-wins per record. Deletions are tombstones rather
-than removals, so deleting on one device doesn't get undone by another device
-that still had the row; tombstones are pruned after 90 days. A save that loses a
-race is not dropped — the file is re-read, merged and written again.
+**A write that fails is queued, not lost.** It is retried with backoff, on
+regaining focus, and the moment the browser reports itself back online. The chip
+beside "My Places" reads *Not saved yet* until the queue drains, and edits to
+one record coalesce into a single write rather than one per keystroke.
 
-Sample data is only laid down once the first sync has settled and the
-repository has turned out to be genuinely empty — otherwise a new device would
-merge fourteen sample places into a real travel history and push them back up.
+Deleting never removes a row — it sets `Deleted?` to `Yes`. Removing rows would
+shift everything beneath them and break the live formulas on `Search_View` and
+`Dashboard`. For the same reason, the script refuses by name to write to
+`Search_View`, `Dashboard` or `Guide`.
 
-Commits to `data/` are excluded from the deploy workflow, so saving a place
-doesn't rebuild the site.
+Only the fields you actually changed are sent. The Apps Script reads the rest of
+the row from the sheet and writes it straight back, so the ~60 `Places` columns
+the app has no screen for survive untouched — and columns are addressed by
+header text, never by position, so inserting one is safe across all 78.
+
+Uploaded photos are the one thing that stays local. They are blobs in this
+browser's IndexedDB and would be meaningless elsewhere, so only real image
+*links* go into the `Photo URL` column.
 
 ---
 
@@ -145,10 +148,11 @@ lib/store/PlacesProvider.tsx   ← the single source of truth
 lib/store/draft.ts             ← the shape a place takes while being written
 ```
 
-Writes are applied to state first and persisted immediately after. A
-localStorage round-trip is sub-millisecond, so the UI updates on the same frame
-as the tap; if a write fails, state is reconciled back to what is actually on
-disk and the error is surfaced in plain language.
+`PlacesProvider` keeps no copy of its own: the repository *is* the store, and
+React subscribes to it with `useSyncExternalStore`. Two copies could disagree;
+one cannot. Writes land in the repository's memory synchronously and go to the
+sheet immediately after, so the UI updates on the same frame as the tap and a
+failed request becomes a queued retry rather than a lost edit.
 
 ### Persistence behind one seam
 
@@ -157,20 +161,26 @@ placeRepository.getAll();
 placeRepository.getById(id);
 placeRepository.create(place);
 placeRepository.update(id, changes);
-placeRepository.delete(id);
+placeRepository.delete(id); // soft: sets Deleted? to Yes
 placeRepository.updateCoordinates(id, latitude, longitude);
 placeRepository.restore(place); // undo
 ```
 
-No component touches storage directly. The current implementation is
-localStorage; swapping in Supabase means writing a second implementation of
-`PlaceRepository` and changing one export.
+No component touches storage directly. That seam is what made moving the
+collection out of localStorage and into a Google Sheet a matter of writing a
+second implementation — `lib/storage/sheetPlaceRepository.ts` — without changing
+a single screen.
+
+Below it, `lib/sheets/sheetsClient.ts` is the *only* module in the app that
+makes a network call, and every write in it goes through one `postToSheet`
+helper.
 
 Photos are deliberately *not* in that collection. A place record is a few
 hundred bytes and a photo is a few hundred kilobytes, so images live in
 IndexedDB (`lib/storage/photoStore.ts`), downscaled to 1600px on the way in.
 The travel data never bumps into the 5 MB localStorage ceiling, and the split
-mirrors the shape a cloud backend would take.
+is why a photo cannot go into a spreadsheet cell: a `Photo URL` is text every
+device can resolve, a blob reference is not.
 
 ### Two ways to read the map
 
@@ -266,17 +276,17 @@ components/
   AppTabBar.tsx          Globe | Places + the add button
   globe/                 TravelGlobe, overlays, preview sheet, fallback
   places/                list, cards, search, filters, stats
-  sync/                  sync settings sheet
+  sync/                  setup screen, connection form, settings sheet
   place/                 detail, form, location search, photos, pin bar
   ui/                    BottomSheet, SegmentedControl, dialogs, imagery
 lib/
   maps/                  basemap config and layer ids, geocoding
-  storage/               placeRepository, photoStore
+  storage/               PlaceRepository seam, sheetPlaceRepository, photoStore
   store/                 PlacesProvider, draft
-  sync/                  GitHub storage, merge rules, sync hook
+  sheets/                sheetsClient (all network), mapping, queue, cache
   hooks/  utils/
 types/place.ts           the VisitedPlace model
-data/samplePlaces.ts     seed data, isolated so it can be deleted outright
+apps-script/Code.gs      the Google Apps Script web app, to paste into the sheet
 public/geo/countries.json  country outlines (generated, checked in)
 scripts/generate-icons.mjs
 scripts/build-countries.mjs

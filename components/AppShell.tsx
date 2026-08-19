@@ -20,6 +20,7 @@ import { LocationSearchSheet } from "@/components/place/LocationSearchSheet";
 import { PlaceDetailSheet } from "@/components/place/PlaceDetailSheet";
 import { PlaceFormSheet } from "@/components/place/PlaceFormSheet";
 import { PlacesView } from "@/components/places/PlacesView";
+import { SheetSetupScreen } from "@/components/sync/SheetSetupScreen";
 import { SyncSettingsSheet } from "@/components/sync/SyncSettingsSheet";
 import { ActionSheet } from "@/components/ui/ActionSheet";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -69,6 +70,7 @@ export function AppShell() {
     places,
     status,
     loadError,
+    needsSetup,
     getPlace,
     stats,
     countries,
@@ -565,6 +567,13 @@ export function AppShell() {
   const searchOverlay = topOverlay?.kind === "search" ? topOverlay : null;
   const formOverlay = overlays.find((overlay) => overlay.kind === "form");
 
+  // Everything below reads from the sheet, so on a browser that hasn't been
+  // told where the sheet is there is nothing honest to draw yet. Placed after
+  // every hook above so the hook order never changes between renders.
+  if (needsSetup) {
+    return <SheetSetupScreen onConnected={sync.connect} />;
+  }
+
   return (
     <main className="fixed inset-0 overflow-hidden bg-bg">
       {/* The globe is mounted for the whole session and never torn down. */}
@@ -847,9 +856,10 @@ export function AppShell() {
       <SyncSettingsSheet
         open={syncOpen}
         onClose={() => setSyncOpen(false)}
-        settings={sync.settings}
+        connection={sync.connection}
         state={sync.state}
-        onSave={sync.updateSettings}
+        onConnect={sync.connect}
+        onDisconnect={sync.disconnect}
         onSyncNow={sync.syncNow}
       />
 

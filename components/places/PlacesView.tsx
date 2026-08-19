@@ -12,7 +12,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import { visitTimestamp } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
-import type { SyncState } from "@/lib/sync/useGithubSync";
+import type { SheetStatus } from "@/lib/storage/sheetPlaceRepository";
 import type { PlaceSort, VisitedPlace } from "@/types/place";
 
 /**
@@ -83,7 +83,7 @@ export function PlacesView({
   onPlaceActions: (id: string) => void;
   onAdd: () => void;
   onShowGlobe: () => void;
-  syncState: SyncState;
+  syncState: SheetStatus;
   onOpenSync: () => void;
 }) {
   const reduceMotion = useReducedMotion();
@@ -265,20 +265,27 @@ export function PlacesView({
  * A quiet indicator of where the data stands: reading-only, saving, up to
  * date, or stuck. Tapping it opens the sync settings.
  */
-function SyncChip({ state, onPress }: { state: SyncState; onPress: () => void }) {
-  const busy = state.phase === "pulling" || state.phase === "pushing";
-  const Icon = busy ? Loader2 : state.phase === "error" ? CloudOff : state.canWrite ? Cloud : RefreshCw;
+function SyncChip({ state, onPress }: { state: SheetStatus; onPress: () => void }) {
+  const busy = state.phase === "loading" || state.phase === "saving";
+  const stuck = state.phase === "error" || state.phase === "offline";
+  const Icon = busy ? Loader2 : stuck ? CloudOff : state.connected ? Cloud : RefreshCw;
 
+  // "Not saved yet" is the one state worth naming outright: everything else is
+  // reassurance, but a change sitting on this device is something to act on.
   const label =
     state.phase === "error"
       ? "Sync problem"
-      : busy
-        ? "Syncing"
-        : state.canWrite
-          ? state.pendingWrite
-            ? "Saving"
-            : "Synced"
-          : "This device";
+      : state.pending > 0
+        ? "Not saved yet"
+        : busy
+          ? state.phase === "loading"
+            ? "Loading"
+            : "Saving"
+          : state.phase === "offline"
+            ? "Offline"
+            : state.connected
+              ? "Saved"
+              : "Not connected";
 
   return (
     <button
@@ -287,7 +294,7 @@ function SyncChip({ state, onPress }: { state: SyncState; onPress: () => void })
       aria-label={`Sync: ${label}. Open sync settings.`}
       className={cn(
         "pressable mt-1.5 inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-pill px-3 text-[13px] font-medium",
-        state.phase === "error" ? "bg-danger-soft text-danger" : "bg-fill text-ink-2",
+        stuck ? "bg-danger-soft text-danger" : "bg-fill text-ink-2",
       )}
     >
       <Icon size={14} aria-hidden="true" className={busy ? "animate-spin" : undefined} />
