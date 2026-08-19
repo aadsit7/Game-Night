@@ -1,11 +1,13 @@
+import { defaultConnection } from "@/lib/sheets/defaultConnection";
+
 /**
  * Where the sheet lives, and the code that opens it.
  *
- * Neither value is in the published bundle. This is a public repository on a
- * free GitHub Pages plan, so anything committed here is readable by anyone —
- * an access code in the source would be an access code in everyone's hands.
- * Instead both are typed once per browser and kept in localStorage, which on
- * a Pages site behaves exactly as it does anywhere else.
+ * Two places can supply them. `lib/sheets/defaultConnection.ts` holds the pair
+ * built into the published site, so the app works on any device with nothing
+ * to type — at the cost of both being public, which that file explains at
+ * length. A pair saved in this browser overrides it, and is the only source
+ * when the site was published without a built-in one.
  */
 
 const KEY = "travel-globe.sheet-connection.v1";
@@ -47,7 +49,14 @@ export function validateUrl(raw: string): string | null {
   return null;
 }
 
-export function loadConnection(): SheetConnection | null {
+/**
+ * What this browser was told to use, if anything.
+ *
+ * Kept separate from `loadConnection` so the two sources stay distinguishable:
+ * an override is something the person chose, and "Reset connection" should
+ * remove it without disturbing the built-in one underneath.
+ */
+export function loadOverride(): SheetConnection | null {
   if (typeof window === "undefined") return null;
 
   try {
@@ -65,6 +74,17 @@ export function loadConnection(): SheetConnection | null {
   }
 }
 
+/**
+ * The connection to actually use.
+ *
+ * An override wins, because it was typed deliberately and usually points
+ * somewhere the built-in one does not — a copy of the sheet, or a second
+ * deployment being tested.
+ */
+export function loadConnection(): SheetConnection | null {
+  return loadOverride() ?? defaultConnection();
+}
+
 export function saveConnection(connection: SheetConnection): void {
   if (typeof window === "undefined") return;
   try {
@@ -78,7 +98,11 @@ export function saveConnection(connection: SheetConnection): void {
   }
 }
 
-/** Forgets this browser's connection. The sheet itself is untouched. */
+/**
+ * Forgets this browser's override. The sheet itself is untouched, and if the
+ * site carries a built-in connection the app falls straight back to it rather
+ * than to the setup screen.
+ */
 export function clearConnection(): void {
   if (typeof window === "undefined") return;
   try {

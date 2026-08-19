@@ -34,7 +34,7 @@ outlines are all keyless; `npm install && npm run dev` is the whole setup.
 | `npm run build`     | Production build                                |
 | `npm run typecheck` | `tsc --noEmit`                                  |
 | `npm run lint`      | ESLint                                          |
-| `npm run test`      | Paint expressions, sheet column mapping, write queue |
+| `npm run test`      | Paint expressions, sheet mapping, write queue, connection |
 | `npm run check`     | All four, in order                              |
 | `npm run icons`     | Regenerates the app icons from `scripts/`       |
 | `npm run countries` | Rebuilds `public/geo/countries.json` from Natural Earth |
@@ -57,9 +57,9 @@ running if you want a different resolution.
 
 Nothing to configure. The map services need no key, and the Google Sheet
 connection is deliberately *not* an environment variable — a static site has no
-server to read one on, and this repository is public, so any value compiled in
-would ship to every visitor. The sheet address and access code are typed into
-each browser once instead. See [docs/SHEET-SETUP.md](docs/SHEET-SETUP.md).
+server to read one on. It lives in `lib/sheets/defaultConnection.ts` instead,
+which is honest about the fact that anything there is public. See
+[docs/SHEET-SETUP.md](docs/SHEET-SETUP.md).
 
 **If the map can't be reached at all** — an offline device, a blocked network —
 the globe shows a designed explanation instead of a crash, and Places, search,
@@ -83,10 +83,12 @@ Two environment variables drive the build, both set by the workflow:
   for a project site) so assets resolve under the subpath. Both are opt-in, so
   `npm run dev` and a plain `npm run build` still serve from `/`.
 
-No secrets are configured for the deploy, and none are needed: the map has no
-key to leak. That is the point of the keyless stack — anything prefixed
-`NEXT_PUBLIC_` is compiled into the JavaScript that ships to every visitor, so
-the safest credential is the one that doesn't exist.
+No secrets are configured for the deploy, and none would help if they were:
+anything prefixed `NEXT_PUBLIC_` is compiled into the JavaScript that ships to
+every visitor, and so is everything else in the bundle. The map side of that is
+solved by having no key at all. The sheet side is not solvable — see
+[Where your data lives](#where-your-data-lives) — so it is stated plainly in
+`lib/sheets/defaultConnection.ts` rather than dressed up as a secret.
 
 ---
 
@@ -97,16 +99,23 @@ app. That sheet is the single source of truth: the app loads from it on open,
 writes back to it on every change, and any browser on any device sees the same
 data.
 
-Setup is two fields, once per browser — the web app address and an access code.
+The web app address and access code live in
+[`lib/sheets/defaultConnection.ts`](lib/sheets/defaultConnection.ts), so the
+published site works on any device with nothing to set up. Leave them blank and
+the app asks for them instead, once per browser, keeping them in localStorage.
 [**docs/SHEET-SETUP.md**](docs/SHEET-SETUP.md) covers publishing the script,
-what the deployment settings mean, and the re-deploy trap.
+what the deployment settings mean, the re-deploy trap, and the trade-off between
+those two modes.
 
 > **Why Apps Script and not the Sheets API directly?** Because this is a static
 > site: any credential compiled into it is delivered to every visitor's browser
 > and can be read straight out of the page source. Apps Script runs on Google's
-> servers under the sheet owner's own account, so no Google credential ever
-> reaches the browser and the sheet itself stays private. The access code that
-> guards the endpoint is per-browser, in localStorage, and never committed.
+> servers under the sheet owner's own account, so no *Google* credential ever
+> reaches the browser and the spreadsheet itself stays private — what the site
+> carries is a door into one script, not access to the file, Drive or the
+> account. Baking the code in makes that door public; typing it per-browser
+> does not. Neither option can hide it once it is in the bundle, because a
+> browser cannot keep a secret.
 
 **On open**, one request pulls every data tab at once. **On change**, the record
 is written back immediately — there is no Save button. A localStorage copy is
@@ -283,7 +292,8 @@ lib/
   maps/                  basemap config and layer ids, geocoding
   storage/               PlaceRepository seam, sheetPlaceRepository, photoStore
   store/                 PlacesProvider, draft
-  sheets/                sheetsClient (all network), mapping, queue, cache
+  sheets/                sheetsClient (all network), mapping, queue, cache,
+                         defaultConnection (the built-in address and code)
   hooks/  utils/
 types/place.ts           the VisitedPlace model
 apps-script/Code.gs      the Google Apps Script web app, to paste into the sheet
