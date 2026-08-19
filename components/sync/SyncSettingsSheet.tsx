@@ -55,15 +55,23 @@ export function SyncSettingsSheet({
     setResult(null);
     try {
       const { canWrite } = await verifyAccess(toConfig({ ...draft, enabled: true }));
-      setResult(
-        canWrite
-          ? { ok: true, message: "Connected. This device can save to the repository." }
-          : {
-              ok: false,
-              message:
-                "That token can read the repository but not write to it. It needs Contents: read and write.",
-            },
-      );
+      if (canWrite === false) {
+        setResult({
+          ok: false,
+          message:
+            "That token can read the repository but not write to it. It needs Contents: read and write.",
+        });
+      } else if (canWrite === null) {
+        // GitHub didn't say either way, which is normal for fine-grained
+        // tokens. Claiming success or failure here would both be guesses.
+        setResult({
+          ok: true,
+          message:
+            "Reached the repository. GitHub doesn’t report write access for this kind of token — your first save will confirm it.",
+        });
+      } else {
+        setResult({ ok: true, message: "Connected. This device can save to the repository." });
+      }
     } catch (error) {
       setResult({
         ok: false,
@@ -78,13 +86,14 @@ export function SyncSettingsSheet({
   };
 
   const save = () => {
-    onSave({ ...draft, token: draft.token.trim(), enabled: draft.token.trim().length > 0 });
+    onSave({ ...draft, token: draft.token.trim(), enabled: true });
     onClose();
   };
 
+  // Forgetting the token stops this device saving; it keeps reading.
   const disconnect = () => {
-    onSave({ ...draft, token: "", enabled: false });
-    setDraft((current) => ({ ...current, token: "", enabled: false }));
+    onSave({ ...draft, token: "", enabled: true });
+    setDraft((current) => ({ ...current, token: "", enabled: true }));
   };
 
   return (

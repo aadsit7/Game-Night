@@ -81,6 +81,9 @@ a phone, a laptop and a tablet.
 **Reading takes no setup.** The repository is public, so opening the site on any
 device pulls the current file — no sign-in, nothing to configure. The app pulls
 on load, whenever the tab regains focus, and on a slow timer while it's open.
+Token-less devices read through `raw.githubusercontent.com` rather than the
+API: the unauthenticated Contents API allows only 60 requests an hour per IP,
+which two read-only devices polling for updates would exhaust between them.
 
 **Saving needs a token, once per device.** Open Sync (the ⚙ next to the map
 search, or the chip beside "My Places") and paste a
@@ -99,6 +102,10 @@ Devices reconcile by last-write-wins per record. Deletions are tombstones rather
 than removals, so deleting on one device doesn't get undone by another device
 that still had the row; tombstones are pruned after 90 days. A save that loses a
 race is not dropped — the file is re-read, merged and written again.
+
+Sample data is only laid down once the first sync has settled and the
+repository has turned out to be genuinely empty — otherwise a new device would
+merge fourteen sample places into a real travel history and push them back up.
 
 Commits to `data/` are excluded from the deploy workflow, so saving a place
 doesn't rebuild the site.

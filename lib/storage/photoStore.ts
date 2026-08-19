@@ -17,9 +17,12 @@ const MAX_EDGE = 1600;
 const JPEG_QUALITY = 0.82;
 
 export class PhotoStoreError extends Error {
-  constructor(message: string, readonly cause?: unknown) {
+  readonly cause?: unknown;
+
+  constructor(message: string, cause?: unknown) {
     super(message);
     this.name = "PhotoStoreError";
+    this.cause = cause;
   }
 }
 

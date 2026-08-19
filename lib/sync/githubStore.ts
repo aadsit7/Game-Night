@@ -17,6 +17,7 @@ import type { VisitedPlace } from "@/types/place";
  */
 
 const API = "https://api.github.com";
+const RAW = "https://raw.githubusercontent.com";
 
 export type GithubConfig = {
   owner: string;
@@ -34,14 +35,17 @@ export type RemoteSnapshot = {
   sha: string | null;
 };
 
+export type SyncErrorKind = "auth" | "conflict" | "network" | "notFound" | "unknown";
+
 export class SyncError extends Error {
-  constructor(
-    message: string,
-    readonly kind: "auth" | "conflict" | "network" | "notFound" | "unknown",
-    readonly cause?: unknown,
-  ) {
+  readonly kind: SyncErrorKind;
+  readonly cause?: unknown;
+
+  constructor(message: string, kind: SyncErrorKind, cause?: unknown) {
     super(message);
     this.name = "SyncError";
+    this.kind = kind;
+    this.cause = cause;
   }
 }
 
@@ -108,10 +112,50 @@ function parseFile(text: string): VisitedPlace[] {
   return Array.isArray(file?.places) ? file.places : [];
 }
 
+/**
+ * Reads through the raw CDN, which has no rate limit.
+ *
+ * Used by devices with no token. The unauthenticated Contents API allows only
+ * 60 requests an hour *per IP*, which a couple of read-only devices polling for
+ * updates would exhaust between them. The CDN caches for a few minutes and
+ * doesn't report a blob SHA, but a device that never writes has no use for one.
+ */
+async function readViaCdn(
+  config: GithubConfig,
+  signal?: AbortSignal,
+): Promise<RemoteSnapshot> {
+  const path = config.path.split("/").map(encodeURIComponent).join("/");
+  const url =
+    `${RAW}/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/` +
+    `${encodeURIComponent(config.branch)}/${path}?t=${Date.now()}`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, { cache: "no-store", signal });
+  } catch (error) {
+    if ((error as Error)?.name === "AbortError") throw error;
+    throw new SyncError("Couldn’t reach GitHub.", "network", error);
+  }
+
+  // Nothing saved yet — the normal state before the first write.
+  if (response.status === 404) return { places: [], sha: null };
+  if (!response.ok) throw describe(response.status);
+
+  try {
+    return { places: parseFile(await response.text()), sha: null };
+  } catch (error) {
+    throw new SyncError("The stored travel file couldn’t be read.", "unknown", error);
+  }
+}
+
 export async function readRemote(
   config: GithubConfig,
   signal?: AbortSignal,
 ): Promise<RemoteSnapshot> {
+  // Without a token there is nothing to write, so the SHA the API would give
+  // us is unnecessary and the CDN is the cheaper, unmetered way in.
+  if (!config.token) return readViaCdn(config, signal);
+
   const url = `${contentsUrl(config)}?ref=${encodeURIComponent(config.branch)}`;
 
   let response: Response;
@@ -186,8 +230,14 @@ export async function writeRemote(
   return nextSha;
 }
 
-/** Cheap credential check for the settings screen. */
-export async function verifyAccess(config: GithubConfig): Promise<{ canWrite: boolean }> {
+/**
+ * Cheap credential check for the settings screen. `canWrite` is `null` when
+ * GitHub doesn't report permissions — fine-grained tokens often omit them, and
+ * claiming "no write access" on that basis would be a lie.
+ */
+export async function verifyAccess(
+  config: GithubConfig,
+): Promise<{ canWrite: boolean | null }> {
   const response = await fetch(
     `${API}/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}`,
     { headers: headers(config.token), cache: "no-store" },
@@ -197,5 +247,6 @@ export async function verifyAccess(config: GithubConfig): Promise<{ canWrite: bo
 
   if (!response.ok) throw describe(response.status);
   const payload = (await response.json()) as { permissions?: { push?: boolean } };
-  return { canWrite: Boolean(payload.permissions?.push) };
+  if (!payload.permissions) return { canWrite: null };
+  return { canWrite: Boolean(payload.permissions.push) };
 }

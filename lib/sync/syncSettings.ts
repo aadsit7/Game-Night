@@ -21,7 +21,10 @@ export type SyncSettings = {
 };
 
 export function defaultSettings(): SyncSettings {
-  return { ...DEFAULT_CONFIG, token: "", enabled: false };
+  // Reading is on from the very first visit — that is the whole point of
+  // storing the collection in a public repository. Only *writing* waits for a
+  // token, which `canWrite` gates separately.
+  return { ...DEFAULT_CONFIG, token: "", enabled: true };
 }
 
 export function loadSettings(): SyncSettings {
@@ -54,9 +57,10 @@ export function saveSettings(settings: SyncSettings): void {
   }
 }
 
+/** Forgets the write token but keeps reading, which needs no credentials. */
 export function clearToken(): void {
   const settings = loadSettings();
-  saveSettings({ ...settings, token: "", enabled: false });
+  saveSettings({ ...settings, token: "", enabled: true });
 }
 
 export function toConfig(settings: SyncSettings): GithubConfig {

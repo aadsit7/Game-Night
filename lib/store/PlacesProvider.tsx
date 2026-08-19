@@ -77,6 +77,8 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>("loading");
   const [loadError, setLoadError] = useState<string | null>(null);
   const mounted = useRef(true);
+  const pendingSeed = useRef(false);
+  const schedulePushRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     mounted.current = true;
@@ -87,9 +89,11 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
 
   const load = useCallback(async () => {
     try {
-      if (SEED_ENABLED && !placeRepository.hasStoredData() && !placeRepository.hasSeeded()) {
-        await placeRepository.seed(buildSamplePlaces());
-      }
+      // Seeding is deferred until the first sync has settled. Laying sample
+      // places down first would merge them into a real travel history the
+      // moment a new device pulled it — and then push them back up.
+      pendingSeed.current =
+        SEED_ENABLED && !placeRepository.hasStoredData() && !placeRepository.hasSeeded();
       const stored = await placeRepository.getAll();
       if (!mounted.current) return;
       setPlaces(stored);
@@ -118,12 +122,35 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
    * and this device's go back the same way. Reading needs no credentials;
    * writing needs a token the owner has pasted into this browser.
    */
+  /**
+   * Sample data only lands on a device whose repository is genuinely empty —
+   * never on top of a real history someone has already built.
+   */
+  const seedIfStillEmpty = useCallback(async () => {
+    if (!pendingSeed.current) return;
+    pendingSeed.current = false;
+    try {
+      const current = await placeRepository.getAll();
+      if (current.length > 0) return;
+      const seeded = await placeRepository.seed(buildSamplePlaces());
+      if (mounted.current) setPlaces(seeded);
+      schedulePushRef.current();
+    } catch {
+      // Failing to seed sample data is never worth surfacing.
+    }
+  }, []);
+
   const { settings, updateSettings, syncState, schedulePush, syncNow } = useGithubSync({
     ready: status !== "loading",
     onMerged: useCallback((merged: VisitedPlace[]) => {
       if (mounted.current) setPlaces(merged);
     }, []),
+    onFirstSyncSettled: () => void seedIfStillEmpty(),
   });
+
+  useEffect(() => {
+    schedulePushRef.current = schedulePush;
+  }, [schedulePush]);
 
   /** Re-reads from disk after a failed write so the UI never shows a lie. */
   const reconcile = useCallback(async () => {

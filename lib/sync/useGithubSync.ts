@@ -47,10 +47,17 @@ const POLL_INTERVAL_MS = 90_000;
 export function useGithubSync({
   ready,
   onMerged,
+  onFirstSyncSettled,
 }: {
   /** Wait until the local collection has loaded before touching the network. */
   ready: boolean;
   onMerged: (places: VisitedPlace[]) => void;
+  /**
+   * Fired once the first pull has resolved — succeeded, failed, or been
+   * skipped. Anything that must not run before the repository has had its say
+   * hangs off this.
+   */
+  onFirstSyncSettled?: () => void;
 }) {
   const [settings, setSettings] = useState<SyncSettings | null>(null);
   const [state, setState] = useState<SyncState>({
@@ -65,10 +72,12 @@ export function useGithubSync({
   const pushTimer = useRef<number | null>(null);
   const busy = useRef(false);
   const onMergedRef = useRef(onMerged);
+  const onSettledRef = useRef(onFirstSyncSettled);
   const settingsRef = useRef<SyncSettings | null>(null);
 
   useEffect(() => {
     onMergedRef.current = onMerged;
+    onSettledRef.current = onFirstSyncSettled;
     settingsRef.current = settings;
   });
 
@@ -194,7 +203,8 @@ export function useGithubSync({
   useEffect(() => {
     if (!ready || !settings || pulledOnce.current) return;
     pulledOnce.current = true;
-    void pull();
+    // `pull` handles its own errors, so this settles either way.
+    void pull().finally(() => onSettledRef.current?.());
   }, [ready, settings, pull]);
 
   // Coming back to the tab is the moment another device's change matters most.
