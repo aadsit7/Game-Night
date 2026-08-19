@@ -1,3 +1,5 @@
+import type { ExpressionSpecification } from "maplibre-gl";
+
 /**
  * The map stack lives behind this module.
  *
@@ -65,6 +67,99 @@ export const CLUSTER_COLOR = "#F04A28";
 
 export const COUNTRY_FILL_OPACITY = { countries: 0.55, cities: 0.1 } as const;
 export const COUNTRY_LINE_OPACITY = { countries: 0.85, cities: 0 } as const;
+
+/* ------------------------------------------------------------------------ */
+/* Pin paint                                                                 */
+/*                                                                           */
+/* These live here rather than inline in the component so they can be run    */
+/* through the style validator in a test. A rejected expression is a silent  */
+/* failure — the renderer fires an error nobody is listening for and quietly */
+/* keeps the old paint — so "it compiles" is not evidence that it works.     */
+/* ------------------------------------------------------------------------ */
+
+/** Labels fade in between these zooms; a globe view stays uncluttered. */
+export const LABEL_FADE_START = 3.4;
+export const LABEL_FADE_END = 4.4;
+
+/** Matches the one feature the traveller has selected, if any. */
+export const selectedFilter = (selectedId: string | null): ExpressionSpecification => [
+  "==",
+  ["get", "id"],
+  selectedId ?? "__none__",
+];
+
+/**
+ * `zoom` is only legal as the input to a *top-level* `step`/`interpolate`, so
+ * every selected/unselected choice below sits inside the stops rather than
+ * wrapping them. Wrapping an interpolate in a `case` type-checks perfectly and
+ * is rejected at runtime.
+ */
+export const pinRadius = (selected: ExpressionSpecification): ExpressionSpecification => [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  1,
+  ["case", selected, 9, 4.5],
+  4,
+  ["case", selected, 11, 6],
+  10,
+  ["case", selected, 13, 8],
+];
+
+export const pinColor = (selected: ExpressionSpecification): ExpressionSpecification => [
+  "case",
+  selected,
+  PIN_COLOR_SELECTED,
+  PIN_COLOR,
+];
+
+export const pinStrokeWidth = (selected: ExpressionSpecification): ExpressionSpecification => [
+  "case",
+  selected,
+  3,
+  2,
+];
+
+/** The selected place shows its name at any zoom; the rest fade in. */
+export const labelOpacity = (selected: ExpressionSpecification): ExpressionSpecification => [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  LABEL_FADE_START,
+  ["case", selected, 1, 0],
+  LABEL_FADE_END,
+  1,
+];
+
+export const labelSortKey = (selected: ExpressionSpecification): ExpressionSpecification => [
+  "case",
+  selected,
+  1,
+  0,
+];
+
+/** The unselected defaults, used when a layer is first installed. */
+export const PIN_RADIUS_DEFAULT: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  1,
+  4.5,
+  4,
+  6,
+  10,
+  8,
+];
+
+export const LABEL_OPACITY_DEFAULT: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  LABEL_FADE_START,
+  0,
+  LABEL_FADE_END,
+  1,
+];
 
 export type MapLibreGL = typeof import("maplibre-gl");
 

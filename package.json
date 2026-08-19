@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run lint && npm run build",
+    "test": "node tests/run.mjs",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run build",
     "icons": "node scripts/generate-icons.mjs",
     "countries": "node scripts/build-countries.mjs"
   },
@@ -30,6 +31,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "@maplibre/maplibre-gl-style-spec": "^26.2.1"
   }
 }

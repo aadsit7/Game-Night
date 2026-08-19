@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FeatureCollection, Point as GeoPoint } from "geojson";
 import type {
-  ExpressionSpecification,
   FilterSpecification,
   GeoJSONSource,
   LngLat,
@@ -31,13 +30,20 @@ import {
   LAYER_COUNTRY_LINE,
   LAYER_PIN,
   LAYER_PIN_DOT,
+  LABEL_OPACITY_DEFAULT,
   PIN_COLOR,
-  PIN_COLOR_SELECTED,
+  PIN_RADIUS_DEFAULT,
   SOURCE_COUNTRIES,
   SOURCE_ID,
   STYLE_URLS,
   assetUrl,
+  labelOpacity,
+  labelSortKey,
   loadMapLibre,
+  pinColor,
+  pinRadius,
+  pinStrokeWidth,
+  selectedFilter,
   styleFor,
   type MapView,
 } from "@/lib/maps/basemap";
@@ -85,29 +91,6 @@ type Props = {
 };
 
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
-
-/** Label visibility ramp: pins speak for themselves at world scale. */
-const LABEL_RAMP: ExpressionSpecification = [
-  "interpolate",
-  ["linear"],
-  ["zoom"],
-  3.4,
-  0,
-  4.4,
-  1,
-];
-
-const DOT_RADIUS: ExpressionSpecification = [
-  "interpolate",
-  ["linear"],
-  ["zoom"],
-  1,
-  4.5,
-  4,
-  6,
-  10,
-  8,
-];
 
 function toFeatureCollection(places: VisitedPlace[]): FeatureCollection {
   return {
@@ -238,7 +221,7 @@ function installStyleLayers(map: MapLibreMap, data: FeatureCollection): void {
       paint: {
         // Small, round and dense on purpose: a hundred places should still
         // read as a constellation rather than a pile of overlapping markers.
-        "circle-radius": DOT_RADIUS,
+        "circle-radius": PIN_RADIUS_DEFAULT,
         "circle-color": PIN_COLOR,
         "circle-stroke-width": 2,
         "circle-stroke-color": "rgba(255,255,255,0.95)",
@@ -268,7 +251,7 @@ function installStyleLayers(map: MapLibreMap, data: FeatureCollection): void {
         "text-halo-color": "rgba(255,255,255,0.92)",
         "text-halo-width": 1.4,
         "text-halo-blur": 0.4,
-        "text-opacity": LABEL_RAMP,
+        "text-opacity": LABEL_OPACITY_DEFAULT,
       },
     });
   }
@@ -433,6 +416,11 @@ export function TravelGlobe({
       // fetched is different: there is no map at all, and waiting out the
       // backstop just to say so leaves someone staring at nothing.
       map.on("error", (event) => {
+        // The renderer swallows these by design; in development they are the
+        // only way to find out why a layer or a tile silently didn't draw.
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("[globe]", event?.error ?? event);
+        }
         if (cancelled || !map || map.isStyleLoaded()) return;
         const url = (event?.error as { url?: string } | undefined)?.url;
         if (!url || !STYLE_URLS.includes(url)) return;
@@ -691,48 +679,17 @@ export function TravelGlobe({
     const map = mapRef.current;
     if (!map || !styleReady || !map.getLayer(LAYER_PIN_DOT)) return;
 
-    const isSelected: ExpressionSpecification = [
-      "==",
-      ["get", "id"],
-      selectedId ?? "__none__",
-    ];
+    const selected = selectedFilter(selectedId);
 
     try {
-      map.setPaintProperty(LAYER_PIN_DOT, "circle-color", [
-        "case",
-        isSelected,
-        PIN_COLOR_SELECTED,
-        PIN_COLOR,
-      ] as ExpressionSpecification);
-
-      map.setPaintProperty(LAYER_PIN_DOT, "circle-radius", [
-        "case",
-        isSelected,
-        11,
-        DOT_RADIUS,
-      ] as ExpressionSpecification);
-
-      map.setPaintProperty(LAYER_PIN_DOT, "circle-stroke-width", [
-        "case",
-        isSelected,
-        3,
-        2,
-      ] as ExpressionSpecification);
+      map.setPaintProperty(LAYER_PIN_DOT, "circle-color", pinColor(selected));
+      map.setPaintProperty(LAYER_PIN_DOT, "circle-radius", pinRadius(selected));
+      map.setPaintProperty(LAYER_PIN_DOT, "circle-stroke-width", pinStrokeWidth(selected));
 
       if (map.getLayer(LAYER_PIN)) {
         // The selected place always shows its name, whatever the zoom.
-        map.setPaintProperty(LAYER_PIN, "text-opacity", [
-          "case",
-          isSelected,
-          1,
-          LABEL_RAMP,
-        ] as ExpressionSpecification);
-        map.setLayoutProperty(LAYER_PIN, "symbol-sort-key", [
-          "case",
-          isSelected,
-          1,
-          0,
-        ] as ExpressionSpecification);
+        map.setPaintProperty(LAYER_PIN, "text-opacity", labelOpacity(selected));
+        map.setLayoutProperty(LAYER_PIN, "symbol-sort-key", labelSortKey(selected));
       }
     } catch {
       // Style may be mid-reload.
