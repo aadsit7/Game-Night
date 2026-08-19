@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "updatedAt": "2026-08-19T01:30:00.000Z",
+  "places": [
+    {
+      "id": "selftest-1",
+      "name": "Basílica de la Sagrada Família",
+      "city": "Barcelona",
+      "country": "Spain",
+      "countryCode": "ES",
+      "latitude": 41.4036,
+      "longitude": 2.1744,
+      "notes": "Non-ASCII on purpose — í, à, 東京.",
+      "createdAt": "2026-08-19T01:30:00.000Z",
+      "updatedAt": "2026-08-19T01:30:00.000Z"
+    },
+    {
+      "id": "selftest-2",
+      "name": "Reykjavík",
+      "country": "Iceland",
+      "countryCode": "IS",
+      "latitude": 64.1466,
+      "longitude": -21.9426,
+      "createdAt": "2026-08-19T01:30:00.000Z",
+      "updatedAt": "2026-08-19T01:30:00.000Z",
+      "deletedAt": "2026-08-19T01:31:00.000Z"
+    }
+  ]
+}
