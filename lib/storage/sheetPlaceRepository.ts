@@ -1,5 +1,11 @@
 import { loadCache, saveCache, clearCache } from "@/lib/sheets/cache";
-import { clearConnection, loadConnection, saveConnection, type SheetConnection } from "@/lib/sheets/connection";
+import {
+  clearConnection,
+  loadConnection,
+  saveConnection,
+  type SheetConnection,
+} from "@/lib/sheets/connection";
+import { defaultConnection } from "@/lib/sheets/defaultConnection";
 import {
   applyLocalPhotos,
   forgetLocalPhotos,
@@ -207,24 +213,32 @@ class SheetPlaceRepository implements PlaceRepository {
   }
 
   /**
-   * Forgets the address and code, and everything read with them.
+   * Forgets this browser's connection, and everything read with it.
    *
-   * The queue is deliberately kept: an unsaved edit is the one thing here that
-   * exists nowhere else, and it should still go up once a connection returns.
+   * If the published site carries a built-in connection, that is what the app
+   * falls back to — resetting is meant to undo a manual override, not to lock
+   * someone out of their own data until they retype it.
+   *
+   * The queue is deliberately kept either way: an unsaved edit is the one
+   * thing here that exists nowhere else, and it should still go up once a
+   * connection returns.
    */
   disconnect(): void {
-    this.connection = null;
     this.lookups = {};
     this.settings = {};
     clearConnection();
     clearCache();
     this.commit([]);
+
+    this.connection = defaultConnection();
     this.setStatus({
-      phase: "unconfigured",
-      connected: false,
+      phase: this.connection ? "loading" : "unconfigured",
+      connected: Boolean(this.connection),
       error: null,
       lastSyncedAt: null,
     });
+
+    if (this.connection) void this.load();
   }
 
   /**

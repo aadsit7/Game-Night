@@ -10,7 +10,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const suites = ["paint-expressions.test.mjs", "sheet-mapping.test.mjs", "sheet-queue.test.mjs"];
+const suites = [
+  "paint-expressions.test.mjs",
+  "sheet-mapping.test.mjs",
+  "sheet-queue.test.mjs",
+  "sheet-connection.test.mjs",
+];
 
 let failed = false;
 for (const suite of suites) {

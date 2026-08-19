@@ -4,9 +4,10 @@ Your travel data lives in one Google Sheet. The app reads it on open and writes
 back to it as you make changes, so any browser on any device shows the same
 thing.
 
-Nothing secret is in this repository. The site is published from a public repo,
-so anything committed here is readable by anyone — which is why the sheet
-address and access code are typed into each browser once and kept there.
+The connection is built into the published site, so it works on any device with
+nothing to set up. That means the address and access code are **public** — see
+[what this costs you](#what-this-costs-you) below, and the alternative if you'd
+rather not.
 
 ---
 
@@ -68,17 +69,53 @@ actually keeps strangers out.
 
 ---
 
-## Part 2 — Connect a browser (do this on each device)
+## Part 2 — Bake the connection into the site (do this once)
 
-1. Open the site.
-2. The setup screen asks for two things:
-   - **Sheet connection address** — the `/exec` URL from step 9.
-   - **Access code** — the code above.
-3. Press **Connect**. The app checks both before saving them, so a typo is
-   caught here rather than becoming a screen of data that silently never saves.
+The app is built to work on any device with nothing to type. That takes one
+edit:
 
-To change or clear them later: the sync chip on the Places screen → **Reset
-connection**.
+1. Open [`lib/sheets/defaultConnection.ts`](../lib/sheets/defaultConnection.ts).
+2. Put the `/exec` URL from step 9 between the quotes:
+
+   ```ts
+   export const DEFAULT_WEB_APP_URL = "https://script.google.com/macros/s/…/exec";
+   ```
+
+   The access code below it is already filled in.
+3. Commit and push to `main`. GitHub Actions rebuilds and republishes; a minute
+   later every device opens straight into the app.
+
+`npm test` validates that URL — a `/dev` address, a missing `/exec`, or a
+mangled paste fails the build rather than shipping a site that cannot reach
+anything.
+
+> ### What this costs you
+>
+> **Both values are public.** They are compiled into the JavaScript every
+> visitor downloads, so anyone who opens the site — or this repository — can
+> read them and send requests to the web app themselves. Making the repo
+> private would not change that: the built bundle is served publicly either way.
+>
+> There is no way around this on a static site with no server. A browser cannot
+> keep a secret. The choice is between typing the code once per device and
+> accepting that the code is public.
+>
+> What still limits the damage: the script never deletes a row, every write is
+> recorded in `Sync_Log`, the spreadsheet itself stays private (this is a door
+> into it, not a share link), and rotating the code takes seconds.
+
+### If you'd rather not bake it in
+
+Leave `DEFAULT_WEB_APP_URL` as `""`. The app then shows a setup screen on first
+open asking for both values, and keeps them in that browser alone. You type them
+once per device and nothing secret is ever published.
+
+### Changing it on one device
+
+The sync chip on the Places screen opens settings, where a different address and
+code override the built-in pair on that device only — useful for pointing a
+phone at a copy of the sheet. **Reset connection** removes the override and
+returns to the built-in one.
 
 ---
 
@@ -149,20 +186,28 @@ an old copy of the app is open in some other tab:
 
 ### If you think the access code has leaked
 
-1. Apps Script editor → **Project Settings → Script Properties**.
-2. Edit `ACCESS_CODE` to a new value and save.
+Because the code is baked into the published site, treat it as public already —
+"leaked" here means you want to shut out whoever has it.
 
-That is all — no re-deploy needed, because Script Properties are read at
-request time rather than baked into the deployment. Every browser then shows
-the setup screen again and needs the new code.
+1. Apps Script editor → **Project Settings → Script Properties**.
+2. Edit `ACCESS_CODE` to a new value and save. This takes effect immediately —
+   no re-deploy of the *script* is needed, because Script Properties are read
+   per request. Every existing copy of the site stops working at this moment.
+3. Put the same new value in `DEFAULT_ACCESS_CODE` in
+   `lib/sheets/defaultConnection.ts`, commit, and push. The site republishes
+   with the new code and starts working again.
 
 If you want to be thorough, also **Deploy → Manage deployments → Archive** the
 old deployment and create a new one. That changes the `/exec` address too, so
-anyone holding the old address has nothing to send to.
+anyone holding the old one has nothing to send to — then update
+`DEFAULT_WEB_APP_URL` as well.
+
+Check `Sync_Log` to see whether anything was actually written while the old code
+was out. Every write is there with a timestamp.
 
 Worth knowing: the code only grants what the script does — read and write your
-travel tabs. It is not your Google password and gives no access to your account
-or to Drive.
+travel tabs. It is not your Google password and gives no access to your account,
+your Drive, or any other file.
 
 ### If you edit the sheet by hand while the app is open
 
@@ -205,11 +250,12 @@ What you would do:
 1. Update `NEXT_PUBLIC_BASE_PATH` in `.github/workflows/deploy.yml` if the new
    home is at a different sub-path (it is derived from the Pages config
    automatically, so usually this is nothing).
-2. Re-enter the address and access code once in each browser, because
-   localStorage is per-origin and a new address is a new origin.
+2. Nothing else. The connection is compiled into the site, so it travels with
+   it — there is no per-browser state to re-enter.
 
-That second point is the only real cost, and it is the same two fields as
-first-time setup.
+If you had *overridden* the connection on a device through the settings screen,
+that override is per-origin and would not follow. **Reset connection** on that
+device puts it back on the built-in one.
 
 ---
 

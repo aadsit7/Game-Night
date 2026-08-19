@@ -7,6 +7,7 @@ import { SheetConnectionForm } from "@/components/sync/SheetConnectionForm";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import type { SheetConnection } from "@/lib/sheets/connection";
+import { hasDefaultConnection } from "@/lib/sheets/defaultConnection";
 import type { SheetStatus } from "@/lib/storage/sheetPlaceRepository";
 import { cn } from "@/lib/utils/cn";
 
@@ -82,8 +83,9 @@ export function SyncSettingsSheet({
 
             <p className="flex items-start gap-1.5 px-1 pt-2 text-[12.5px] leading-relaxed text-ink-3">
               <ShieldCheck size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
-              Stored in this browser only. Neither value is bundled into the published site,
-              because anything shipped to a browser can be read back out of it.
+              {hasDefaultConnection()
+                ? "This app ships with a connection built in, so every device works with nothing to type. Anything you enter here overrides it on this device only."
+                : "Stored in this browser only. Neither value is bundled into the published site, because anything shipped to a browser can be read back out of it."}
             </p>
           </section>
 
@@ -103,7 +105,11 @@ export function SyncSettingsSheet({
       <ConfirmDialog
         open={confirmReset}
         title="Reset connection?"
-        message="This browser will forget the address and access code, and you'll set it up again next time. Your sheet and everything in it is untouched."
+        message={
+          hasDefaultConnection()
+            ? "This browser will go back to the connection built into the app. Your sheet and everything in it is untouched."
+            : "This browser will forget the address and access code, and you'll set it up again next time. Your sheet and everything in it is untouched."
+        }
         confirmLabel="Reset"
         destructive
         onCancel={() => setConfirmReset(false)}
