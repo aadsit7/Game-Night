@@ -48,6 +48,30 @@ keep working — a place can be entered by hand, coordinates included.
 
 ---
 
+## Deployment
+
+Live at **<https://aadsit7.github.io/Game-Night/>**.
+
+Every push to `main` runs `.github/workflows/deploy.yml`, which type-checks,
+lints, builds a static export and publishes it to GitHub Pages. The app is
+entirely client-side, so there is nothing to run on a server.
+
+Two environment variables drive the build, both set by the workflow:
+
+- `STATIC_EXPORT=true` turns on `output: "export"`.
+- `NEXT_PUBLIC_BASE_PATH` is taken from the Pages configuration (`/Game-Night`
+  for a project site) so assets resolve under the subpath. Both are opt-in, so
+  `npm run dev` and a plain `npm run build` still serve from `/`.
+
+**To light up the globe on the deployed site**, add a repository secret named
+`NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` (Settings → Secrets and variables → Actions)
+and re-run the workflow. Note that anything prefixed `NEXT_PUBLIC_` is compiled
+into the JavaScript that ships to the browser — which is unavoidable for a
+client-side map. Use a Mapbox **public** token and restrict it to this URL in
+the Mapbox dashboard.
+
+---
+
 ## Architecture
 
 ### One collection, two views

@@ -1,0 +1,72 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+        with:
+          # Points the repo's Pages source at this workflow if it isn't already.
+          enablement: true
+
+      - name: Type check and lint
+        run: |
+          npm run typecheck
+          npm run lint
+
+      - name: Build static export
+        env:
+          STATIC_EXPORT: "true"
+          # "/Game-Night" for a project site, "" for a user site — derived
+          # rather than hard-coded, so a rename doesn't break the asset paths.
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          # Optional. Without it the globe shows its designed fallback and the
+          # rest of the app still works. Set it as a repository secret named
+          # NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN to light up the globe.
+          NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN: ${{ secrets.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN }}
+        run: npm run build
+
+      # Pages runs Jekyll over branch-served sites, and Jekyll skips any
+      # directory beginning with an underscore — which would drop all of _next.
+      - name: Disable Jekyll processing
+        run: touch out/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
