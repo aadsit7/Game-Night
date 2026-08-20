@@ -37,7 +37,8 @@ import type { SheetConnection } from "@/lib/sheets/connection";
  */
 
 /** The Apps Script web app address. Ends in /exec, never /dev. */
-export const DEFAULT_WEB_APP_URL = "";
+export const DEFAULT_WEB_APP_URL =
+  "https://script.google.com/macros/s/AKfycbxQ0p77PGc5WszIHAZ39bNe3KLb51kImu00erkCzA9bZVfmSm-ro_r1s1qnufkp8DgI8w/exec";
 
 /** The shared code the script checks on every request. */
 export const DEFAULT_ACCESS_CODE = "2dHoDYeD-XLTSecCG-qcZVCM5d";
