@@ -16,6 +16,7 @@ const suites = [
   "sheet-queue.test.mjs",
   "sheet-connection.test.mjs",
   "timeline.test.mjs",
+  "draft-dates.test.mjs",
 ];
 
 let failed = false;

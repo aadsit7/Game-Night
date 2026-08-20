@@ -43,6 +43,43 @@ export function emptyDraft(): PlaceDraft {
   };
 }
 
+/**
+ * Sets the start date, bringing the end date along with it.
+ *
+ * A trip is usually entered start-first, and most end dates are the same day
+ * or a few days after. Leaving the end date empty means its picker opens on
+ * today — so someone recording a trip two years ago has to scroll two years
+ * back a second time, having just done it once. Seeding it from the start
+ * removes that entirely: the common case is already right, and a longer trip
+ * is a nudge from there rather than a journey.
+ *
+ * An end date the person actually chose is never moved. "Chose" means it
+ * differs from the start date it was seeded with — anything still matching is
+ * treated as following along.
+ */
+export function withVisitStart(draft: PlaceDraft, from: string): PlaceDraft {
+  const wasTracking = !draft.visitedTo || draft.visitedTo === draft.visitedFrom;
+
+  // Calendar dates are `YYYY-MM-DD`, so comparing them as strings orders them
+  // correctly without parsing.
+  const endsBeforeItStarts = Boolean(from && draft.visitedTo && draft.visitedTo < from);
+
+  return {
+    ...draft,
+    visitedFrom: from,
+    visitedTo: wasTracking || endsBeforeItStarts ? from : draft.visitedTo,
+  };
+}
+
+/**
+ * Reveals the end date with the start date already in it, for the same reason:
+ * the field should open where the trip is, not where today is.
+ */
+export function withEndDateShown(draft: PlaceDraft): PlaceDraft {
+  if (draft.visitedTo) return draft;
+  return { ...draft, visitedTo: draft.visitedFrom };
+}
+
 export function draftFromPlace(place: VisitedPlace): PlaceDraft {
   return {
     id: place.id,

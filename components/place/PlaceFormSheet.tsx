@@ -6,7 +6,12 @@ import { CalendarRange, ChevronRight, MapPin, Trash2 } from "lucide-react";
 import { PhotoPicker } from "@/components/place/PhotoPicker";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { Button } from "@/components/ui/Button";
-import { isDraftValid, type PlaceDraft } from "@/lib/store/draft";
+import {
+  isDraftValid,
+  withEndDateShown,
+  withVisitStart,
+  type PlaceDraft,
+} from "@/lib/store/draft";
 import { cn } from "@/lib/utils/cn";
 import { formatCoordinates, isValidLatitude, isValidLongitude } from "@/lib/utils/geo";
 
@@ -272,7 +277,9 @@ export function PlaceFormSheet({
                 id={ids.from}
                 type="date"
                 value={draft.visitedFrom}
-                onChange={(event) => set("visitedFrom", event.target.value)}
+                // The end date follows this one unless it has been set apart,
+                // so a same-day trip needs no second visit to the calendar.
+                onChange={(event) => onChange(withVisitStart(draft, event.target.value))}
                 className={inputClass}
               />
             </Field>
@@ -291,7 +298,10 @@ export function PlaceFormSheet({
             ) : (
               <button
                 type="button"
-                onClick={() => setShowEndDate(true)}
+                onClick={() => {
+                  setShowEndDate(true);
+                  onChange(withEndDateShown(draft));
+                }}
                 className="pressable inline-flex min-h-10 items-center gap-2 rounded-pill bg-fill-strong px-3.5 text-[15px] font-medium text-accent"
               >
                 <CalendarRange size={16} aria-hidden="true" />
