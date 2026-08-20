@@ -1,4 +1,5 @@
 import type { VisitedPlace } from "@/types/place";
+import type { Trip } from "@/types/trip";
 
 /**
  * A copy of the last good load from the sheet.
@@ -13,6 +14,12 @@ const KEY = "travel-globe.sheet-cache.v1";
 
 export type CachedSnapshot = {
   places: VisitedPlace[];
+  /**
+   * Absent from caches written before trips existed, which is why it is read
+   * defensively below rather than versioning the key: a returning browser
+   * should still open on its travel history, not on a blank screen.
+   */
+  trips: Trip[];
   lookups: Record<string, string[]>;
   settings: Record<string, string>;
   cachedAt: string;
@@ -29,6 +36,7 @@ export function loadCache(): CachedSnapshot | null {
 
     return {
       places: parsed.places as VisitedPlace[],
+      trips: Array.isArray(parsed.trips) ? (parsed.trips as Trip[]) : [],
       lookups: (parsed.lookups ?? {}) as Record<string, string[]>,
       settings: (parsed.settings ?? {}) as Record<string, string>,
       cachedAt: typeof parsed.cachedAt === "string" ? parsed.cachedAt : "",

@@ -121,6 +121,26 @@ export function adoptId(queue: PendingWrite[], localKey: string, assignedId: str
   );
 }
 
+/**
+ * Rewrites a temporary id where it appears as a *value* rather than a key.
+ *
+ * A place saved while a trip it belongs to is still being created carries that
+ * trip's local id in its Trip ID cell. Once the trip lands and has a real id,
+ * the queued place write has to carry the real one — otherwise the sheet would
+ * be told the place belongs to a trip that does not exist there.
+ */
+export function adoptFieldValue(
+  queue: PendingWrite[],
+  column: string,
+  from: string,
+  to: string,
+): PendingWrite[] {
+  return queue.map((pending) => {
+    if (pending.kind !== "upsert" || pending.fields[column] !== from) return pending;
+    return { ...pending, fields: { ...pending.fields, [column]: to } };
+  });
+}
+
 export function pendingKeys(queue: PendingWrite[]): Set<string> {
   return new Set(queue.map((pending) => pending.key));
 }

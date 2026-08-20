@@ -19,6 +19,12 @@ export type VisitedPlace = {
   /** ISO calendar date, `YYYY-MM-DD`. Only meaningful alongside `visitedFrom`. */
   visitedTo?: string;
   notes?: string;
+  /**
+   * The trip this visit belongs to, if any. Optional by design: a place
+   * recorded before trips existed — or one that simply isn't part of a trip —
+   * carries a blank cell in the sheet and no trip here.
+   */
+  tripId?: string;
   /** Photo reference — either `photo:<uuid>` (local blob) or an absolute URL. */
   coverImage?: string;
   photos?: string[];

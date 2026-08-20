@@ -47,6 +47,15 @@ const VISIT_HEADERS = [
   "Actual Cost", "Currency",
 ];
 
+/**
+ * The Trips tab, exactly as `ensureTripsTab_` in Code.gs creates it. Header
+ * text and order both matter: the app addresses every column by name.
+ */
+const TRIP_HEADERS = [
+  "Trip ID", "Trip Name", "Start Date", "End Date", "Description", "Cover Place ID",
+  "Created At", "Updated At", "Last Synced At", "Sync Version", "Archived?", "Deleted?",
+];
+
 const LOOKUPS = {
   Status: ["Been", "Want to go", "Planned", "Considering", "Booked", "Lived there", "Passed through", "Avoid", "Not interested"],
   Favorite: ["Yes", "No"],
@@ -66,6 +75,7 @@ const index = (headers) => {
   return map;
 };
 const PI = index(PLACES_HEADERS);
+const TI = index(TRIP_HEADERS);
 
 function blank(headers) { return new Array(headers.length).fill(""); }
 
@@ -98,6 +108,9 @@ const visits = [
     r[m["Start Date"]] = "2023-09-12"; r[m["End Date"]] = "2023-09-19"; return r; })(),
 ];
 
+/** Trips start empty, the way a sheet that has never had one does. */
+const trips = [];
+
 // Seeded rows arrive with their derived coordinate columns already correct, the
 // way a real sheet's rows do — otherwise the first write fills them in and an
 // "unrelated edit changed nothing else" assertion has nothing to assert.
@@ -123,6 +136,27 @@ const SEARCH_SOURCES = ["Place Name", "Alternate Names", "Place Type", "Status",
 
 const DERIVED = ["Created At", "Updated At", "Last Synced At", "Sync Version",
   "Coordinate Key", "Map URL", "Search Text"];
+
+/** The same derived columns, on whichever tab the row belongs to. */
+function applyTripDerived(row, isNew) {
+  const now = stamp();
+  if (isNew || !String(row[TI["Created At"]] || "").trim()) row[TI["Created At"]] = now;
+  row[TI["Updated At"]] = now;
+  row[TI["Last Synced At"]] = now;
+  const v = parseInt(row[TI["Sync Version"]], 10);
+  row[TI["Sync Version"]] = Number.isNaN(v) || v < 1 ? 1 : v + 1;
+  if (!String(row[TI["Archived?"]] || "").trim()) row[TI["Archived?"]] = "No";
+  if (!String(row[TI["Deleted?"]] || "").trim()) row[TI["Deleted?"]] = "No";
+}
+
+function nextTripId() {
+  let highest = 0;
+  for (const row of trips) {
+    const m = /^TRIP-(\d+)$/.exec(String(row[TI["Trip ID"]]).trim());
+    if (m) highest = Math.max(highest, parseInt(m[1], 10));
+  }
+  return `TRIP-${String(highest + 1).padStart(4, "0")}`;
+}
 
 function applyDerived(row, isNew) {
   const now = stamp();
@@ -157,7 +191,7 @@ function nextId() {
 }
 
 function handle(action, body) {
-  if (action === "ping") return { ok: true, schemaVersion: "1" };
+  if (action === "ping") return { ok: true, schemaVersion: "2" };
 
   if (action === "getAll") {
     return {
@@ -168,8 +202,9 @@ function handle(action, body) {
         Media_Links: { headers: [], rows: [] },
         Lists_Tags: { headers: [], rows: [] },
         Trips_Itinerary: { headers: [], rows: [] },
+        Trips: { headers: TRIP_HEADERS, rows: trips },
       },
-      lookups: LOOKUPS, settings, schemaVersion: "1", serverTime: new Date().toISOString(),
+      lookups: LOOKUPS, settings, schemaVersion: "2", serverTime: new Date().toISOString(),
     };
   }
 
@@ -179,6 +214,26 @@ function handle(action, body) {
     if (["Search_View", "Dashboard", "Guide"].includes(body.tab)) {
       throw new Error(`The tab "${body.tab}" is built from live formulas and is never written to.`);
     }
+    if (body.tab === "Trips") {
+      let tripId = String(body.id || "").trim();
+      let tripRow = tripId ? trips.find((r) => String(r[TI["Trip ID"]]).trim() === tripId) : null;
+      const isNewTrip = !tripRow;
+      if (isNewTrip) {
+        tripRow = blank(TRIP_HEADERS);
+        if (!tripId) tripId = nextTripId();
+        tripRow[TI["Trip ID"]] = tripId;
+        trips.push(tripRow);
+      }
+      for (const [header, value] of Object.entries(body.fields || {})) {
+        if (DERIVED.includes(header)) continue;
+        if (TI[header] === undefined) throw new Error(`The tab "Trips" has no column named "${header}".`);
+        tripRow[TI[header]] = value ?? "";
+      }
+      applyTripDerived(tripRow, isNewTrip);
+      log.push([stamp(), body.tab, tripId, isNewTrip ? "create" : "update", "ok"]);
+      return { id: tripId, row: tripRow, headers: TRIP_HEADERS };
+    }
+
     let id = String(body.id || "").trim();
     let row = id ? places.find((r) => String(r[PI["Place ID"]]).trim() === id) : null;
     const isNew = !row;
@@ -200,6 +255,16 @@ function handle(action, body) {
 
   if (action === "deleteRow") {
     const id = String(body.id || "").trim();
+    if (body.tab === "Trips") {
+      const tripRow = trips.find((r) => String(r[TI["Trip ID"]]).trim() === id);
+      // Soft delete, as everywhere else: the row stays, the flag changes.
+      if (!tripRow) { log.push([stamp(), body.tab, id, "delete", "missing"]); return { id, deleted: true, missing: true }; }
+      tripRow[TI["Deleted?"]] = "Yes";
+      applyTripDerived(tripRow, false);
+      log.push([stamp(), body.tab, id, "delete", "ok"]);
+      return { id, deleted: true, row: tripRow, headers: TRIP_HEADERS };
+    }
+
     const row = places.find((r) => String(r[PI["Place ID"]]).trim() === id);
     if (!row) { log.push([stamp(), body.tab, id, "delete", "missing"]); return { id, deleted: true, missing: true }; }
     row[PI["Deleted?"]] = "Yes";

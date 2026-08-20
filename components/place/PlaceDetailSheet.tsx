@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Globe2, Pencil, Trash2, X } from "lucide-react";
+import { Globe2, Luggage, Pencil, Trash2, X } from "lucide-react";
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { PlaceImage } from "@/components/ui/PlaceImage";
 import { formatVisitRange } from "@/lib/utils/date";
 import { countryFlag, formatCoordinates, placeSubtitle } from "@/lib/utils/geo";
 import type { VisitedPlace } from "@/types/place";
+import type { Trip } from "@/types/trip";
 
 /**
  * The full memory: a hero photograph, when you were there, what you wrote, the
@@ -23,6 +24,8 @@ export function PlaceDetailSheet({
   onShowOnGlobe,
   onDelete,
   recessed,
+  trip,
+  onOpenTrip,
 }: {
   place: VisitedPlace | null;
   open: boolean;
@@ -31,6 +34,9 @@ export function PlaceDetailSheet({
   onShowOnGlobe: () => void;
   onDelete: () => void;
   recessed?: boolean;
+  /** The trip this visit belongs to, when it belongs to one. */
+  trip?: Trip | null;
+  onOpenTrip?: () => void;
 }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const reduceMotion = useReducedMotion();
@@ -83,6 +89,18 @@ export function PlaceDetailSheet({
               </p>
             ) : null}
             {when ? <p className="mt-0.5 text-[15px] text-ink-3">{when}</p> : null}
+
+            {/* The trip is a way back to the rest of it, not a second title. */}
+            {trip && onOpenTrip ? (
+              <button
+                type="button"
+                onClick={onOpenTrip}
+                className="pressable mt-2.5 inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-pill bg-accent-soft px-3.5 text-[14px] font-medium text-accent"
+              >
+                <Luggage size={14} aria-hidden="true" className="shrink-0" />
+                <span className="truncate">{trip.name}</span>
+              </button>
+            ) : null}
 
             <PlaceImage
               place={place}

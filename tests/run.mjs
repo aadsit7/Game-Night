@@ -17,6 +17,7 @@ const suites = [
   "sheet-connection.test.mjs",
   "timeline.test.mjs",
   "draft-dates.test.mjs",
+  "trips.test.mjs",
 ];
 
 let failed = false;

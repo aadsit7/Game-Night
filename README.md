@@ -3,7 +3,7 @@
 A personal, visual history of everywhere you’ve been — pinned to an interactive
 Earth. Built iPhone-first.
 
-Three ways to look at the same travel history:
+Four ways to look at the same travel history:
 
 - **Globe** — a full-screen 3D Earth you can spin and zoom from whole-planet
   down to street level, with every saved place pinned and nearby pins clustered.
@@ -13,9 +13,15 @@ Three ways to look at the same travel history:
   touch it. Drag it to move through the years; scrolling drags it back.
 - **Places** — a searchable, sortable collection of the same records, as a
   travel journal rather than a table.
+- **Trips** — the same places grouped into the journeys they belonged to, laid
+  out day by day. Day numbers are counted from the trip's start date rather
+  than stored, so nothing goes stale when a date moves. A trip is a label on
+  visits, never a container for them: a place belongs to at most one, most
+  places belong to none, and deleting a trip leaves every place exactly where
+  it was.
 
 Adding, pinning, editing, moving and deleting a place are the core of the app,
-and every change lands in all three views on the same frame.
+and every change lands in all four views on the same frame.
 
 ---
 
@@ -149,6 +155,15 @@ Only the fields you actually changed are sent. The Apps Script reads the rest of
 the row from the sheet and writes it straight back, so the ~60 `Places` columns
 the app has no screen for survive untouched — and columns are addressed by
 header text, never by position, so inserting one is safe across all 78.
+
+**Trips live in their own tab.** A `Trips` row holds a trip's name, dates and
+description; a place joins one through the `Trip ID / Collection` column that
+was already on `Places`. Nothing about a trip is stored twice — its length, the
+places in it and the countries it covers are all counted from the rows
+themselves at render time. A blank trip cell means "no trip", which is what
+every row written before this feature already says, and clearing the cell is
+how a place leaves a trip without being deleted. The `Trips` tab is created by
+the Apps Script on first run, so there is nothing to add by hand.
 
 Uploaded photos are the one thing that stays local. They are blobs in this
 browser's IndexedDB and would be meaningless elsewhere, so only real image
@@ -297,21 +312,24 @@ name, city, region, country, country code and coordinates.
 app/                     layout, page, manifest, generated icons
 components/
   AppShell.tsx           the one place that knows what is on screen
-  AppTabBar.tsx          Globe | Places + the add button
+  AppTabBar.tsx          Globe | Timeline | Places | Trips + the add button
   globe/                 TravelGlobe, overlays, preview sheet, fallback
   timeline/              chronology view and the year scrubber
   places/                list, cards, search, filters, stats
+  trips/                 trip list, trip detail by day, trip form
   sync/                  setup screen, connection form, settings sheet
   place/                 detail, form, location search, photos, pin bar
   ui/                    BottomSheet, SegmentedControl, dialogs, imagery
 lib/
   maps/                  basemap config and layer ids, geocoding
+  trips/                 day numbering and trip summaries, all derived
   storage/               PlaceRepository seam, sheetPlaceRepository, photoStore
   store/                 PlacesProvider, draft
   sheets/                sheetsClient (all network), mapping, queue, cache,
                          defaultConnection (the built-in address and code)
   hooks/  utils/
 types/place.ts           the VisitedPlace model
+types/trip.ts            the Trip model
 apps-script/Code.gs      the Google Apps Script web app, to paste into the sheet
 public/geo/countries.json  country outlines (generated, checked in)
 scripts/generate-icons.mjs

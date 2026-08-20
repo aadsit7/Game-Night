@@ -28,7 +28,10 @@ var TABS = {
   Notes_Reviews:   { header: 3, idColumn: 'Note ID',           prefix: 'NOTE',  pad: 4 },
   Media_Links:     { header: 3, idColumn: 'Media ID',          prefix: 'MEDIA', pad: 4 },
   Lists_Tags:      { header: 3, idColumn: 'Mapping ID',        prefix: 'MAP',   pad: 4 },
-  Trips_Itinerary: { header: 3, idColumn: 'Itinerary Item ID', prefix: 'ITEM',  pad: 4 }
+  Trips_Itinerary: { header: 3, idColumn: 'Itinerary Item ID', prefix: 'ITEM',  pad: 4 },
+  // One row per trip: the name and dates that a Place's "Trip ID / Collection"
+  // cell points at. Created by this script if the tab is not there yet.
+  Trips:           { header: 3, idColumn: 'Trip ID',           prefix: 'TRIP',  pad: 4 }
 };
 
 /** Read at startup so the app's dropdowns come from the sheet, not from code. */
@@ -43,12 +46,18 @@ var LOOKUPS_HEADER_ROW = 4;
 var READ_ONLY_TABS = ['Search_View', 'Dashboard', 'Guide'];
 
 /** Tabs this script creates on demand. Nothing else may be created. */
+var TRIPS_TAB = 'Trips';
+var TRIPS_HEADERS = [
+  'Trip ID', 'Trip Name', 'Start Date', 'End Date', 'Description', 'Cover Place ID',
+  'Created At', 'Updated At', 'Last Synced At', 'Sync Version', 'Archived?', 'Deleted?'
+];
+
 var SETTINGS_TAB = 'App_Settings';
 var LOG_TAB = 'Sync_Log';
 var LOG_MAX_ROWS = 1000;
 var LOG_TRIM_TO = 900;
 
-var SCHEMA_VERSION = '1';
+var SCHEMA_VERSION = '2';
 
 /**
  * The shared code this script checks on every request.
@@ -204,8 +213,39 @@ function book_() {
 }
 
 function sheetNamed_(name) {
+  // Trips is the app's own tab rather than one of the original spreadsheet's,
+  // so a sheet that has never had a trip saved to it simply doesn't have it
+  // yet. Creating it here means the first trip works with nothing to set up.
+  if (name === TRIPS_TAB) return ensureTripsTab_();
+
   var sheet = book_().getSheetByName(name);
   if (!sheet) throw new Error('The tab "' + name + '" is missing from this spreadsheet.');
+  return sheet;
+}
+
+/**
+ * The Trips tab, made if it isn't there.
+ *
+ * Laid out like every other tab in this spreadsheet — a title on row 1, a
+ * description on row 2, headers on row 3 — so the same header-row rules apply
+ * and a person reading the file sees one consistent shape. Nothing else in the
+ * spreadsheet is touched, and an existing Trips tab is returned untouched:
+ * this never rewrites headers someone may have added to.
+ */
+function ensureTripsTab_() {
+  var book = book_();
+  var sheet = book.getSheetByName(TRIPS_TAB);
+  if (sheet) return sheet;
+
+  sheet = book.insertSheet(TRIPS_TAB);
+  sheet.getRange(1, 1).setValue('Trips');
+  sheet.getRange(2, 1).setValue(
+    'One row per trip. A place joins a trip through its "Trip ID / Collection" cell on Places.'
+  );
+  sheet.getRange(3, 1, 1, TRIPS_HEADERS.length).setValues([TRIPS_HEADERS]).setFontWeight('bold');
+  sheet.setFrozenRows(3);
+  sheet.setColumnWidth(2, 200);
+  sheet.setColumnWidth(5, 320);
   return sheet;
 }
 
@@ -268,6 +308,9 @@ function timezone_() {
 
 /** One request, every data tab. Startup makes exactly this call. */
 function getAll_() {
+  // Before the loop, because the loop reads Trips and a missing tab throws.
+  ensureTripsTab_();
+
   var tabs = {};
   for (var name in TABS) {
     if (!TABS.hasOwnProperty(name)) continue;
@@ -692,6 +735,8 @@ function selfTest() {
       ? 'Access code: using the ACCESS_CODE script property.'
       : 'Access code: using the one built into this file. Nothing to set up.'
   );
+
+  ensureTripsTab_();
 
   for (var name in TABS) {
     if (!TABS.hasOwnProperty(name)) continue;

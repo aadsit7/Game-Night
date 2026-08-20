@@ -22,6 +22,16 @@ const MONTHS_LONG = [
 
 const MONTHS_SHORT = MONTHS_LONG.map((m) => (m.length > 5 ? `${m.slice(0, 3)}` : m));
 
+const WEEKDAYS_LONG = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function parseCalendarDate(value?: string | null): Date | null {
@@ -106,6 +116,19 @@ export function formatVisitShort(from?: string, to?: string): string | null {
   }
 
   return `${MONTHS_SHORT[start.getMonth()]} ${start.getFullYear()} – ${MONTHS_SHORT[end.getMonth()]} ${end.getFullYear()}`;
+}
+
+/**
+ * A single day, named the way a diary would name it: "Monday, May 4".
+ *
+ * No year — the heading above it already carries one, and repeating it on
+ * every day of a trip is noise. Falls back to the raw value rather than
+ * inventing a date the app cannot parse.
+ */
+export function formatDayHeading(value?: string | null): string {
+  const date = parseCalendarDate(value);
+  if (!date) return value ?? "";
+  return `${WEEKDAYS_LONG[date.getDay()]}, ${MONTHS_LONG[date.getMonth()]} ${date.getDate()}`;
 }
 
 /** Sort key for "recently visited" / "oldest visited". */

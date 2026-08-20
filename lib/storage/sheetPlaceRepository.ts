@@ -15,14 +15,18 @@ import {
 import {
   COLUMNS,
   PLACES_TAB,
+  TRIPS_TAB,
   VISITS_TAB,
   applyVisitSpans,
   fieldsFromChanges,
+  fieldsFromTripChanges,
   placesFromTable,
+  tripsFromTable,
   visitSpans,
 } from "@/lib/sheets/mapping";
 import {
   LOCAL_ID_PREFIX,
+  adoptFieldValue,
   adoptId,
   enqueue,
   isLocalId,
@@ -37,6 +41,7 @@ import { PersistenceError, type PlaceRepository } from "@/lib/storage/placeRepos
 import { createId } from "@/lib/utils/id";
 import { clampLatitude, isValidLatitude, isValidLongitude, normalizeLongitude } from "@/lib/utils/geo";
 import type { NewPlaceInput, PlaceChanges, VisitedPlace } from "@/types/place";
+import type { NewTripInput, Trip, TripChanges } from "@/types/trip";
 
 /**
  * The travel collection, stored in a Google Sheet.
@@ -89,6 +94,9 @@ export const INITIAL_STATUS: SheetStatus = {
 /** One shared empty array, for the same reason. */
 export const NO_PLACES: VisitedPlace[] = [];
 
+/** And one for trips. */
+export const NO_TRIPS: Trip[] = [];
+
 const RETRY_DELAYS_MS = [2_000, 4_000, 8_000, 16_000, 30_000];
 
 function friendly(error: unknown, fallback: string): string {
@@ -112,6 +120,10 @@ class SheetPlaceRepository implements PlaceRepository {
   /** The same collection minus tombstones, kept so reads have a stable identity. */
   private visible: VisitedPlace[] = NO_PLACES;
 
+  /** Trips, and the same collection minus tombstones. */
+  private trips: Trip[] = [];
+  private visibleTrips: Trip[] = NO_TRIPS;
+
   private lookups: Record<string, string[]> = {};
   private settings: Record<string, string> = {};
   private queue: PendingWrite[] = [];
@@ -123,6 +135,15 @@ class SheetPlaceRepository implements PlaceRepository {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private retryAttempt = 0;
   private hydrated = false;
+
+  /**
+   * Temporary id to the one the sheet gave it.
+   *
+   * Records and queued writes are re-pointed the moment a create lands, but a
+   * half-finished form on screen holds its own copy of an id and cannot be
+   * reached from here. This is how it catches up — see `resolveId`.
+   */
+  private adopted = new Map<string, string>();
 
   /* ---------------------------------------------------------------- *
    * Subscription
@@ -155,6 +176,19 @@ class SheetPlaceRepository implements PlaceRepository {
     this.places = places;
     const visible = places.filter((place) => !place.deletedAt);
     this.visible = visible.length === 0 ? NO_PLACES : visible;
+    this.notify();
+  }
+
+  /** The trips to draw, tombstones removed. Stable identity, as above. */
+  getVisibleTrips(): Trip[] {
+    return this.visibleTrips;
+  }
+
+  /** The one way the trip collection changes. */
+  private commitTrips(trips: Trip[]): void {
+    this.trips = trips;
+    const visible = trips.filter((trip) => !trip.deletedAt);
+    this.visibleTrips = visible.length === 0 ? NO_TRIPS : visible;
     this.notify();
   }
 
@@ -196,6 +230,7 @@ class SheetPlaceRepository implements PlaceRepository {
     if (cached) {
       this.lookups = cached.lookups;
       this.settings = cached.settings;
+      this.commitTrips(cached.trips);
       this.commit(cached.places);
     }
 
@@ -228,6 +263,7 @@ class SheetPlaceRepository implements PlaceRepository {
     this.settings = {};
     clearConnection();
     clearCache();
+    this.commitTrips([]);
     this.commit([]);
 
     this.connection = defaultConnection();
@@ -271,6 +307,11 @@ class SheetPlaceRepository implements PlaceRepository {
       const visits = snapshot.tabs[VISITS_TAB];
       const withSpans = visits ? applyVisitSpans(fromSheet, visitSpans(visits)) : fromSheet;
 
+      // A sheet whose script predates trips has no Trips tab. That is not a
+      // failure — it simply has no trips, and everything else loads as before.
+      this.commitTrips(
+        this.overlayPendingTrips(tripsFromTable(snapshot.tabs[TRIPS_TAB], snapshot.serverTime)),
+      );
       this.commit(applyLocalPhotos(this.overlayPending(withSpans)));
       this.lookups = snapshot.lookups;
       this.settings = snapshot.settings;
@@ -314,8 +355,31 @@ class SheetPlaceRepository implements PlaceRepository {
     return merged;
   }
 
+  /** The same rule as `overlayPending`, for trips. */
+  private overlayPendingTrips(fromSheet: Trip[]): Trip[] {
+    const pending = pendingKeys(this.queue);
+    if (pending.size === 0) return fromSheet;
+
+    const local = new Map(this.trips.map((trip) => [trip.id, trip]));
+    const merged = fromSheet.map((trip) =>
+      pending.has(trip.id) ? (local.get(trip.id) ?? trip) : trip,
+    );
+
+    const present = new Set(merged.map((trip) => trip.id));
+    for (const key of pending) {
+      const record = local.get(key);
+      if (record && !present.has(key)) merged.push(record);
+    }
+    return merged;
+  }
+
   private persist(): void {
-    saveCache({ places: this.places, lookups: this.lookups, settings: this.settings });
+    saveCache({
+      places: this.places,
+      trips: this.trips,
+      lookups: this.lookups,
+      settings: this.settings,
+    });
   }
 
   /* ---------------------------------------------------------------- *
@@ -382,7 +446,7 @@ class SheetPlaceRepository implements PlaceRepository {
             // entries and `settle` would no longer recognise the one it just
             // sent, and send it a second time.
             this.queue = settle(this.queue, write);
-            if (isLocalId(write.key)) this.adopt(write.key, result.id);
+            if (isLocalId(write.key)) this.adopt(write.key, result.id, write.tab);
             saveQueue(this.queue);
             this.retryAttempt = 0;
             continue;
@@ -422,8 +486,45 @@ class SheetPlaceRepository implements PlaceRepository {
     }
   }
 
+  /**
+   * The id a temporary one turned into, or the id itself.
+   *
+   * Follows the chain, so a value that has been through more than one rename
+   * still ends up at the row that actually exists.
+   */
+  resolveId(id: string): string {
+    let current = id;
+    for (let hops = 0; hops < 8; hops += 1) {
+      const next = this.adopted.get(current);
+      if (!next || next === current) return current;
+      current = next;
+    }
+    return current;
+  }
+
   /** Swaps a temporary id for the one the sheet assigned, everywhere at once. */
-  private adopt(localKey: string, assignedId: string): void {
+  private adopt(localKey: string, assignedId: string, tab: string): void {
+    this.adopted.set(localKey, assignedId);
+
+    if (tab === TRIPS_TAB) {
+      this.commitTrips(
+        this.trips.map((trip) => (trip.id === localKey ? { ...trip, id: assignedId } : trip)),
+      );
+      // Places assigned to a trip that was still being created point at its
+      // temporary id — in memory and in anything queued behind it. Both have
+      // to move across, or the sheet would be told a place belongs to a trip
+      // that never existed there.
+      this.commit(
+        this.places.map((place) =>
+          place.tripId === localKey ? { ...place, tripId: assignedId } : place,
+        ),
+      );
+      this.queue = adoptFieldValue(this.queue, COLUMNS.tripId, localKey, assignedId);
+      this.queue = adoptId(this.queue, localKey, assignedId);
+      this.persist();
+      return;
+    }
+
     this.commit(
       this.places.map((place) => (place.id === localKey ? { ...place, id: assignedId } : place)),
     );
@@ -603,6 +704,128 @@ class SheetPlaceRepository implements PlaceRepository {
     });
 
     return revived;
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Trips
+   *
+   * Deliberately the same machinery as places: the same queue, the same
+   * generic upsert and delete on the sheet, the same offline behaviour. A trip
+   * is another row in another tab, not another system.
+   * ---------------------------------------------------------------- */
+
+  async getTrips(): Promise<Trip[]> {
+    return this.visibleTrips;
+  }
+
+  async createTrip(input: NewTripInput): Promise<Trip> {
+    this.requireConnection();
+
+    const name = input.name?.trim();
+    if (!name) throw new PersistenceError("A trip needs a name.");
+    if (input.startDate && input.endDate && input.endDate < input.startDate) {
+      throw new PersistenceError("The end of a trip can’t come before its start.");
+    }
+
+    const now = new Date().toISOString();
+    // As with places, the sheet hands out TRIP-0001 and the like. Until the
+    // create lands, the trip carries a local id — and anything assigned to it
+    // in the meantime is re-pointed when the real id arrives.
+    const trip: Trip = {
+      ...input,
+      id: `${LOCAL_ID_PREFIX}${createId()}`,
+      name,
+      startDate: trimmed(input.startDate),
+      endDate: trimmed(input.endDate),
+      description: trimmed(input.description),
+      coverPlaceId: trimmed(input.coverPlaceId),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    this.commitTrips([trip, ...this.trips]);
+    this.persist();
+
+    this.push({
+      kind: "upsert",
+      key: trip.id,
+      tab: TRIPS_TAB,
+      fields: fieldsFromTripChanges(trip),
+      queuedAt: now,
+    });
+
+    return trip;
+  }
+
+  async updateTrip(id: string, changes: TripChanges): Promise<Trip> {
+    this.requireConnection();
+
+    const index = this.trips.findIndex((trip) => trip.id === id);
+    if (index === -1 || this.trips[index].deletedAt) {
+      throw new PersistenceError("That trip no longer exists.");
+    }
+
+    const previous = this.trips[index];
+    const merged: Trip = {
+      ...previous,
+      ...changes,
+      id,
+      createdAt: previous.createdAt,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (!merged.name?.trim()) throw new PersistenceError("A trip needs a name.");
+    merged.name = merged.name.trim();
+    if (merged.startDate && merged.endDate && merged.endDate < merged.startDate) {
+      throw new PersistenceError("The end of a trip can’t come before its start.");
+    }
+
+    const next = [...this.trips];
+    next[index] = merged;
+    this.commitTrips(next);
+    this.persist();
+
+    this.push({
+      kind: "upsert",
+      key: id,
+      id: isLocalId(id) ? undefined : id,
+      tab: TRIPS_TAB,
+      fields: fieldsFromTripChanges(changes),
+      queuedAt: merged.updatedAt,
+    });
+
+    return merged;
+  }
+
+  /**
+   * Removes the trip and nothing else.
+   *
+   * Every place that belonged to it has its trip cell cleared and stays
+   * exactly where it was — in the history, on the globe, on the timeline. A
+   * trip is a label on a set of visits, and taking the label off is not the
+   * same as throwing the visits away.
+   */
+  async deleteTrip(id: string): Promise<void> {
+    this.requireConnection();
+
+    const index = this.trips.findIndex((trip) => trip.id === id);
+    if (index === -1 || this.trips[index].deletedAt) return;
+
+    const now = new Date().toISOString();
+
+    // The places first: if the run is interrupted, a trip with no members is a
+    // far better half-state than members pointing at a trip that is gone.
+    for (const place of this.places) {
+      if (place.tripId !== id || place.deletedAt) continue;
+      await this.update(place.id, { tripId: undefined });
+    }
+
+    const next = [...this.trips];
+    next[index] = { ...next[index], deletedAt: now, updatedAt: now };
+    this.commitTrips(next);
+    this.persist();
+
+    this.push({ kind: "delete", key: id, id, tab: TRIPS_TAB, queuedAt: now });
   }
 
   private requireConnection(): void {

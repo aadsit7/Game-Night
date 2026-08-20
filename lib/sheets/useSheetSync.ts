@@ -6,10 +6,12 @@ import type { SheetConnection } from "@/lib/sheets/connection";
 import {
   INITIAL_STATUS,
   NO_PLACES,
+  NO_TRIPS,
   sheetPlaceRepository,
   type SheetStatus,
 } from "@/lib/storage/sheetPlaceRepository";
 import type { VisitedPlace } from "@/types/place";
+import type { Trip } from "@/types/trip";
 
 /**
  * Wires the sheet-backed repository into React.
@@ -23,6 +25,7 @@ import type { VisitedPlace } from "@/types/place";
 
 export type SheetSync = {
   places: VisitedPlace[];
+  trips: Trip[];
   state: SheetStatus;
   connection: SheetConnection | null;
   lookups: Record<string, string[]>;
@@ -42,6 +45,11 @@ export function useSheetSync(): SheetSync {
     subscribe,
     () => sheetPlaceRepository.getVisible(),
     () => NO_PLACES,
+  );
+  const trips = useSyncExternalStore(
+    subscribe,
+    () => sheetPlaceRepository.getVisibleTrips(),
+    () => NO_TRIPS,
   );
   const state = useSyncExternalStore(
     subscribe,
@@ -103,5 +111,5 @@ export function useSheetSync(): SheetSync {
     void sheetPlaceRepository.load();
   }, []);
 
-  return { places, state, connection, lookups, connect, disconnect, syncNow };
+  return { places, trips, state, connection, lookups, connect, disconnect, syncNow };
 }
