@@ -23,6 +23,14 @@ import { PlacesView } from "@/components/places/PlacesView";
 import { SheetSetupScreen } from "@/components/sync/SheetSetupScreen";
 import { SyncSettingsSheet } from "@/components/sync/SyncSettingsSheet";
 import { TimelineView } from "@/components/timeline/TimelineView";
+import { TripDetailSheet } from "@/components/trips/TripDetailSheet";
+import {
+  TripFormSheet,
+  emptyTripDraft,
+  isTripDraftDirty,
+  type TripDraft,
+} from "@/components/trips/TripFormSheet";
+import { TripsView } from "@/components/trips/TripsView";
 import { ActionSheet } from "@/components/ui/ActionSheet";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Toast, type ToastMessage } from "@/components/ui/Toast";
@@ -53,7 +61,9 @@ import type { LocationResult, VisitedPlace } from "@/types/place";
 type Overlay =
   | { kind: "detail"; id: string }
   | { kind: "form"; mode: "create" | "edit" }
-  | { kind: "search"; purpose: "create" | "replace" };
+  | { kind: "search"; purpose: "create" | "replace" }
+  | { kind: "trip"; id: string }
+  | { kind: "tripForm"; mode: "create" | "edit"; id?: string };
 
 type PinSession = {
   mode: "create" | "adjust";
@@ -94,6 +104,12 @@ export function AppShell() {
     deletePlace,
     restorePlace,
     discardPlacePhotos,
+    trips,
+    getTrip,
+    createTrip,
+    updateTrip,
+    deleteTrip,
+    resolveTripId,
     sync,
   } = usePlaces();
 
@@ -115,6 +131,13 @@ export function AppShell() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const [tripDraft, setTripDraft] = useState<TripDraft>(emptyTripDraft);
+  const [tripDraftBaseline, setTripDraftBaseline] = useState<TripDraft>(emptyTripDraft);
+  const [tripSaving, setTripSaving] = useState(false);
+  const [tripFormError, setTripFormError] = useState<string | null>(null);
+  const [discardTripPrompt, setDiscardTripPrompt] = useState(false);
+  const [confirmDeleteTripId, setConfirmDeleteTripId] = useState<string | null>(null);
+
   const [pinSession, setPinSession] = useState<PinSession | null>(null);
   const [pinLabel, setPinLabel] = useState<string | null>(null);
   const [pinResolving, setPinResolving] = useState(false);
@@ -130,10 +153,29 @@ export function AppShell() {
   const undoTimer = useRef<number | null>(null);
   const pendingDelete = useRef<VisitedPlace | null>(null);
 
+  /**
+   * The draft, pointed at a trip that actually exists.
+   *
+   * A trip created from inside this form exists locally before the sheet has
+   * named it, and the draft holds that temporary id. Records and queued writes
+   * are re-pointed the moment the create lands; the draft is a copy React owns
+   * and cannot be, so it is corrected here instead — otherwise the place would
+   * be saved referring to a trip id that only ever existed in this browser.
+   */
+  const resolvedDraft = useMemo(() => {
+    const id = draft.tripId;
+    if (!id || trips.some((trip) => trip.id === id)) return draft;
+    const resolved = resolveTripId(id);
+    return resolved === id ? draft : { ...draft, tripId: resolved };
+  }, [draft, trips, resolveTripId]);
+
   const selectedPlace = getPlace(selectedId);
   const topOverlay = overlays[overlays.length - 1] ?? null;
   const detailOverlay = overlays.find((overlay) => overlay.kind === "detail");
   const detailPlace = getPlace(detailOverlay?.kind === "detail" ? detailOverlay.id : null);
+  const tripOverlay = overlays.find((overlay) => overlay.kind === "trip");
+  const openTrip = getTrip(tripOverlay?.kind === "trip" ? tripOverlay.id : null);
+  const tripFormOverlay = overlays.find((overlay) => overlay.kind === "tripForm");
 
   /* Measure the tab bar so sheets, toasts and camera padding all agree. */
   useEffect(() => {
@@ -271,15 +313,30 @@ export function AppShell() {
   /* Add & edit                                                               */
   /* ---------------------------------------------------------------------- */
 
-  const startCreate = useCallback(() => {
-    const fresh = emptyDraft();
-    setDraft(fresh);
-    setDraftBaseline(fresh);
-    setFormError(null);
-    setPreviewOpen(false);
-    captureProximity();
-    setOverlays([{ kind: "search", purpose: "create" }]);
-  }, [captureProximity]);
+  /**
+   * Starts a new place.
+   *
+   * `tripId` is how "Add Place" inside a trip pre-selects it, and the trip
+   * sheet is left underneath the flow so saving returns there rather than
+   * dumping the person back on the globe with the trip closed.
+   */
+  const startCreate = useCallback(
+    (options: { tripId?: string; keepTripOpen?: boolean } = {}) => {
+      const fresh = { ...emptyDraft(), tripId: options.tripId ?? "" };
+      setDraft(fresh);
+      setDraftBaseline(fresh);
+      setFormError(null);
+      setPreviewOpen(false);
+      captureProximity();
+      setOverlays((current) => {
+        const beneath = options.keepTripOpen
+          ? current.filter((overlay) => overlay.kind === "trip")
+          : [];
+        return [...beneath, { kind: "search", purpose: "create" }];
+      });
+    },
+    [captureProximity],
+  );
 
   const startEdit = useCallback(
     (id: string) => {
@@ -290,8 +347,12 @@ export function AppShell() {
       setDraftBaseline(next);
       setFormError(null);
       setOverlays((current) => {
-        // Keep an open detail sheet underneath so closing the form returns to it.
-        const base = current.filter((overlay) => overlay.kind === "detail");
+        // Keep whatever is underneath — a detail sheet, and the trip it was
+        // opened from — so closing the form returns to it rather than to the
+        // globe.
+        const base = current.filter(
+          (overlay) => overlay.kind === "detail" || overlay.kind === "trip",
+        );
         return [...base, { kind: "form", mode: "edit" }];
       });
     },
@@ -300,6 +361,19 @@ export function AppShell() {
 
   const openDetail = useCallback((id: string) => {
     setOverlays([{ kind: "detail", id }]);
+  }, []);
+
+  /** A place opened from inside a trip, with the trip left open beneath it. */
+  const openDetailFromTrip = useCallback((id: string) => {
+    setOverlays((current) => [
+      ...current.filter((overlay) => overlay.kind === "trip"),
+      { kind: "detail", id },
+    ]);
+  }, []);
+
+  const openTripDetail = useCallback((id: string) => {
+    setPreviewOpen(false);
+    setOverlays([{ kind: "trip", id }]);
   }, []);
 
   const handleLocationChosen = useCallback(
@@ -325,27 +399,43 @@ export function AppShell() {
     setSaving(true);
     setFormError(null);
     try {
-      const input = draftToInput(draft);
-      if (draft.id) {
-        const updated = await updatePlace(draft.id, input);
-        setDraftBaseline(draft);
+      const input = draftToInput(resolvedDraft);
+      if (resolvedDraft.id) {
+        const updated = await updatePlace(resolvedDraft.id, input);
+        setDraft(resolvedDraft);
+        setDraftBaseline(resolvedDraft);
         popOverlay();
         showToast(whenOffline("Changes saved", "Saved here — it’ll sync when you’re back"));
         if (selectedId === updated.id) flyTo(updated, 7.5);
       } else {
         const created = await createPlace(input);
-        setDraftBaseline(draft);
-        setOverlays([]);
-        setMode("globe");
-        setSelectedId(created.id);
-        setPreviewOpen(true);
-        showToast(
-          whenOffline(
-            `${created.name} added to your globe`,
-            `${created.name} added — it’ll sync when you’re back`,
-          ),
-        );
-        window.setTimeout(() => flyTo(created, 7), reduceMotion ? 0 : 220);
+        setDraft(resolvedDraft);
+        setDraftBaseline(resolvedDraft);
+
+        // Added from inside a trip: go back to the trip, where the new place
+        // has just appeared under its day, rather than to the globe.
+        const beneath = overlays.find((overlay) => overlay.kind === "trip");
+        if (beneath) {
+          setOverlays([beneath]);
+          showToast(
+            whenOffline(
+              `${created.name} added`,
+              `${created.name} added — it’ll sync when you’re back`,
+            ),
+          );
+        } else {
+          setOverlays([]);
+          setMode("globe");
+          setSelectedId(created.id);
+          setPreviewOpen(true);
+          showToast(
+            whenOffline(
+              `${created.name} added to your globe`,
+              `${created.name} added — it’ll sync when you’re back`,
+            ),
+          );
+          window.setTimeout(() => flyTo(created, 7), reduceMotion ? 0 : 220);
+        }
       }
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "That couldn’t be saved.");
@@ -353,7 +443,8 @@ export function AppShell() {
       setSaving(false);
     }
   }, [
-    draft,
+    resolvedDraft,
+    overlays,
     updatePlace,
     createPlace,
     popOverlay,
@@ -362,6 +453,125 @@ export function AppShell() {
     flyTo,
     reduceMotion,
   ]);
+
+  /* ---------------------------------------------------------------------- */
+  /* Trips                                                                    */
+  /* ---------------------------------------------------------------------- */
+
+  const startCreateTrip = useCallback(() => {
+    const fresh = emptyTripDraft();
+    setTripDraft(fresh);
+    setTripDraftBaseline(fresh);
+    setTripFormError(null);
+    setPreviewOpen(false);
+    // Pushed rather than replacing: creating a trip from the middle of adding
+    // a place must leave that half-typed place exactly where it was.
+    pushOverlay({ kind: "tripForm", mode: "create" });
+  }, [pushOverlay]);
+
+  const startEditTrip = useCallback(
+    (id: string) => {
+      const trip = getTrip(id);
+      if (!trip) return;
+      const next: TripDraft = {
+        id: trip.id,
+        name: trip.name,
+        startDate: trip.startDate ?? "",
+        endDate: trip.endDate ?? "",
+        description: trip.description ?? "",
+      };
+      setTripDraft(next);
+      setTripDraftBaseline(next);
+      setTripFormError(null);
+      pushOverlay({ kind: "tripForm", mode: "edit", id });
+    },
+    [getTrip, pushOverlay],
+  );
+
+  const saveTripForm = useCallback(async () => {
+    setTripSaving(true);
+    setTripFormError(null);
+    try {
+      const input = {
+        name: tripDraft.name.trim(),
+        startDate: tripDraft.startDate || undefined,
+        endDate: tripDraft.endDate || undefined,
+        description: tripDraft.description.trim() || undefined,
+      };
+
+      if (tripDraft.id) {
+        const updated = await updateTrip(tripDraft.id, input);
+        setTripDraftBaseline(tripDraft);
+        popOverlay();
+        showToast(whenOffline("Trip saved", "Saved here — it’ll sync when you’re back"));
+        return updated;
+      }
+
+      const created = await createTrip(input);
+      setTripDraftBaseline(tripDraft);
+      popOverlay();
+
+      // Created from the place form: select it there. The rest of that form is
+      // untouched — it has been sitting underneath this sheet the whole time.
+      const fromPlaceForm = overlays.some((overlay) => overlay.kind === "form");
+      if (fromPlaceForm) {
+        setDraft((current) => ({ ...current, tripId: created.id }));
+      } else {
+        setOverlays([{ kind: "trip", id: created.id }]);
+      }
+
+      showToast(
+        whenOffline(`${created.name} created`, `${created.name} created — it’ll sync when you’re back`),
+      );
+      return created;
+    } catch (error) {
+      // The draft is deliberately left as it was: a failed save must not cost
+      // someone the words they typed.
+      setTripFormError(error instanceof Error ? error.message : "That trip couldn’t be saved.");
+      return null;
+    } finally {
+      setTripSaving(false);
+    }
+  }, [tripDraft, overlays, createTrip, updateTrip, popOverlay, showToast]);
+
+  const guardTripFormClose = useCallback(() => {
+    if (!isTripDraftDirty(tripDraft, tripDraftBaseline)) return true;
+    setDiscardTripPrompt(true);
+    return false;
+  }, [tripDraft, tripDraftBaseline]);
+
+  /**
+   * Removes a trip and leaves every place it held exactly where it was.
+   *
+   * The repository clears the trip from each of them; nothing is deleted but
+   * the trip row itself, which is the whole promise of the confirmation.
+   */
+  const performDeleteTrip = useCallback(
+    async (id: string) => {
+      setConfirmDeleteTripId(null);
+      const trip = getTrip(id);
+      try {
+        await deleteTrip(id);
+        setOverlays((current) =>
+          current.filter(
+            (overlay) =>
+              !(overlay.kind === "trip" && overlay.id === id) && overlay.kind !== "tripForm",
+          ),
+        );
+        showToast(
+          whenOffline(
+            `${trip?.name ?? "Trip"} deleted — your places are still here`,
+            `${trip?.name ?? "Trip"} deleted — it’ll sync when you’re back`,
+          ),
+        );
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "That trip couldn’t be deleted.", {
+          tone: "error",
+        });
+      }
+    },
+    [deleteTrip, getTrip, showToast],
+  );
 
   /* Only warn when there is genuinely something to lose. */
   const guardFormClose = useCallback(() => {
@@ -646,7 +856,7 @@ export function AppShell() {
           !pinSession &&
           overlays.length === 0
         }
-        onAdd={startCreate}
+        onAdd={() => startCreate()}
         bottomOffset={tabBarHeight + 12}
       />
 
@@ -678,7 +888,7 @@ export function AppShell() {
               bottomInset={tabBarHeight + 16}
               onOpenPlace={openDetail}
               onPlaceActions={setActionsFor}
-              onAdd={startCreate}
+              onAdd={() => startCreate()}
               onShowGlobe={() => setMode("globe")}
               syncState={sync.state}
               onOpenSync={() => setSyncOpen(true)}
@@ -702,11 +912,38 @@ export function AppShell() {
           >
             <TimelineView
               places={places}
+              trips={trips}
               loading={status === "loading"}
               bottomInset={tabBarHeight + 16}
               onOpenPlace={openDetail}
-              onAdd={startCreate}
+              onOpenTrip={openTripDetail}
+              onAdd={() => startCreate()}
               onShowGlobe={() => setMode("globe")}
+            />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* Trips slides over the globe the same way Places and Timeline do. */}
+      <AnimatePresence>
+        {mode === "trips" ? (
+          <motion.div
+            key="trips"
+            className="absolute inset-0 z-20"
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 22 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 22 }}
+            transition={
+              reduceMotion ? { duration: 0 } : { duration: 0.3, ease: [0.2, 0.8, 0.3, 1] }
+            }
+          >
+            <TripsView
+              trips={trips}
+              places={places}
+              loading={status === "loading"}
+              bottomInset={tabBarHeight + 16}
+              onOpenTrip={openTripDetail}
+              onCreateTrip={startCreateTrip}
             />
           </motion.div>
         ) : null}
@@ -730,9 +967,9 @@ export function AppShell() {
         mode={mode}
         onModeChange={(next) => {
           setMode(next);
-          if (next === "places") setPreviewOpen(false);
+          if (next !== "globe") setPreviewOpen(false);
         }}
-        onAdd={startCreate}
+        onAdd={() => startCreate()}
         hidden={tabBarHidden}
       />
 
@@ -749,7 +986,11 @@ export function AppShell() {
         place={detailPlace ?? null}
         open={Boolean(detailOverlay)}
         recessed={topOverlay?.kind !== "detail"}
-        onClose={closeAllOverlays}
+        trip={getTrip(detailPlace?.tripId) ?? null}
+        onOpenTrip={() => detailPlace?.tripId && openTripDetail(detailPlace.tripId)}
+        // Closing a place opened from a trip returns to the trip; opened on
+        // its own, it closes the stack.
+        onClose={() => (overlays.length > 1 ? popOverlay() : closeAllOverlays())}
         onEdit={() => detailOverlay?.kind === "detail" && startEdit(detailOverlay.id)}
         onShowOnGlobe={() =>
           detailOverlay?.kind === "detail" && showOnGlobe(detailOverlay.id)
@@ -763,7 +1004,7 @@ export function AppShell() {
         open={Boolean(formOverlay)}
         mode={formOverlay?.kind === "form" ? formOverlay.mode : "create"}
         recessed={topOverlay?.kind !== "form"}
-        draft={draft}
+        draft={resolvedDraft}
         onChange={setDraft}
         onSave={() => void saveForm()}
         onClose={popOverlay}
@@ -786,6 +1027,36 @@ export function AppShell() {
         onDelete={draft.id ? () => setConfirmDeleteId(draft.id ?? null) : undefined}
         saving={saving}
         error={formError}
+        trips={trips}
+        onCreateTrip={startCreateTrip}
+      />
+
+      <TripDetailSheet
+        trip={openTrip ?? null}
+        places={places}
+        open={Boolean(tripOverlay)}
+        recessed={topOverlay?.kind !== "trip"}
+        onClose={closeAllOverlays}
+        onEdit={() => tripOverlay?.kind === "trip" && startEditTrip(tripOverlay.id)}
+        onOpenPlace={openDetailFromTrip}
+        onAddPlace={() =>
+          tripOverlay?.kind === "trip" &&
+          startCreate({ tripId: tripOverlay.id, keepTripOpen: true })
+        }
+      />
+
+      <TripFormSheet
+        open={Boolean(tripFormOverlay)}
+        mode={tripFormOverlay?.kind === "tripForm" ? tripFormOverlay.mode : "create"}
+        recessed={topOverlay?.kind !== "tripForm"}
+        draft={tripDraft}
+        onChange={setTripDraft}
+        onSave={() => void saveTripForm()}
+        onClose={popOverlay}
+        onRequestClose={guardTripFormClose}
+        onDelete={tripDraft.id ? () => setConfirmDeleteTripId(tripDraft.id ?? null) : undefined}
+        saving={tripSaving}
+        error={tripFormError}
       />
 
       <LocationSearchSheet
@@ -881,6 +1152,29 @@ export function AppShell() {
         confirmLabel="Delete"
         onCancel={() => setConfirmDeleteId(null)}
         onConfirm={() => confirmDeleteId && void performDelete(confirmDeleteId)}
+      />
+
+      <ConfirmDialog
+        open={Boolean(confirmDeleteTripId)}
+        title={`Delete “${getTrip(confirmDeleteTripId)?.name ?? "this trip"}”?`}
+        message="The trip will be deleted, but your visited places will remain in your travel history."
+        confirmLabel="Delete Trip"
+        onCancel={() => setConfirmDeleteTripId(null)}
+        onConfirm={() => confirmDeleteTripId && void performDeleteTrip(confirmDeleteTripId)}
+      />
+
+      <ConfirmDialog
+        open={discardTripPrompt}
+        title="Discard changes?"
+        message="Your edits to this trip won’t be saved."
+        confirmLabel="Discard"
+        cancelLabel="Keep Editing"
+        onCancel={() => setDiscardTripPrompt(false)}
+        onConfirm={() => {
+          setDiscardTripPrompt(false);
+          setTripDraft(tripDraftBaseline);
+          popOverlay();
+        }}
       />
 
       <ConfirmDialog

@@ -46,14 +46,17 @@ export function SegmentedControl<T extends string>({
             type="button"
             role="tab"
             aria-selected={active}
+            // Named for assistive tech even when the label is hidden below.
+            aria-label={option.label}
             onClick={() => onChange(option.value)}
             className={cn(
-              "relative isolate flex min-h-11 flex-1 items-center justify-center gap-1.5",
-              "rounded-pill text-[15px] font-semibold transition-colors duration-200",
+              "relative isolate flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1.5",
+              "rounded-pill font-semibold transition-colors duration-200",
               // Three segments plus the add button is more than a narrow phone
               // has room for at the roomier padding, and a truncated label is
               // worse than a tighter one.
               options.length > 2 ? "px-2" : "px-4",
+              options.length > 3 ? "text-[14px]" : "text-[15px]",
               active ? "text-ink" : "text-ink-2",
             )}
           >
@@ -74,7 +77,14 @@ export function SegmentedControl<T extends string>({
                 {option.icon}
               </span>
             ) : null}
-            <span className="truncate">{option.label}</span>
+            {/*
+              With four segments and the add button, a phone has no room for
+              four words: below 480px the icons carry the meaning on their own,
+              rather than four labels each truncated to three letters.
+            */}
+            <span className={cn("truncate", options.length > 3 && "hidden min-[480px]:inline")}>
+              {option.label}
+            </span>
           </button>
         );
       })}

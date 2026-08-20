@@ -142,7 +142,8 @@ had no effect, this is almost always why.
 
 | Tab | App behaviour |
 |---|---|
-| `Places` | Read and written. The main table. |
+| `Places` | Read and written. The main table. A place joins a trip through its existing `Trip ID / Collection` column. |
+| `Trips` | Read and written. One row per trip. **Created by the script on first run** if it isn't there. |
 | `Dates_Visits` | Read only — multiple visits on one place fold into a single date range. |
 | `Notes_Reviews`, `Media_Links`, `Lists_Tags`, `Trips_Itinerary` | Read into memory, never written. |
 | `Lookups` | Read at startup for dropdown values. |
@@ -172,6 +173,65 @@ an old copy of the app is open in some other tab:
 - **Existing spellings are matched** — `"Been"` and `"Want to go"` from the
   `Lookups` tab, `"Yes"`/`"No"` rather than true/false.
 - **One `setValues` per row**, never one call per cell.
+
+---
+
+## Trips
+
+Trips group places into the journeys they belonged to. They need **one new tab**
+and **no change at all** to `Places`.
+
+### The `Trips` tab
+
+The script creates it the first time it runs after this change, laid out like
+every other tab here — a title on row 1, a description on row 2, headers on
+row 3:
+
+| Trip ID | Trip Name | Start Date | End Date | Description | Cover Place ID | Created At | Updated At | Last Synced At | Sync Version | Archived? | Deleted? |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `TRIP-0001` | Japan 2026 | 2026-05-04 | 2026-05-16 | Spring trip to Japan | | 2026-08-21T07:00:00 | 2026-08-21T07:00:00 | … | 1 | No | No |
+
+Ids follow the same rule as everywhere else: the highest existing number plus
+one, assigned by the script, never reused, and stable if rows are reordered.
+
+If you would rather make it by hand, add a tab named exactly `Trips`, put those
+twelve headers in **row 3**, and leave rows 1 and 2 for a title and a note. The
+script will then use it as it is.
+
+### How a place joins a trip
+
+Through the **`Trip ID / Collection`** column that `Places` already has. No new
+column, no reordering, nothing renamed.
+
+- A **blank** cell means the place belongs to no trip. That is what every
+  existing row already says, and it stays completely valid.
+- Removing a place from a trip **clears that one cell**. The row, and the place,
+  are untouched.
+- Deleting a trip clears the cell on each of its places first, then sets
+  `Deleted?` to `Yes` on the trip row. **No place is ever deleted with a trip**,
+  and the trip row itself stays where it is, like every other row here.
+
+Renaming a trip changes one cell on one row. Nothing points at a trip by name —
+only by id — so the places never need touching.
+
+### What is *not* stored
+
+A trip's length, how many places are in it, and which countries and cities it
+covers are all counted from the rows at the moment they are shown. There is no
+`Number Of Places` column to go stale when you add a place to a trip.
+
+`Dates_Visits` has a `Trip ID` column of its own. This version does not read or
+write it: the app's unit is a place with its dates, so that is where the trip
+id lives. It is left exactly as it is, and is where a future per-visit model
+would go.
+
+> ### ⚠️ This needs a re-deploy
+>
+> The `Trips` tab appears the first time the **new** script runs. Until you
+> publish a new version (Deploy → Manage deployments → pencil → Version: New
+> version → Deploy), the old code keeps serving, the app sees no trips, and
+> creating one fails with a message saying the tab is missing. See
+> [the re-deploy trap](#️-the-re-deploy-trap) above.
 
 ---
 
@@ -265,3 +325,10 @@ device puts it back on the built-in one.
   on — it saves by itself.
 - Two visits attached to one place in `Dates_Visits` both survive a reload; the
   place shows the earliest start and the latest end.
+- Open **Trips**, create one, reload the page — it is still there, and a `Trips`
+  tab now exists in the spreadsheet.
+- Put a place in a trip: only its `Trip ID / Collection` cell changes.
+- Set that place back to **No Trip**: the cell empties, the place is still on the
+  globe, the timeline and in Places.
+- Delete a trip: its row reads `Deleted?` `Yes`, every place it held is still
+  there with an empty trip cell.

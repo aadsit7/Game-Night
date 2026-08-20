@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, CalendarRange, Compass, Plus } from "lucide-react";
+import { CalendarClock, CalendarRange, Compass, Luggage, Plus } from "lucide-react";
 
 import { TimelineScrubber } from "@/components/timeline/TimelineScrubber";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -11,6 +11,7 @@ import { formatVisitRange } from "@/lib/utils/date";
 import { countryFlag } from "@/lib/utils/geo";
 import { cn } from "@/lib/utils/cn";
 import type { VisitedPlace } from "@/types/place";
+import type { Trip } from "@/types/trip";
 
 /**
  * The travel history as a chronology, oldest at the top.
@@ -22,20 +23,30 @@ import type { VisitedPlace } from "@/types/place";
  */
 export function TimelineView({
   places,
+  trips,
   loading,
   bottomInset,
   onOpenPlace,
+  onOpenTrip,
   onAdd,
   onShowGlobe,
 }: {
   places: VisitedPlace[];
+  /** Only used to name an entry's trip; the chronology itself is unchanged. */
+  trips: Trip[];
   loading: boolean;
   bottomInset: number;
   onOpenPlace: (id: string) => void;
+  onOpenTrip: (id: string) => void;
   onAdd: () => void;
   onShowGlobe: () => void;
 }) {
   const timeline = useMemo(() => buildTimeline(places), [places]);
+  const tripNames = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const trip of trips) map.set(trip.id, trip.name);
+    return map;
+  }, [trips]);
   const { years, undated, busiest, totals } = timeline;
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -208,7 +219,13 @@ export function TimelineView({
                       <Entry
                         entry={entry}
                         last={index === year.entries.length - 1}
+                        tripName={
+                          entry.place.tripId ? tripNames.get(entry.place.tripId) : undefined
+                        }
                         onOpen={() => onOpenPlace(entry.place.id)}
+                        onOpenTrip={() =>
+                          entry.place.tripId && onOpenTrip(entry.place.tripId)
+                        }
                       />
                     </li>
                   );
@@ -253,11 +270,16 @@ function Header({ totals }: { totals: { places: number; countries: number; days:
 function Entry({
   entry,
   last,
+  tripName,
   onOpen,
+  onOpenTrip,
 }: {
   entry: TimelineEntry;
   last: boolean;
+  /** Absent unless the place belongs to a trip the app knows about. */
+  tripName?: string;
   onOpen: () => void;
+  onOpenTrip: () => void;
 }) {
   const { place } = entry;
   const flag = countryFlag(place.countryCode);
@@ -272,34 +294,51 @@ function Entry({
         {!last ? <span className="absolute top-[34px] bottom-[-6px] w-[2px] bg-separator" /> : null}
       </div>
 
-      <button
-        type="button"
-        onClick={onOpen}
-        className="pressable -mx-2 mb-1 flex min-w-0 flex-1 items-start gap-3.5 rounded-md px-2 py-3 text-left"
-      >
-        <PlaceImage
-          place={place}
-          alt=""
-          className="size-[58px] shrink-0 overflow-hidden rounded-md"
-        />
+      <div className="mb-1 min-w-0 flex-1">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="pressable -mx-2 flex w-[calc(100%+1rem)] items-start gap-3.5 rounded-md px-2 py-3 text-left"
+        >
+          <PlaceImage
+            place={place}
+            alt=""
+            className="size-[58px] shrink-0 overflow-hidden rounded-md"
+          />
 
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[17px] font-semibold leading-tight text-ink">
-            {place.name}
-          </span>
-          <span className="mt-0.5 block truncate text-[14px] text-ink-2">
-            {flag ? <span className="mr-1.5">{flag}</span> : null}
-            {where || place.country}
-          </span>
-          <span className="mt-1 flex items-center gap-1.5 text-[13px] tabular-nums text-ink-3">
-            <CalendarRange size={13} aria-hidden="true" className="shrink-0" />
-            <span className="truncate">
-              {range}
-              {entry.days > 1 ? ` · ${formatDays(entry.days)}` : null}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[17px] font-semibold leading-tight text-ink">
+              {place.name}
+            </span>
+            <span className="mt-0.5 block truncate text-[14px] text-ink-2">
+              {flag ? <span className="mr-1.5">{flag}</span> : null}
+              {where || place.country}
+            </span>
+            <span className="mt-1 flex items-center gap-1.5 text-[13px] tabular-nums text-ink-3">
+              <CalendarRange size={13} aria-hidden="true" className="shrink-0" />
+              <span className="truncate">
+                {range}
+                {entry.days > 1 ? ` · ${formatDays(entry.days)}` : null}
+              </span>
             </span>
           </span>
-        </span>
-      </button>
+        </button>
+
+        {/*
+          A quiet label under the entry, aligned with its text rather than its
+          photo. Its own button, because one cannot sit inside another.
+        */}
+        {tripName ? (
+          <button
+            type="button"
+            onClick={onOpenTrip}
+            className="pressable ml-[72px] inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-pill bg-fill px-2.5 text-[12.5px] font-medium text-ink-2"
+          >
+            <Luggage size={12} aria-hidden="true" className="shrink-0" />
+            <span className="truncate">{tripName}</span>
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { CalendarRange, ChevronRight, MapPin, Trash2 } from "lucide-react";
+import { CalendarRange, ChevronRight, MapPin, Trash2, TriangleAlert } from "lucide-react";
 
 import { PhotoPicker } from "@/components/place/PhotoPicker";
 import { BottomSheet } from "@/components/ui/BottomSheet";
@@ -12,13 +12,19 @@ import {
   withVisitStart,
   type PlaceDraft,
 } from "@/lib/store/draft";
+import { isVisitOutsideTrip } from "@/lib/trips/tripDays";
 import { cn } from "@/lib/utils/cn";
+import { formatVisitRange } from "@/lib/utils/date";
 import { formatCoordinates, isValidLatitude, isValidLongitude } from "@/lib/utils/geo";
+import type { Trip } from "@/types/trip";
+
+/** The value the trip select uses for "make a new one" — never a real id. */
+export const NEW_TRIP_VALUE = "__new-trip__";
 
 /**
  * Add and edit share one form — the fields are identical, and so is the mental
  * model. It is controlled from above so the draft survives a detour to the
- * globe to place a pin.
+ * globe to place a pin, or to create a trip.
  */
 export function PlaceFormSheet({
   open,
@@ -34,6 +40,8 @@ export function PlaceFormSheet({
   error,
   recessed,
   onRequestClose,
+  trips,
+  onCreateTrip,
 }: {
   open: boolean;
   mode: "create" | "edit";
@@ -48,6 +56,10 @@ export function PlaceFormSheet({
   error: string | null;
   recessed?: boolean;
   onRequestClose?: () => boolean;
+  /** Every trip that can be chosen, most recent first. */
+  trips: Trip[];
+  /** Opens the new-trip form. The draft here is untouched and comes back. */
+  onCreateTrip: () => void;
 }) {
   const [showEndDate, setShowEndDate] = useState(Boolean(draft.visitedTo));
   const [showCoordinates, setShowCoordinates] = useState(false);
@@ -61,7 +73,17 @@ export function PlaceFormSheet({
     notes: useId(),
     lat: useId(),
     lng: useId(),
+    trip: useId(),
   };
+
+  const selectedTrip = trips.find((trip) => trip.id === draft.tripId);
+  // A place can carry a trip id this app has never heard of — one typed into
+  // the sheet by hand, or belonging to a trip since deleted. Keeping it as an
+  // option of its own means saving the form does not quietly discard it.
+  const unknownTrip = Boolean(draft.tripId) && !selectedTrip;
+  const visitOutsideTrip = Boolean(
+    selectedTrip && isVisitOutsideTrip(selectedTrip, draft.visitedFrom || undefined),
+  );
 
   const set = <K extends keyof PlaceDraft>(key: K, value: PlaceDraft[K]) =>
     onChange({ ...draft, [key]: value });
@@ -307,6 +329,59 @@ export function PlaceFormSheet({
                 <CalendarRange size={16} aria-hidden="true" />
                 Add an end date
               </button>
+            )}
+          </div>
+        </Section>
+
+        <Section title="Trip">
+          <div className="space-y-2 px-4 py-3.5">
+            <label htmlFor={ids.trip} className="sr-only">
+              Trip
+            </label>
+            <select
+              id={ids.trip}
+              value={unknownTrip ? draft.tripId : (draft.tripId || "")}
+              onChange={(event) => {
+                const next = event.target.value;
+                // "New Trip…" is a door, not a value: the draft keeps whatever
+                // it had until a trip actually exists to point at.
+                if (next === NEW_TRIP_VALUE) onCreateTrip();
+                else set("tripId", next);
+              }}
+              className={cn(inputClass, "appearance-none")}
+            >
+              <option value="">No Trip</option>
+              {unknownTrip ? (
+                <option value={draft.tripId}>{draft.tripId} (not in Trips)</option>
+              ) : null}
+              {trips.map((trip) => (
+                <option key={trip.id} value={trip.id}>
+                  {trip.name}
+                </option>
+              ))}
+              <option value={NEW_TRIP_VALUE}>+ New Trip…</option>
+            </select>
+
+            {visitOutsideTrip && selectedTrip ? (
+              <p className="flex items-start gap-1.5 text-[13px] leading-relaxed text-ink-2">
+                <TriangleAlert size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-ink-3" />
+                {/*
+                  A warning, never a correction. The dates may well be right and
+                  the trip's wrong, and only the person typing knows which.
+                */}
+                <span>
+                  This visit is outside the dates of {selectedTrip.name}
+                  {formatVisitRange(selectedTrip.startDate, selectedTrip.endDate)
+                    ? ` (${formatVisitRange(selectedTrip.startDate, selectedTrip.endDate)})`
+                    : ""}
+                  . It will still be saved to the trip.
+                </span>
+              </p>
+            ) : (
+              <p className="text-[13px] text-ink-2">
+                Optional. A place with no trip still appears on the globe, the timeline and in
+                your places.
+              </p>
             )}
           </div>
         </Section>

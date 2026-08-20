@@ -1,16 +1,20 @@
 "use client";
 
 import { forwardRef } from "react";
-import { Globe2, History, List, Plus } from "lucide-react";
+import { Globe2, History, List, Luggage, Plus } from "lucide-react";
 
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 
-export type AppMode = "globe" | "timeline" | "places";
+export type AppMode = "globe" | "timeline" | "places" | "trips";
 
 /**
- * The app's entire navigation: three ways to read the same history and one way
+ * The app's entire navigation: four ways to read the same history and one way
  * to add to it, floating within thumb reach and clear of the home indicator.
  * No desktop navbar, no hidden menus — everything important is one tap away.
+ *
+ * Four labels plus the add button do not fit across a phone, so below 480px
+ * the segments fall back to their icons alone — see `SegmentedControl`, which
+ * keeps each one's name available to assistive tech either way.
  */
 export const AppTabBar = forwardRef<
   HTMLDivElement,
@@ -44,6 +48,7 @@ export const AppTabBar = forwardRef<
             { value: "globe", label: "Globe", icon: <Globe2 size={16} strokeWidth={2.1} /> },
             { value: "timeline", label: "Timeline", icon: <History size={16} strokeWidth={2.1} /> },
             { value: "places", label: "Places", icon: <List size={16} strokeWidth={2.1} /> },
+            { value: "trips", label: "Trips", icon: <Luggage size={16} strokeWidth={2.1} /> },
           ]}
         />
 

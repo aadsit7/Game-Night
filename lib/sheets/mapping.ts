@@ -1,5 +1,6 @@
 import { clampLatitude, isValidLatitude, isValidLongitude, normalizeLongitude } from "@/lib/utils/geo";
 import type { NewPlaceInput, PlaceChanges, VisitedPlace } from "@/types/place";
+import type { NewTripInput, Trip, TripChanges } from "@/types/trip";
 
 /**
  * Translation between the app's travel record and a row of the Places tab.
@@ -13,6 +14,7 @@ import type { NewPlaceInput, PlaceChanges, VisitedPlace } from "@/types/place";
 
 export const PLACES_TAB = "Places";
 export const VISITS_TAB = "Dates_Visits";
+export const TRIPS_TAB = "Trips";
 
 /** The columns the app reads and writes. Every other column is left alone. */
 export const COLUMNS = {
@@ -28,7 +30,30 @@ export const COLUMNS = {
   longitude: "Longitude",
   visitedFrom: "First Visited Date",
   visitedTo: "Last Visited Date",
+  // Already in the sheet, and meant for exactly this. Reusing it is why trips
+  // need no new column on a 78-column tab that other formulas read.
+  tripId: "Trip ID / Collection",
   photoUrl: "Photo URL",
+  createdAt: "Created At",
+  updatedAt: "Updated At",
+  deleted: "Deleted?",
+  archived: "Archived?",
+} as const;
+
+/**
+ * Trips columns.
+ *
+ * Named in the spreadsheet's own style — Title Case, `Deleted?` rather than a
+ * timestamp — so the Apps Script's derived-column and soft-delete machinery
+ * applies to this tab unchanged.
+ */
+export const TRIP_COLUMNS = {
+  id: "Trip ID",
+  name: "Trip Name",
+  startDate: "Start Date",
+  endDate: "End Date",
+  description: "Description",
+  coverPlaceId: "Cover Place ID",
   createdAt: "Created At",
   updatedAt: "Updated At",
   deleted: "Deleted?",
@@ -152,6 +177,9 @@ export function placeFromRow(
     visitedFrom: calendarDate(cell(row, index, COLUMNS.visitedFrom)),
     visitedTo: calendarDate(cell(row, index, COLUMNS.visitedTo)),
     notes: text(cell(row, index, COLUMNS.notes)),
+    // Absent on every row written before trips existed, which is exactly what
+    // "belongs to no trip" looks like.
+    tripId: text(cell(row, index, COLUMNS.tripId)),
     coverImage: isRemotePhoto(photo) ? photo : undefined,
     createdAt: timestamp(cell(row, index, COLUMNS.createdAt), fallbackTime),
     updatedAt,
@@ -262,6 +290,10 @@ export function fieldsFromChanges(
   if (has("notes")) put(COLUMNS.notes, (changes as PlaceChanges).notes?.trim());
   if (has("visitedFrom")) put(COLUMNS.visitedFrom, (changes as PlaceChanges).visitedFrom);
   if (has("visitedTo")) put(COLUMNS.visitedTo, (changes as PlaceChanges).visitedTo);
+  // An empty string is the whole of "remove this from its trip": the cell is
+  // cleared, the row is otherwise untouched, and the place stays in the
+  // history exactly as it was.
+  if (has("tripId")) put(COLUMNS.tripId, (changes as PlaceChanges).tripId?.trim());
 
   if (has("latitude") && typeof changes.latitude === "number") {
     put(COLUMNS.latitude, clampLatitude(changes.latitude).toFixed(6));
@@ -290,6 +322,89 @@ export function fieldsFromChanges(
     put(COLUMNS.archived, "No");
     put(COLUMNS.deleted, "No");
   }
+
+  return fields;
+}
+
+/* ------------------------------------------------------------------ *
+ * Trips
+ * ------------------------------------------------------------------ */
+
+/**
+ * One Trips row as the app understands it.
+ *
+ * A row with no id or no name is skipped rather than shown as a nameless
+ * trip — the same rule the Places tab follows, for the same reason: a row
+ * someone started by hand should not become a broken card.
+ */
+export function tripFromRow(
+  row: unknown[],
+  index: Map<string, number>,
+  fallbackTime: string,
+): Trip | null {
+  const id = text(cell(row, index, TRIP_COLUMNS.id));
+  const name = text(cell(row, index, TRIP_COLUMNS.name));
+  if (!id || !name) return null;
+
+  const deleted = isYes(cell(row, index, TRIP_COLUMNS.deleted));
+  const updatedAt = timestamp(cell(row, index, TRIP_COLUMNS.updatedAt), fallbackTime);
+
+  return {
+    id,
+    name,
+    startDate: calendarDate(cell(row, index, TRIP_COLUMNS.startDate)),
+    endDate: calendarDate(cell(row, index, TRIP_COLUMNS.endDate)),
+    description: text(cell(row, index, TRIP_COLUMNS.description)),
+    coverPlaceId: text(cell(row, index, TRIP_COLUMNS.coverPlaceId)),
+    createdAt: timestamp(cell(row, index, TRIP_COLUMNS.createdAt), fallbackTime),
+    updatedAt,
+    deletedAt: deleted ? updatedAt : undefined,
+  };
+}
+
+/**
+ * Every trip in the Trips tab.
+ *
+ * An absent tab is not an error: a sheet whose script hasn't been re-deployed
+ * yet simply has no trips, and the rest of the app carries on exactly as it
+ * did before trips existed.
+ */
+export function tripsFromTable(table: SheetTable | undefined, fallbackTime: string): Trip[] {
+  if (!table) return [];
+  const index = indexHeaders(table.headers);
+  if (!index.has(TRIP_COLUMNS.id) || !index.has(TRIP_COLUMNS.name)) return [];
+
+  const trips: Trip[] = [];
+  const seen = new Set<string>();
+
+  for (const row of table.rows) {
+    const trip = tripFromRow(row, index, fallbackTime);
+    if (trip && !seen.has(trip.id)) {
+      seen.add(trip.id);
+      trips.push(trip);
+    }
+  }
+  return trips;
+}
+
+/**
+ * The cells a trip save should change, keyed by header text.
+ *
+ * As with places, the timestamps are left out: the Apps Script derives them
+ * from the merged row, so they stay right whichever device wrote.
+ */
+export function fieldsFromTripChanges(changes: TripChanges | NewTripInput): Record<string, string> {
+  const fields: Record<string, string> = {};
+  const has = (key: keyof Trip) => key in (changes as Record<string, unknown>);
+  const put = (column: string, value: string | undefined) => {
+    fields[column] = value ?? "";
+  };
+
+  if (has("name")) put(TRIP_COLUMNS.name, (changes as TripChanges).name?.trim());
+  if (has("startDate")) put(TRIP_COLUMNS.startDate, (changes as TripChanges).startDate);
+  if (has("endDate")) put(TRIP_COLUMNS.endDate, (changes as TripChanges).endDate);
+  if (has("description")) put(TRIP_COLUMNS.description, (changes as TripChanges).description?.trim());
+  if (has("coverPlaceId")) put(TRIP_COLUMNS.coverPlaceId, (changes as TripChanges).coverPlaceId?.trim());
 
   return fields;
 }

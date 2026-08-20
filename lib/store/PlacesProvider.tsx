@@ -4,10 +4,12 @@ import { createContext, useCallback, useContext, useMemo, type ReactNode } from 
 
 import type { SheetConnection } from "@/lib/sheets/connection";
 import { useSheetSync } from "@/lib/sheets/useSheetSync";
+import { sortTrips } from "@/lib/trips/tripDays";
 import { deletePhotos } from "@/lib/storage/photoStore";
 import { PersistenceError } from "@/lib/storage/placeRepository";
 import { sheetPlaceRepository, type SheetStatus } from "@/lib/storage/sheetPlaceRepository";
 import type { NewPlaceInput, PlaceChanges, VisitedPlace } from "@/types/place";
+import type { NewTripInput, Trip, TripChanges } from "@/types/trip";
 
 /**
  * The single source of truth in the app, standing in front of the single
@@ -39,6 +41,22 @@ type PlacesContextValue = {
   restorePlace: (place: VisitedPlace) => Promise<void>;
   /** Called once an undo window closes, to release the record's photo blobs. */
   discardPlacePhotos: (place: VisitedPlace) => void;
+  /** Trips, most recent first. An organising layer over the same places. */
+  trips: Trip[];
+  getTrip: (id: string | null | undefined) => Trip | undefined;
+  createTrip: (input: NewTripInput) => Promise<Trip>;
+  updateTrip: (id: string, changes: TripChanges) => Promise<Trip>;
+  /**
+   * Removes the trip. Every place that belonged to it keeps its place in the
+   * history with its trip cell cleared.
+   */
+  deleteTrip: (id: string) => Promise<void>;
+  /**
+   * The id a trip ended up with. A trip created offline — or simply faster
+   * than the network — carries a temporary id until the sheet assigns one, and
+   * anything holding the old value needs this to catch up.
+   */
+  resolveTripId: (id: string) => string;
   reload: () => Promise<void>;
   /** The Google Sheet this browser is pointed at. */
   sync: {
@@ -72,6 +90,7 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
   // commits there and React is told through the subscription.
   const sync = useSheetSync();
   const { places } = sync;
+  const trips = useMemo(() => sortTrips(sync.trips), [sync.trips]);
 
   const createPlace = useCallback(async (input: NewPlaceInput) => {
     try {
@@ -132,6 +151,32 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
     void deletePhotos(photoRefs(place));
   }, []);
 
+  const createTrip = useCallback(async (input: NewTripInput) => {
+    try {
+      return await sheetPlaceRepository.createTrip(input);
+    } catch (error) {
+      throw new Error(friendlyMessage(error, "That trip couldn’t be saved."));
+    }
+  }, []);
+
+  const updateTrip = useCallback(async (id: string, changes: TripChanges) => {
+    try {
+      return await sheetPlaceRepository.updateTrip(id, changes);
+    } catch (error) {
+      throw new Error(friendlyMessage(error, "Those changes couldn’t be saved."));
+    }
+  }, []);
+
+  const deleteTrip = useCallback(async (id: string) => {
+    try {
+      await sheetPlaceRepository.deleteTrip(id);
+    } catch (error) {
+      throw new Error(friendlyMessage(error, "That trip couldn’t be deleted."));
+    }
+  }, []);
+
+  const resolveTripId = useCallback((id: string) => sheetPlaceRepository.resolveId(id), []);
+
   const reload = useCallback(async () => {
     await sheetPlaceRepository.load();
   }, []);
@@ -145,6 +190,17 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
   const getPlace = useCallback(
     (id: string | null | undefined) => (id ? byId.get(id) : undefined),
     [byId],
+  );
+
+  const tripsById = useMemo(() => {
+    const map = new Map<string, Trip>();
+    for (const trip of trips) map.set(trip.id, trip);
+    return map;
+  }, [trips]);
+
+  const getTrip = useCallback(
+    (id: string | null | undefined) => (id ? tripsById.get(id) : undefined),
+    [tripsById],
   );
 
   const countries = useMemo(() => {
@@ -195,6 +251,12 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       deletePlace,
       restorePlace,
       discardPlacePhotos,
+      trips,
+      getTrip,
+      createTrip,
+      updateTrip,
+      deleteTrip,
+      resolveTripId,
       reload,
       sync: {
         state: sync.state,
@@ -217,6 +279,12 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       deletePlace,
       restorePlace,
       discardPlacePhotos,
+      trips,
+      getTrip,
+      createTrip,
+      updateTrip,
+      deleteTrip,
+      resolveTripId,
       reload,
       sync,
     ],

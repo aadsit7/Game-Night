@@ -21,6 +21,8 @@ export type PlaceDraft = {
   visitedFrom: string;
   visitedTo: string;
   notes: string;
+  /** The trip this visit belongs to. Empty means it belongs to none. */
+  tripId: string;
   /** Ordered; the first entry is the cover photo. */
   photos: string[];
   /** What the geocoder called this spot, shown as the location subtitle. */
@@ -38,6 +40,7 @@ export function emptyDraft(): PlaceDraft {
     visitedFrom: "",
     visitedTo: "",
     notes: "",
+    tripId: "",
     photos: [],
     locationLabel: "",
   };
@@ -93,6 +96,7 @@ export function draftFromPlace(place: VisitedPlace): PlaceDraft {
     visitedFrom: place.visitedFrom ?? "",
     visitedTo: place.visitedTo ?? "",
     notes: place.notes ?? "",
+    tripId: place.tripId ?? "",
     photos: [place.coverImage, ...(place.photos ?? [])].filter(
       (photo): photo is string => Boolean(photo),
     ),
@@ -143,6 +147,9 @@ export function draftToInput(draft: PlaceDraft): NewPlaceInput {
     // An end date without a start date has no meaning.
     visitedTo: draft.visitedFrom && draft.visitedTo ? draft.visitedTo : undefined,
     notes: draft.notes.trim() || undefined,
+    // Always present, even when empty: an absent key would leave the sheet's
+    // existing cell alone, and clearing the trip is a thing a person does.
+    tripId: draft.tripId.trim() || undefined,
     coverImage: cover,
     photos: rest.length > 0 ? rest : undefined,
   };
@@ -160,6 +167,7 @@ export function isDraftDirty(current: PlaceDraft, original: PlaceDraft): boolean
     "visitedFrom",
     "visitedTo",
     "notes",
+    "tripId",
   ];
   if (keys.some((key) => current[key] !== original[key])) return true;
   if (current.photos.length !== original.photos.length) return true;
