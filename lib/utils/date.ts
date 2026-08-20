@@ -131,6 +131,23 @@ export function formatDayHeading(value?: string | null): string {
   return `${WEEKDAYS_LONG[date.getDay()]}, ${MONTHS_LONG[date.getMonth()]} ${date.getDate()}`;
 }
 
+const DAY_MS = 86_400_000;
+
+/**
+ * Whole days a visit covered, counting both ends — a day trip is 1.
+ *
+ * Rounded rather than truncated: two local midnights are 23 or 25 hours apart
+ * across a daylight-saving boundary, and a trip is not 6.96 days long. An end
+ * before its start is a typo, not a negative visit, and reads as a single day.
+ */
+export function inclusiveDayCount(from?: string, to?: string): number | null {
+  const start = parseCalendarDate(from);
+  if (!start) return null;
+  const end = parseCalendarDate(to);
+  const finish = end && end.getTime() >= start.getTime() ? end : start;
+  return Math.round((finish.getTime() - start.getTime()) / DAY_MS) + 1;
+}
+
 /** Sort key for "recently visited" / "oldest visited". */
 export function visitTimestamp(from?: string): number | null {
   const date = parseCalendarDate(from);

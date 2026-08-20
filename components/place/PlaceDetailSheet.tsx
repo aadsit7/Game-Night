@@ -1,20 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Globe2, Luggage, Pencil, Trash2, X } from "lucide-react";
+import { CalendarRange, ChevronRight, Globe2, Luggage, MapPin, Pencil, Trash2, X } from "lucide-react";
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { PlaceImage } from "@/components/ui/PlaceImage";
-import { formatVisitRange } from "@/lib/utils/date";
+import { formatDays } from "@/lib/timeline/buildTimeline";
+import { formatVisitRange, inclusiveDayCount } from "@/lib/utils/date";
 import { countryFlag, formatCoordinates, placeSubtitle } from "@/lib/utils/geo";
 import type { VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
 
 /**
- * The full memory: a hero photograph, when you were there, what you wrote, the
- * rest of the photos, and where on Earth it sits. Coordinates exist here but
- * stay in the small print — they are plumbing, not the story.
+ * The full memory: the name, the photograph if there is one, when you were
+ * there, what you wrote, and where on Earth it sits.
+ *
+ * A place with no photograph gets no hero. A tall tinted rectangle with a pin
+ * in it is not a picture of anywhere — it filled half an iPhone screen and
+ * pushed the writing and the dates below the fold to say nothing at all. The
+ * facts move into a grouped card instead, so an entry with no photo opens
+ * complete on one screen rather than opening on a placeholder.
  */
 export function PlaceDetailSheet({
   place,
@@ -49,9 +55,11 @@ export function PlaceDetailSheet({
   }
 
   const when = place ? formatVisitRange(place.visitedFrom, place.visitedTo) : null;
+  const days = place ? inclusiveDayCount(place.visitedFrom, place.visitedTo) : null;
   const subtitle = place ? placeSubtitle(place) : "";
   const flag = place ? countryFlag(place.countryCode) : null;
   const extraPhotos = place?.photos ?? [];
+  const hasCover = Boolean(place?.coverImage);
 
   return (
     <>
@@ -79,6 +87,16 @@ export function PlaceDetailSheet({
       >
         {place ? (
           <div className="pb-4">
+            {/* The photograph leads when there is one — it is the memory. */}
+            {hasCover ? (
+              <PlaceImage
+                place={place}
+                alt={place.name}
+                priority
+                className="mb-4 aspect-[16/10] w-full rounded-[22px]"
+              />
+            ) : null}
+
             <h1 className="wrap-anywhere text-[30px] font-bold leading-[1.12] tracking-[-0.03em] text-ink">
               {place.name}
             </h1>
@@ -88,38 +106,44 @@ export function PlaceDetailSheet({
                 {subtitle}
               </p>
             ) : null}
-            {when ? <p className="mt-0.5 text-[15px] text-ink-3">{when}</p> : null}
 
-            {/* The trip is a way back to the rest of it, not a second title. */}
-            {trip && onOpenTrip ? (
-              <button
-                type="button"
-                onClick={onOpenTrip}
-                className="pressable mt-2.5 inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-pill bg-accent-soft px-3.5 text-[14px] font-medium text-accent"
-              >
-                <Luggage size={14} aria-hidden="true" className="shrink-0" />
-                <span className="truncate">{trip.name}</span>
-              </button>
-            ) : null}
+            {/* The facts, grouped — the dates, the trip, the coordinates. */}
+            <div className="mt-4 divide-y divide-separator overflow-hidden rounded-[18px] bg-fill/60">
+              {when ? (
+                <Fact
+                  icon={<CalendarRange size={17} aria-hidden="true" />}
+                  label="Visited"
+                  value={days && days > 1 ? `${when} · ${formatDays(days)}` : when}
+                />
+              ) : null}
 
-            <PlaceImage
-              place={place}
-              alt={`${place.name}`}
-              priority
-              className="mt-4 aspect-[4/3] w-full rounded-[22px]"
-            />
+              {trip && onOpenTrip ? (
+                <Fact
+                  icon={<Luggage size={17} aria-hidden="true" />}
+                  label="Trip"
+                  value={trip.name}
+                  onPress={onOpenTrip}
+                />
+              ) : null}
+
+              <Fact
+                icon={<MapPin size={17} aria-hidden="true" />}
+                label="Coordinates"
+                value={formatCoordinates(place.latitude, place.longitude)}
+                tabular
+              />
+            </div>
 
             {place.notes ? (
-              <p className="mt-4 whitespace-pre-wrap text-[16px] leading-relaxed text-ink">
-                {place.notes}
-              </p>
+              <Section title="Notes">
+                <p className="whitespace-pre-wrap text-[16px] leading-relaxed text-ink">
+                  {place.notes}
+                </p>
+              </Section>
             ) : null}
 
             {extraPhotos.length > 0 ? (
-              <section className="mt-5">
-                <h3 className="pb-2 text-[13px] font-semibold uppercase tracking-[0.06em] text-ink-3">
-                  Photos
-                </h3>
+              <Section title="Photos">
                 <div className="-mx-5 flex gap-2.5 overflow-x-auto scrollbar-none px-5 pb-1">
                   {extraPhotos.map((photo, index) => (
                     <button
@@ -137,31 +161,11 @@ export function PlaceDetailSheet({
                     </button>
                   ))}
                 </div>
-              </section>
+              </Section>
             ) : null}
 
-            <section className="mt-5">
-              <h3 className="pb-2 text-[13px] font-semibold uppercase tracking-[0.06em] text-ink-3">
-                Location
-              </h3>
-              <button
-                type="button"
-                onClick={onShowOnGlobe}
-                className="pressable flex w-full items-center justify-between gap-3 rounded-[18px] bg-fill px-4 py-3.5 text-left"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-[15px] font-medium text-ink">
-                    Show on Globe
-                  </span>
-                  <span className="block truncate text-[12.5px] tabular-nums text-ink-3">
-                    {formatCoordinates(place.latitude, place.longitude)}
-                  </span>
-                </span>
-                <Globe2 size={18} aria-hidden="true" className="shrink-0 text-accent" />
-              </button>
-            </section>
-
-            <div className="mt-5 space-y-2.5">
+            {/* One way to do each thing, in the order they are wanted. */}
+            <div className="mt-6 space-y-2.5">
               <button
                 type="button"
                 onClick={onShowOnGlobe}
@@ -226,5 +230,71 @@ export function PlaceDetailSheet({
         ) : null}
       </AnimatePresence>
     </>
+  );
+}
+
+/**
+ * One line of the grouped card: a quiet label above the thing itself.
+ *
+ * A row with somewhere to go is a button and says so with a chevron; a row
+ * that is only information is not, so nothing invites a tap that does nothing.
+ */
+function Fact({
+  icon,
+  label,
+  value,
+  onPress,
+  tabular,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  onPress?: () => void;
+  tabular?: boolean;
+}) {
+  const body = (
+    <>
+      <span className="grid size-9 shrink-0 place-items-center rounded-full bg-fill-strong text-ink-2">
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-3">
+          {label}
+        </span>
+        <span
+          className={`mt-0.5 block truncate text-[15.5px] text-ink${tabular ? " tabular-nums" : ""}`}
+        >
+          {value}
+        </span>
+      </span>
+      {onPress ? (
+        <ChevronRight size={18} aria-hidden="true" className="shrink-0 text-ink-3" />
+      ) : null}
+    </>
+  );
+
+  const shell = "flex w-full items-center gap-3 px-4 py-3 text-left";
+
+  return onPress ? (
+    <button
+      type="button"
+      onClick={onPress}
+      className={`${shell} transition-colors active:bg-fill-strong`}
+    >
+      {body}
+    </button>
+  ) : (
+    <div className={shell}>{body}</div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="mt-6">
+      <h3 className="pb-2 text-[13px] font-semibold uppercase tracking-[0.06em] text-ink-3">
+        {title}
+      </h3>
+      {children}
+    </section>
   );
 }

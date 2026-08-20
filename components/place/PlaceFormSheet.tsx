@@ -416,8 +416,8 @@ export function PlaceFormSheet({
               </p>
             ) : (
               <p className="mt-2.5 text-[13px] text-ink-2">
-                The first photo becomes the cover. Without one, we’ll show satellite
-                imagery of the spot.
+                The first photo becomes the cover. Without one, this place shows a tinted
+                mark of its own instead.
               </p>
             )}
           </div>

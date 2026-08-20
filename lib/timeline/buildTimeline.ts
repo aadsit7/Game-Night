@@ -1,4 +1,4 @@
-import { parseCalendarDate } from "@/lib/utils/date";
+import { inclusiveDayCount, parseCalendarDate } from "@/lib/utils/date";
 import type { VisitedPlace } from "@/types/place";
 
 /**
@@ -47,29 +47,19 @@ function countryKey(place: VisitedPlace): string | null {
   return key ? key : null;
 }
 
-/**
- * Whole days between two calendar dates, inclusive of both.
- *
- * Rounded because the two local midnights are 23 or 25 hours apart across a
- * daylight-saving boundary, and a trip is not 6.96 days long.
- */
-function inclusiveDays(start: Date, end: Date): number {
-  return Math.round((end.getTime() - start.getTime()) / DAY_MS) + 1;
-}
-
 function toEntry(place: VisitedPlace): TimelineEntry | null {
   const start = parseCalendarDate(place.visitedFrom);
   if (!start) return null;
 
   const parsedEnd = parseCalendarDate(place.visitedTo);
   // An end before the start is a typo, not a negative trip; treat it as a day.
-  const end = parsedEnd && parsedEnd.getTime() >= start.getTime() ? parsedEnd : start;
+  const ends = parsedEnd && parsedEnd.getTime() >= start.getTime();
 
   return {
     place,
     start: place.visitedFrom as string,
-    end: parsedEnd && parsedEnd.getTime() >= start.getTime() ? (place.visitedTo as string) : (place.visitedFrom as string),
-    days: inclusiveDays(start, end),
+    end: ends ? (place.visitedTo as string) : (place.visitedFrom as string),
+    days: inclusiveDayCount(place.visitedFrom, place.visitedTo) ?? 1,
   };
 }
 
