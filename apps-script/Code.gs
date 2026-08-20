@@ -6,9 +6,9 @@
  * or write under the sheet owner's own account, and the sheet itself stays
  * private.
  *
- * Deploy: Extensions > Apps Script > paste this file > Project Settings >
- * Script Properties > add ACCESS_CODE > Deploy > New deployment > Web app >
- * Execute as: Me > Who has access: Anyone.
+ * Deploy: Extensions > Apps Script > paste this file > Deploy >
+ * New deployment > Web app > Execute as: Me > Who has access: Anyone.
+ * There is nothing to configure: the access code is in this file.
  *
  * AFTER ANY EDIT TO THIS FILE the old code keeps serving until you publish a
  * new version: Deploy > Manage deployments > pencil > Version: New version >
@@ -49,6 +49,21 @@ var LOG_MAX_ROWS = 1000;
 var LOG_TRIM_TO = 900;
 
 var SCHEMA_VERSION = '1';
+
+/**
+ * The shared code this script checks on every request.
+ *
+ * It lives here, in the file, rather than in a Script Property. That is a
+ * deliberate trade: the property would keep it off this page, but the website
+ * that calls this script is a public static site, so the very same code is
+ * already compiled into the JavaScript every visitor downloads. Hiding it here
+ * while publishing it there would buy nothing and cost a setup step that has to
+ * be got exactly right before anything works at all.
+ *
+ * A Script Property named ACCESS_CODE still wins if one is set, so the code can
+ * be rotated without touching this file — see docs/SHEET-SETUP.md.
+ */
+var BUILT_IN_ACCESS_CODE = '2dHoDYeD-XLTSecCG-qcZVCM5d';
 
 /**
  * Which columns this script maintains itself. The client never sends them;
@@ -159,14 +174,12 @@ function handle_(work) {
  * secret, so this shared code is what actually keeps strangers out.
  */
 function authorize_(supplied) {
-  var expected = PropertiesService.getScriptProperties().getProperty('ACCESS_CODE');
+  // A Script Property wins when one is set, so the code can be rotated without
+  // editing and re-deploying this file. Absent one, the built-in is used and
+  // the script works the moment it is pasted in.
+  var expected =
+    PropertiesService.getScriptProperties().getProperty('ACCESS_CODE') || BUILT_IN_ACCESS_CODE;
 
-  if (!expected) {
-    throw new Error(
-      'This script has no ACCESS_CODE set. In the Apps Script editor open ' +
-      'Project Settings and add a Script Property named ACCESS_CODE.'
-    );
-  }
   if (!supplied || !constantTimeEquals_(String(supplied), expected)) {
     throw new Error('Wrong or missing access code.');
   }
@@ -673,8 +686,12 @@ function appendLog_(tab, id, action, result) {
  * ------------------------------------------------------------------ */
 
 function selfTest() {
-  var code = PropertiesService.getScriptProperties().getProperty('ACCESS_CODE');
-  Logger.log(code ? 'ACCESS_CODE is set.' : 'ACCESS_CODE is MISSING — add it in Project Settings.');
+  var override = PropertiesService.getScriptProperties().getProperty('ACCESS_CODE');
+  Logger.log(
+    override
+      ? 'Access code: using the ACCESS_CODE script property.'
+      : 'Access code: using the one built into this file. Nothing to set up.'
+  );
 
   for (var name in TABS) {
     if (!TABS.hasOwnProperty(name)) continue;

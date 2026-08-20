@@ -28,31 +28,24 @@ once into the Apps Script project in step 4 below.
 2. **Extensions → Apps Script**. A code editor opens in a new tab.
 3. Delete whatever is in `Code.gs`, then paste the entire contents of
    [`apps-script/Code.gs`](../apps-script/Code.gs) from this repository.
-4. In the left sidebar click the gear, **Project Settings**. Scroll to
-   **Script Properties → Add script property**:
-   - Property: `ACCESS_CODE`
-   - Value: `2dHoDYeD-XLTSecCG-qcZVCM5d`
-
-   Click **Save script properties**. The code lives here rather than in the
-   file so it is not sitting in the code, and so you can change it without
-   editing anything.
-5. Click the disk icon to save the script.
-6. *(Optional but worth it.)* In the function dropdown pick **selfTest** and
-   click **Run**. The first run asks you to authorise it — see step 8. The
+4. Click the disk icon to save the script. **There is nothing to configure** —
+   the access code is already in the file you just pasted.
+5. *(Optional but worth it.)* In the function dropdown pick **selfTest** and
+   click **Run**. The first run asks you to authorise it — see step 7. The
    execution log should list each tab with its column and row counts. If a tab
    name is wrong, this is where you find out.
-7. **Deploy → New deployment**. Click the gear next to "Select type" and choose
+6. **Deploy → New deployment**. Click the gear next to "Select type" and choose
    **Web app**.
    - Description: anything, e.g. `travel app`
    - **Execute as: Me**
    - **Who has access: Anyone**
    - **Deploy**
-8. Google asks for authorisation. Click **Authorize access**, choose your
+7. Google asks for authorisation. Click **Authorize access**, choose your
    account, then **Advanced → Go to (project name) (unsafe) → Allow**. The
    "unsafe" warning is Google's standard wording for a script that has not been
    through its review process; it is your own script, running only on your own
    sheet.
-9. Copy the **Web app URL**. It ends in `/exec`. That is the "Sheet connection
+8. Copy the **Web app URL**. It ends in `/exec`. That is the "Sheet connection
    address".
 
 ### What those two settings mean
@@ -75,7 +68,7 @@ The app is built to work on any device with nothing to type. That takes one
 edit:
 
 1. Open [`lib/sheets/defaultConnection.ts`](../lib/sheets/defaultConnection.ts).
-2. Put the `/exec` URL from step 9 between the quotes:
+2. Put the `/exec` URL from step 8 between the quotes:
 
    ```ts
    export const DEFAULT_WEB_APP_URL = "https://script.google.com/macros/s/…/exec";
@@ -186,14 +179,15 @@ an old copy of the app is open in some other tab:
 
 ### If you think the access code has leaked
 
-Because the code is baked into the published site, treat it as public already —
-"leaked" here means you want to shut out whoever has it.
+Because the code is in both the published site and the script, treat it as
+public already — "leaked" here means you want to shut out whoever has it.
 
-1. Apps Script editor → **Project Settings → Script Properties**.
-2. Edit `ACCESS_CODE` to a new value and save. This takes effect immediately —
-   no re-deploy of the *script* is needed, because Script Properties are read
-   per request. Every existing copy of the site stops working at this moment.
-3. Put the same new value in `DEFAULT_ACCESS_CODE` in
+1. Apps Script editor → **Project Settings → Script Properties** → add
+   `ACCESS_CODE` with a new value and save. A property set here **overrides**
+   the one built into the file, takes effect immediately, and needs no
+   re-deploy of the script. Every existing copy of the site stops working at
+   this moment.
+2. Put the same new value in `DEFAULT_ACCESS_CODE` in
    `lib/sheets/defaultConnection.ts`, commit, and push. The site republishes
    with the new code and starts working again.
 
