@@ -1,4 +1,5 @@
 import type { LocationResult, NewPlaceInput, VisitedPlace } from "@/types/place";
+import type { Trip } from "@/types/trip";
 import { hasValidCoordinates } from "@/lib/utils/geo";
 
 /**
@@ -102,6 +103,28 @@ export function withWantToGo(draft: PlaceDraft, wantToGo: boolean): PlaceDraft {
   return wantToGo
     ? { ...draft, wantToGo, visitedFrom: "", visitedTo: "" }
     : { ...draft, wantToGo };
+}
+
+/**
+ * Puts a draft in a trip, and dates it if it has no date of its own.
+ *
+ * A trip is laid out day by day, and a place with no date has no day to sit
+ * under — it falls into a "no date yet" bucket at the bottom, which is the
+ * opposite of what adding it to a trip was meant to achieve. The trip's own
+ * start date is the honest first guess: it is the day the trip began, it is
+ * one tap to move, and it puts the place on Day 1 rather than in a footnote.
+ *
+ * Only ever fills a blank. A date already typed is never overwritten, and a
+ * place on the wishlist stays undated, because it has not been visited at all.
+ */
+export function withTrip(
+  draft: PlaceDraft,
+  tripId: string,
+  trip: Pick<Trip, "startDate"> | undefined,
+): PlaceDraft {
+  const next = { ...draft, tripId };
+  if (!tripId || next.wantToGo || next.visitedFrom || !trip?.startDate) return next;
+  return { ...next, visitedFrom: trip.startDate, visitedTo: trip.startDate };
 }
 
 export function draftFromPlace(place: VisitedPlace): PlaceDraft {

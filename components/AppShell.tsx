@@ -35,6 +35,7 @@ import { ActionSheet } from "@/components/ui/ActionSheet";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Toast, type ToastMessage } from "@/components/ui/Toast";
 import { reverseGeocode } from "@/lib/maps/geocoding";
+import { LocationError, currentLocation, type Fix } from "@/lib/maps/geolocation";
 import type { MapView } from "@/lib/maps/basemap";
 import { usePlaces } from "@/lib/store/PlacesProvider";
 import {
@@ -43,6 +44,7 @@ import {
   draftToInput,
   emptyDraft,
   isDraftDirty,
+  withTrip,
   type PlaceDraft,
 } from "@/lib/store/draft";
 import { boundsForPlaces } from "@/lib/utils/geo";
@@ -142,6 +144,16 @@ export function AppShell() {
   const [pinLabel, setPinLabel] = useState<string | null>(null);
   const [pinResolving, setPinResolving] = useState(false);
   const pinResultRef = useRef<LocationResult | null>(null);
+
+  const [myLocation, setMyLocation] = useState<Fix | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  /**
+   * A refusal is permanent until someone changes it in browser settings, so
+   * asking again on the next pin would be a prompt that can only fail. The
+   * button stays, because that is a deliberate request rather than a guess.
+   */
+  const locationRefused = useRef(false);
 
   const [camera, setCamera] = useState<CameraRequest | null>(null);
   const [globeStatus, setGlobeStatus] = useState<"loading" | "ready" | "failed">("loading");
@@ -322,7 +334,11 @@ export function AppShell() {
    */
   const startCreate = useCallback(
     (options: { tripId?: string; keepTripOpen?: boolean } = {}) => {
-      const fresh = { ...emptyDraft(), tripId: options.tripId ?? "" };
+      // Adding from inside a trip dates the place to the trip's first day, so
+      // it lands on Day 1 rather than in the undated footnote at the bottom.
+      const fresh = options.tripId
+        ? withTrip(emptyDraft(), options.tripId, getTrip(options.tripId))
+        : emptyDraft();
       setDraft(fresh);
       setDraftBaseline(fresh);
       setFormError(null);
@@ -335,7 +351,7 @@ export function AppShell() {
         return [...beneath, { kind: "search", purpose: "create" }];
       });
     },
-    [captureProximity],
+    [captureProximity, getTrip],
   );
 
   const startEdit = useCallback(
@@ -610,6 +626,35 @@ export function AppShell() {
   /* Pin placement                                                            */
   /* ---------------------------------------------------------------------- */
 
+  /**
+   * Asks the device where it is.
+   *
+   * Never called on load — a permission prompt on the first screen is the
+   * fastest way to earn a permanent "no", and none of this matters until a pin
+   * needs a home.
+   */
+  const findMe = useCallback(async (): Promise<Fix | null> => {
+    setLocating(true);
+    setLocationError(null);
+    try {
+      const fix = await currentLocation();
+      setMyLocation(fix);
+      locationRefused.current = false;
+      return fix;
+    } catch (error) {
+      if ((error as Error)?.name === "AbortError") return null;
+      if (error instanceof LocationError) {
+        if (error.kind === "denied") locationRefused.current = true;
+        setLocationError(error.message);
+      } else {
+        setLocationError("Your location isn’t available right now.");
+      }
+      return null;
+    } finally {
+      setLocating(false);
+    }
+  }, []);
+
   const resolvePinLabel = useCallback(async (point: GlobePoint) => {
     setPinResolving(true);
     setPinLabel(null);
@@ -625,26 +670,88 @@ export function AppShell() {
     }
   }, []);
 
+  const flyToPin = useCallback((point: GlobePoint, zoom: number) => {
+    setCamera({
+      token: Date.now(),
+      longitude: point.longitude,
+      latitude: point.latitude,
+      zoom,
+      duration: 1200,
+    });
+  }, []);
+
   const beginPinSession = useCallback(
     (session: PinSession) => {
       setPinSession(session);
       setPreviewOpen(false);
       setMode("globe");
+      setLocationError(null);
+
       if (session.position) {
         void resolvePinLabel(session.position);
-        setCamera({
-          token: Date.now(),
-          longitude: session.position.longitude,
-          latitude: session.position.latitude,
-          zoom: 9,
-          duration: 1200,
-        });
-      } else {
-        setPinLabel(null);
+        flyToPin(session.position, 9);
+        return;
       }
+
+      setPinLabel(null);
+
+      /*
+       * Nowhere to start from, so start at the middle of the map and ask the
+       * device where it is.
+       *
+       * The centre goes in first so the bar is never in a dead state with a
+       * disabled Save while a fix is being taken — the map is right there and
+       * the pin is draggable from the first frame.
+       *
+       * Then, if the device answers, the pin moves to where you are and the
+       * camera follows it down. Standing somewhere is almost always the answer
+       * for a spot with no searchable name — a viewpoint, a beach, a bend in a
+       * trail — and this is the one moment where asking for the permission is
+       * obviously earning its keep: it is a direct consequence of tapping
+       * "drop a pin", not something sprung on someone reading the globe.
+       */
+      const centre = globeHandle.current?.getCenter() ?? null;
+      if (centre) {
+        setPinSession((current) => (current ? { ...current, position: centre } : current));
+        void resolvePinLabel(centre);
+      }
+
+      if (locationRefused.current) return;
+
+      void findMe().then((fix) => {
+        if (!fix) return;
+        const position = { longitude: fix.longitude, latitude: fix.latitude };
+
+        setPinSession((current) => {
+          if (!current) return current;
+          // A pin the person has already moved is theirs. Only one still
+          // sitting exactly where it was put down gets taken over.
+          const untouched =
+            !current.position ||
+            (centre !== null &&
+              current.position.longitude === centre.longitude &&
+              current.position.latitude === centre.latitude);
+          if (!untouched) return current;
+
+          void resolvePinLabel(position);
+          flyToPin(position, 14);
+          return { ...current, position };
+        });
+      });
     },
-    [resolvePinLabel],
+    [resolvePinLabel, findMe, flyToPin],
   );
+
+  /** The locate button in the pin bar: a deliberate ask, so it always asks. */
+  const useMyLocation = useCallback(() => {
+    void findMe().then((fix) => {
+      if (!fix) return;
+      const position = { longitude: fix.longitude, latitude: fix.latitude };
+      setPinSession((current) => (current ? { ...current, position } : current));
+      void resolvePinLabel(position);
+      flyToPin(position, 15);
+    });
+  }, [findMe, resolvePinLabel, flyToPin]);
 
   /** Long-press on the globe, or a tap while the picker is waiting for one. */
   const handlePointPicked = useCallback(
@@ -677,6 +784,7 @@ export function AppShell() {
     const session = pinSession;
     setPinSession(null);
     setPinLabel(null);
+    setLocationError(null);
     pinResultRef.current = null;
     if (session?.returnToForm && draft.name) {
       setOverlays([{ kind: "form", mode: draft.id ? "edit" : "create" }]);
@@ -694,6 +802,7 @@ export function AppShell() {
 
     setPinSession(null);
     setPinLabel(null);
+    setLocationError(null);
     pinResultRef.current = null;
 
     // Correcting a saved place writes through immediately — "Save Pin
@@ -845,6 +954,13 @@ export function AppShell() {
           onPickerChange={handlePickerChange}
           mapView={mapView}
           onCountryTap={handleCountryTap}
+          // Only while a pin is being placed: outside that it is a mark with
+          // nothing to say, and a live dot on a travel map reads as clutter.
+          currentLocation={
+            pinSession && myLocation
+              ? { longitude: myLocation.longitude, latitude: myLocation.latitude }
+              : null
+          }
           cameraRequest={camera}
           bottomInset={bottomInset}
           onStatusChange={setGlobeStatus}
@@ -1108,10 +1224,13 @@ export function AppShell() {
           beginPinSession({
             mode: draft.id ? "adjust" : "create",
             placeId: draft.id,
+            // Deliberately null for a new place: `beginPinSession` starts it at
+            // the middle of the map and then offers to move it to where the
+            // device actually is.
             position:
               draft.latitude !== null && draft.longitude !== null
                 ? { longitude: draft.longitude, latitude: draft.latitude }
-                : (globeHandle.current?.getCenter() ?? null),
+                : null,
             returnToForm: true,
           });
         }}
@@ -1126,6 +1245,10 @@ export function AppShell() {
         resolving={pinResolving}
         onCancel={cancelPinSession}
         onSave={() => void commitPinSession()}
+        onUseMyLocation={useMyLocation}
+        locating={locating}
+        locationError={locationError}
+        accuracy={myLocation?.accuracy ?? null}
       />
 
       <ActionSheet

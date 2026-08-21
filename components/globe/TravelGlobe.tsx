@@ -85,6 +85,11 @@ type Props = {
   mapView: MapView;
   /** Tapping a filled country in Countries mode. */
   onCountryTap?: (code: string) => void;
+  /**
+   * Where the device says it is, when it has been asked. Drawn as its own
+   * mark so a pin being placed can be judged against it.
+   */
+  currentLocation: GlobePoint | null;
   cameraRequest: CameraRequest | null;
   /** Space taken by sheets and the tab bar, so flights centre above them. */
   bottomInset: number;
@@ -323,6 +328,7 @@ export function TravelGlobe({
   onPickerChange,
   mapView,
   onCountryTap,
+  currentLocation,
   cameraRequest,
   bottomInset,
   onStatusChange,
@@ -331,6 +337,7 @@ export function TravelGlobe({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
+  const locationMarkerRef = useRef<Marker | null>(null);
 
   const [styleReady, setStyleReady] = useState(false);
   /**
@@ -626,6 +633,8 @@ export function TravelGlobe({
       detachPress?.();
       markerRef.current?.remove();
       markerRef.current = null;
+      locationMarkerRef.current?.remove();
+      locationMarkerRef.current = null;
       setStyleReady(false);
       mapRef.current = null;
       map?.remove();
@@ -826,6 +835,8 @@ export function TravelGlobe({
     if (!pickerPosition) {
       markerRef.current?.remove();
       markerRef.current = null;
+      locationMarkerRef.current?.remove();
+      locationMarkerRef.current = null;
       return;
     }
 
@@ -871,6 +882,54 @@ export function TravelGlobe({
       cancelled = true;
     };
   }, [pickerPosition, styleReady]);
+
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * The "you are here" dot.
+   *
+   * A marker rather than a layer, like the picker pin above it: the paint
+   * expressions on the pin layers are validated against the style spec in a
+   * test, and a one-off dot has no business joining that. It is not draggable
+   * and never intercepts a tap, so it can never be mistaken for the pin being
+   * placed or get in the way of placing it.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleReady) return;
+
+    if (!currentLocation) {
+      locationMarkerRef.current?.remove();
+      locationMarkerRef.current = null;
+      return;
+    }
+
+    if (locationMarkerRef.current) {
+      locationMarkerRef.current.setLngLat([
+        currentLocation.longitude,
+        currentLocation.latitude,
+      ]);
+      return;
+    }
+
+    let cancelled = false;
+    void loadMapLibre().then((maplibregl) => {
+      if (cancelled || !mapRef.current || locationMarkerRef.current) return;
+
+      const element = document.createElement("div");
+      element.className = "here-dot";
+      element.setAttribute("aria-hidden", "true");
+      element.innerHTML = '<span class="here-dot__halo"></span><span class="here-dot__core"></span>';
+
+      locationMarkerRef.current = new maplibregl.Marker({ element, anchor: "center" })
+        .setLngLat([currentLocation.longitude, currentLocation.latitude])
+        .addTo(mapRef.current);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentLocation, styleReady]);
 
   /* ---------------------------------------------------------------------- */
 

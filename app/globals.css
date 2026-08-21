@@ -208,7 +208,17 @@ select {
 /* A classic teardrop: a square with three rounded corners, rotated so the
    square corner points straight down at the coordinate it marks. */
 .picker-pin {
-  position: relative;
+  /*
+   * Absolute, not relative: MapLibre positions a marker by transforming an
+   * element it expects to be out of flow. A relative one keeps its place in
+   * the flow *and* gets the transform, so the moment a second marker exists
+   * the two stack — each pushed down by the height of the one before it. With
+   * only this pin on the map that offset was zero, which is why it looked
+   * right for as long as it was alone.
+   */
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 34px;
   height: 44px;
   cursor: grab;
@@ -273,6 +283,63 @@ select {
 @media (prefers-reduced-motion: reduce) {
   .picker-pin__pulse {
     animation: none;
+  }
+}
+
+/*
+ * "You are here" — the device's own position, shown while a pin is being
+ * placed so the pin can be judged against it.
+ *
+ * Deliberately unlike the picker pin it sits beside: a flat blue disc rather
+ * than a teardrop, the convention every map app has taught people to read, and
+ * no pointer events at all so it can never be grabbed instead of the pin.
+ */
+.here-dot {
+  /* Out of flow, for the reason spelled out on .picker-pin above. */
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+}
+
+.here-dot__core {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #1a73e8;
+  border: 2.5px solid #fff;
+  box-shadow: 0 1px 4px rgba(10, 14, 22, 0.45);
+}
+
+.here-dot__halo {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(26, 115, 232, 0.28);
+  animation: here-pulse 2.4s ease-out infinite;
+}
+
+@keyframes here-pulse {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.7;
+  }
+  70%,
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .here-dot__halo {
+    animation: none;
+    opacity: 0.35;
   }
 }
 
