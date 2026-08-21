@@ -1,9 +1,11 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Loader2, MapPin } from "lucide-react";
+import { Loader2, LocateFixed, MapPin } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
+import { formatAccuracy } from "@/lib/maps/geolocation";
+import { cn } from "@/lib/utils/cn";
 import { formatCoordinates } from "@/lib/utils/geo";
 
 /**
@@ -22,6 +24,10 @@ export function AdjustPinBar({
   resolving,
   onCancel,
   onSave,
+  onUseMyLocation,
+  locating,
+  locationError,
+  accuracy,
 }: {
   open: boolean;
   mode: "create" | "adjust";
@@ -31,9 +37,17 @@ export function AdjustPinBar({
   resolving: boolean;
   onCancel: () => void;
   onSave: () => void;
+  /** Moves the pin to where the device says it is. */
+  onUseMyLocation: () => void;
+  locating: boolean;
+  /** Why the last attempt failed, if it did. Shown in place of the hint. */
+  locationError: string | null;
+  /** Metres of uncertainty in the current fix, when there is one. */
+  accuracy: number | null;
 }) {
   const reduceMotion = useReducedMotion();
   const hasPosition = latitude !== null && longitude !== null;
+  const accuracyLabel = accuracy === null ? null : formatAccuracy(accuracy);
 
   return (
     <AnimatePresence>
@@ -72,10 +86,40 @@ export function AdjustPinBar({
                 {hasPosition ? (
                   <p className="mt-0.5 truncate text-[12px] tabular-nums text-ink-3">
                     {formatCoordinates(latitude, longitude)}
+                    {accuracyLabel ? <span className="ml-1.5">{accuracyLabel}</span> : null}
                   </p>
                 ) : null}
               </div>
+
+              {/*
+                Placing a pin where you are standing is the common case for
+                anywhere that has no searchable name — a viewpoint, a beach, a
+                spot on a trail — and hunting for it on a world map is the slow
+                way to do it.
+              */}
+              <button
+                type="button"
+                onClick={onUseMyLocation}
+                disabled={locating}
+                aria-label="Move the pin to my location"
+                className={cn(
+                  "pressable grid size-10 shrink-0 place-items-center rounded-full",
+                  "bg-fill text-accent transition-colors disabled:opacity-60",
+                )}
+              >
+                {locating ? (
+                  <Loader2 size={18} aria-hidden="true" className="animate-spin" />
+                ) : (
+                  <LocateFixed size={18} aria-hidden="true" />
+                )}
+              </button>
             </div>
+
+            {locationError ? (
+              <p role="alert" className="mt-2.5 text-[12.5px] leading-relaxed text-danger">
+                {locationError}
+              </p>
+            ) : null}
 
             <div className="mt-3.5 flex gap-2.5">
               <Button variant="secondary" size="lg" onClick={onCancel} className="flex-1">
