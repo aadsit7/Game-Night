@@ -21,6 +21,7 @@ export const COLUMNS = {
   id: "Place ID",
   name: "Place Name",
   status: "Status",
+  favorite: "Favorite",
   notes: "Personal Notes",
   country: "Country",
   countryCode: "Country Code",
@@ -103,6 +104,11 @@ function isYes(value: unknown): boolean {
   return String(value ?? "").trim().toLowerCase() === "yes";
 }
 
+/** Matched case-insensitively, because the cell is typed by hand as often as not. */
+function isWantToGo(value: unknown): boolean {
+  return String(value ?? "").trim().toLowerCase() === STATUS_WANT_TO_GO.toLowerCase();
+}
+
 function numeric(value: unknown): number {
   if (typeof value === "number") return value;
   const raw = String(value ?? "").trim();
@@ -177,6 +183,13 @@ export function placeFromRow(
     visitedFrom: calendarDate(cell(row, index, COLUMNS.visitedFrom)),
     visitedTo: calendarDate(cell(row, index, COLUMNS.visitedTo)),
     notes: text(cell(row, index, COLUMNS.notes)),
+    favorite: isYes(cell(row, index, COLUMNS.favorite)),
+    // The sheet's Status holds more words than the app has screens for —
+    // "Lived there", "Passed through", "Booked". Only one of them means the
+    // place hasn't been visited, so that is the only one read here, and the
+    // rest all mean "been". The original word is never lost, because it is
+    // only ever written back when this flag is actually flipped.
+    wantToGo: isWantToGo(cell(row, index, COLUMNS.status)),
     // Absent on every row written before trips existed, which is exactly what
     // "belongs to no trip" looks like.
     tripId: text(cell(row, index, COLUMNS.tripId)),
@@ -314,11 +327,30 @@ export function fieldsFromChanges(
     }
   }
 
-  // Status is only ever *set* here, never overwritten: a place already marked
-  // "Lived there" or "Passed through" in the sheet keeps that word.
+  if (has("favorite")) put(COLUMNS.favorite, (changes as PlaceChanges).favorite ? "Yes" : "No");
+
+  /*
+   * Status is written only when the answer to "have I been?" actually changes.
+   *
+   * The sheet's own vocabulary is wider than this app's two words — "Lived
+   * there", "Passed through", "Booked" — and all of them mean been. Writing
+   * "Been" every time a place was saved would flatten every one of them into
+   * the blandest word available. Comparing the flags first means a place
+   * marked "Lived there" is left saying "Lived there" unless someone actually
+   * moves it to the wishlist and back.
+   */
+  if (has("wantToGo")) {
+    const next = Boolean((changes as PlaceChanges).wantToGo);
+    if (!existing || Boolean(existing.wantToGo) !== next) {
+      put(COLUMNS.status, next ? STATUS_WANT_TO_GO : STATUS_BEEN);
+    }
+  } else if (!existing) {
+    // An older caller that never mentions the flag: fall back to the original
+    // rule, which read intent from whether a date was given.
+    put(COLUMNS.status, (changes as NewPlaceInput).visitedFrom ? STATUS_BEEN : STATUS_WANT_TO_GO);
+  }
+
   if (!existing) {
-    const visited = Boolean((changes as NewPlaceInput).visitedFrom);
-    put(COLUMNS.status, visited ? STATUS_BEEN : STATUS_WANT_TO_GO);
     put(COLUMNS.archived, "No");
     put(COLUMNS.deleted, "No");
   }

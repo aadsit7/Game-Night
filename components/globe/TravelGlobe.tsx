@@ -104,6 +104,9 @@ function toFeatureCollection(places: VisitedPlace[]): FeatureCollection {
         id: place.id,
         name: place.name,
         subtitle: placeSubtitle(place),
+        // Read by the pin's paint expression, so the wishlist is visible on
+        // the globe as its own colour rather than as more of the same.
+        wantToGo: Boolean(place.wantToGo),
       },
     })),
   };
@@ -691,6 +694,10 @@ export function TravelGlobe({
       const codes = [
         ...new Set(
           places
+            // A country you want to go to is not a country you have been to,
+            // and painting it as visited would answer the map's own question
+            // — "how much of the world have I seen" — with a wish.
+            .filter((place) => !place.wantToGo)
             .map((place) => place.countryCode?.toUpperCase())
             .filter((code): code is string => Boolean(code && code.length === 2)),
         ),

@@ -76,6 +76,12 @@ export type OverlayPalette = {
   countryLine: string;
   pin: string;
   pinSelected: string;
+  /**
+   * Somewhere still to go. Deliberately outside both the pin's warm family and
+   * the water's blue: a wish and a memory have to be told apart at a glance,
+   * and neither may be mistaken for the sea underneath them.
+   */
+  pinWishlist: string;
   cluster: string;
   clusterGlow: string;
   /** The ring around every pin, which is what makes a 5px dot findable. */
@@ -92,6 +98,7 @@ const OVERLAY_LIGHT: OverlayPalette = {
   pin: "#BF421F",
   // Against a light ground, salience means going darker, not brighter.
   pinSelected: "#0B62C4",
+  pinWishlist: "#6D33B8",
   cluster: "#B93A1A",
   clusterGlow: "#B93A1A",
   pinStroke: "#FFFFFF",
@@ -105,6 +112,7 @@ const OVERLAY_DARK: OverlayPalette = {
   countryLine: "#7FE0CE",
   pin: "#E0562C",
   pinSelected: "#4DA6FF",
+  pinWishlist: "#B98CFF",
   cluster: "#B93A1A",
   clusterGlow: "#FF9270",
   pinStroke: "rgba(233,238,246,0.92)",
@@ -204,10 +212,21 @@ export const pinRadius = (selected: ExpressionSpecification): ExpressionSpecific
   ["case", selected, 13, 8],
 ];
 
+/**
+ * Selected wins over everything, because it answers "which one did I just
+ * tap"; below that, a place still to go is its own colour.
+ */
 export const pinColor = (
   selected: ExpressionSpecification,
   overlay: OverlayPalette,
-): ExpressionSpecification => ["case", selected, overlay.pinSelected, overlay.pin];
+): ExpressionSpecification => [
+  "case",
+  selected,
+  overlay.pinSelected,
+  ["boolean", ["get", "wantToGo"], false],
+  overlay.pinWishlist,
+  overlay.pin,
+];
 
 export const pinStrokeWidth = (selected: ExpressionSpecification): ExpressionSpecification => [
   "case",

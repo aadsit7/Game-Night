@@ -1,6 +1,6 @@
 "use client";
 
-import { MoreHorizontal } from "lucide-react";
+import { Heart, MapPin, MoreHorizontal } from "lucide-react";
 
 import { PlaceImage } from "@/components/ui/PlaceImage";
 import { formatVisitShort } from "@/lib/utils/date";
@@ -39,6 +39,8 @@ export function PlaceCard({
     .filter((part): part is string => Boolean(part && part !== place.name))
     .join(", ");
   const hasPhoto = Boolean(place.coverImage);
+  // A wishlist entry has no date to show, so it says what it is instead.
+  const meta = place.wantToGo ? "Want to go" : when;
 
   return (
     <li className="relative">
@@ -61,7 +63,7 @@ export function PlaceCard({
                 {location}
               </p>
             ) : null}
-            {when ? <p className="mt-0.5 truncate text-[13px] text-ink-3">{when}</p> : null}
+            {meta ? <Meta text={meta} wantToGo={place.wantToGo} /> : null}
             {place.notes ? (
               <p className="clamp-2 mt-1.5 text-[14px] leading-relaxed text-ink-2">{place.notes}</p>
             ) : null}
@@ -90,13 +92,28 @@ export function PlaceCard({
                 {location}
               </p>
             ) : null}
-            {when ? <p className="mt-0.5 truncate text-[13px] text-ink-3">{when}</p> : null}
+            {meta ? <Meta text={meta} wantToGo={place.wantToGo} /> : null}
             {place.notes ? (
               <p className="clamp-2 mt-1.5 text-[14px] leading-relaxed text-ink-2">{place.notes}</p>
             ) : null}
           </div>
         </button>
       )}
+
+      {/* A mark, not a control — tapping the card is what opens the place. */}
+      {place.favorite ? (
+        <span
+          aria-label="Favorite"
+          className={cn(
+            "pointer-events-none absolute grid size-9 place-items-center rounded-full",
+            hasPhoto
+              ? "right-[52px] top-2.5 bg-black/35 text-white backdrop-blur-md"
+              : "right-[42px] top-2 text-danger",
+          )}
+        >
+          <Heart size={16} aria-hidden="true" fill="currentColor" />
+        </span>
+      ) : null}
 
       <button
         type="button"
@@ -112,5 +129,16 @@ export function PlaceCard({
         <MoreHorizontal size={19} aria-hidden="true" />
       </button>
     </li>
+  );
+}
+
+/** The line under the name: when you were there, or that you have not been. */
+function Meta({ text, wantToGo }: { text: string; wantToGo?: boolean }) {
+  if (!wantToGo) return <p className="mt-0.5 truncate text-[13px] text-ink-3">{text}</p>;
+  return (
+    <p className="mt-1 inline-flex max-w-full items-center gap-1 rounded-pill bg-accent-soft px-2 py-0.5 text-[12.5px] font-medium text-accent">
+      <MapPin size={12} aria-hidden="true" className="shrink-0" />
+      <span className="truncate">{text}</span>
+    </p>
   );
 }

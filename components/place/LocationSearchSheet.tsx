@@ -206,7 +206,7 @@ export function LocationSearchSheet({
         ) : (
           <div className="px-1 pt-2 pb-1">
             <p className="text-[14px] leading-relaxed text-ink-2">
-              Search for anywhere you’ve been — a city like{" "}
+              Search for anywhere — somewhere you’ve been, or somewhere you want to go. A city like{" "}
               <span className="text-ink">Florence</span>, a country, a neighbourhood, or a
               landmark like <span className="text-ink">Sagrada Família</span>.
             </p>

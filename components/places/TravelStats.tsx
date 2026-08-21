@@ -10,17 +10,18 @@
 const COUNTRIES_IN_THE_WORLD = 195;
 
 export function TravelStats({
-  places,
+  visited,
   countries,
 }: {
-  places: number;
+  /** Places actually been to — the wishlist is counted on its own chip. */
+  visited: number;
   countries: number;
 }) {
   const coverage = Math.min(100, (countries / COUNTRIES_IN_THE_WORLD) * 100);
 
   return (
     <div className="grid grid-cols-3 gap-2.5">
-      <Tile value={places.toLocaleString()} label={places === 1 ? "Place" : "Places"} />
+      <Tile value={visited.toLocaleString()} label="Visited" />
       <Tile
         value={countries.toLocaleString()}
         label={countries === 1 ? "Country" : "Countries"}

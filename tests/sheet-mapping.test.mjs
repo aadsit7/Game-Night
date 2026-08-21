@@ -76,6 +76,26 @@ const KYOTO = {
 
 const FALLBACK = "2026-01-01T00:00:00.000Z";
 
+
+/** A saved record, for the write tests that need a "before". */
+const KYOTO_RECORD = {
+  id: "PL-0001",
+  name: "Kyoto",
+  country: "Japan",
+  latitude: 35.0116,
+  longitude: 135.7681,
+  createdAt: FALLBACK,
+  updatedAt: FALLBACK,
+};
+
+/** The shape the form hands to a create. */
+const NEW_INPUT = {
+  name: "Somewhere new",
+  country: "Japan",
+  latitude: 35,
+  longitude: 135,
+};
+
 let failures = 0;
 function test(name, body) {
   try {
@@ -272,6 +292,73 @@ test("header lookup ignores stray whitespace and duplicates", () => {
   const index = indexHeaders(["  Place ID  ", "Place Name", "Place Name"]);
   assert.equal(index.get("Place ID"), 0);
   assert.equal(index.get("Place Name"), 1, "the first of a duplicated header wins");
+});
+
+
+/* ---------------------------------------------------------------- *
+ * Favorites, and the wishlist
+ * ---------------------------------------------------------------- */
+
+test("reads Favorite and Status as the two flags the app shows", () => {
+  const rows = [
+    row(PLACES_HEADERS, { ...KYOTO, Favorite: "Yes", Status: STATUS_BEEN }),
+    row(PLACES_HEADERS, {
+      ...KYOTO,
+      "Place ID": "PL-0002",
+      Favorite: "",
+      Status: STATUS_WANT_TO_GO,
+    }),
+  ];
+  const [been, wished] = placesFromTable({ headers: PLACES_HEADERS, rows }, FALLBACK);
+
+  assert.equal(been.favorite, true);
+  assert.equal(been.wantToGo, false);
+  assert.equal(wished.favorite, false);
+  assert.equal(wished.wantToGo, true);
+});
+
+test("every status but 'Want to go' means been, however it is spelled", () => {
+  for (const status of ["Been", "Lived there", "Passed through", "Booked", ""]) {
+    const cells = row(PLACES_HEADERS, { ...KYOTO, Status: status });
+    const [place] = placesFromTable({ headers: PLACES_HEADERS, rows: [cells] }, FALLBACK);
+    assert.equal(place.wantToGo, false, `"${status}" should not read as a wish`);
+  }
+  const typed = row(PLACES_HEADERS, { ...KYOTO, Status: "want to go" });
+  const [place] = placesFromTable({ headers: PLACES_HEADERS, rows: [typed] }, FALLBACK);
+  assert.equal(place.wantToGo, true, "a hand-typed status should still be recognised");
+});
+
+test("saving a favorite writes Yes, and clearing it writes No", () => {
+  assert.equal(fieldsFromChanges({ favorite: true })[COLUMNS.favorite], "Yes");
+  assert.equal(fieldsFromChanges({ favorite: false })[COLUMNS.favorite], "No");
+  // Untouched means untouched: a save about something else leaves the cell.
+  assert.equal(COLUMNS.favorite in fieldsFromChanges({ notes: "Rained" }), false);
+});
+
+test("a status the app has no screen for survives being saved over", () => {
+  // The whole reason Status is compared before it is written. "Lived there"
+  // is still been, so nothing about it changed, so nothing should be written.
+  const lived = { ...KYOTO_RECORD, wantToGo: false };
+  const fields = fieldsFromChanges({ notes: "Still love it", wantToGo: false }, lived);
+  assert.equal(COLUMNS.status in fields, false);
+});
+
+test("moving a place to the wishlist and back writes the two canonical words", () => {
+  const been = { ...KYOTO_RECORD, wantToGo: false };
+  const wished = { ...KYOTO_RECORD, wantToGo: true };
+
+  assert.equal(fieldsFromChanges({ wantToGo: true }, been)[COLUMNS.status], STATUS_WANT_TO_GO);
+  assert.equal(fieldsFromChanges({ wantToGo: false }, wished)[COLUMNS.status], STATUS_BEEN);
+});
+
+test("a new place takes its status from the choice, not from whether a date was typed", () => {
+  const wished = fieldsFromChanges({ ...NEW_INPUT, wantToGo: true, visitedFrom: undefined });
+  assert.equal(wished[COLUMNS.status], STATUS_WANT_TO_GO);
+
+  // A new place marked been, with no date yet, is still been — the old rule
+  // would have filed it as a wish on the strength of an empty date field.
+  const been = fieldsFromChanges({ ...NEW_INPUT, wantToGo: false, visitedFrom: undefined });
+  assert.equal(been[COLUMNS.status], STATUS_BEEN);
 });
 
 if (failures > 0) {
