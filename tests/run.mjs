@@ -19,6 +19,7 @@ const suites = [
   "draft-dates.test.mjs",
   "trips.test.mjs",
   "place-search.test.mjs",
+  "sheet-stack.test.mjs",
 ];
 
 let failed = false;

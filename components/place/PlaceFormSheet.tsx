@@ -41,7 +41,7 @@ export function PlaceFormSheet({
   onDelete,
   saving,
   error,
-  recessed,
+  depth,
   onRequestClose,
   trips,
   onCreateTrip,
@@ -57,7 +57,8 @@ export function PlaceFormSheet({
   onDelete?: () => void;
   saving: boolean;
   error: string | null;
-  recessed?: boolean;
+  /** Position in the sheet stack; see BottomSheet. */
+  depth?: number;
   onRequestClose?: () => boolean;
   /** Every trip that can be chosen, most recent first. */
   trips: Trip[];
@@ -119,7 +120,7 @@ export function PlaceFormSheet({
       open={open}
       onClose={onClose}
       onRequestClose={onRequestClose}
-      recessed={recessed}
+      depth={depth}
       label={mode === "create" ? "Add a place" : `Edit ${draft.name || "place"}`}
       header={
         <div className="flex items-center justify-between gap-3 pb-3 pt-1">

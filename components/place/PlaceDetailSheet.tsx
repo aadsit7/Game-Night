@@ -5,6 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Bookmark,
   CalendarRange,
+  ChevronLeft,
   ChevronRight,
   Globe2,
   Heart,
@@ -41,7 +42,8 @@ export function PlaceDetailSheet({
   onEdit,
   onShowOnGlobe,
   onDelete,
-  recessed,
+  depth,
+  backTo,
   trip,
   onOpenTrip,
   onToggleFavorite,
@@ -52,7 +54,14 @@ export function PlaceDetailSheet({
   onEdit: () => void;
   onShowOnGlobe: () => void;
   onDelete: () => void;
-  recessed?: boolean;
+  /** Position in the sheet stack; see BottomSheet. */
+  depth?: number;
+  /**
+   * Name of whatever this sheet was opened from, when it was opened from
+   * something. Closing already returns there; saying so turns a dead-end "X"
+   * into the back button the gesture actually performs.
+   */
+  backTo?: string;
   /** The trip this visit belongs to, when it belongs to one. */
   trip?: Trip | null;
   onOpenTrip?: () => void;
@@ -81,13 +90,25 @@ export function PlaceDetailSheet({
       <BottomSheet
         open={open && Boolean(place)}
         onClose={onClose}
-        recessed={recessed}
+        depth={depth}
         label={place ? `${place.name} details` : "Place details"}
         header={
           <div className="flex items-center justify-between gap-3 pb-2 pt-1">
-            <h2 className="truncate text-[17px] font-semibold tracking-[-0.01em] text-ink">
-              Details
-            </h2>
+            {backTo ? (
+              <button
+                type="button"
+                onClick={onClose}
+                data-autofocus
+                className="pressable -ml-1.5 flex min-w-0 items-center gap-0.5 rounded-pill py-1 pr-2 text-accent"
+              >
+                <ChevronLeft size={20} strokeWidth={2.2} aria-hidden="true" className="shrink-0" />
+                <span className="truncate text-[16px] font-medium">{backTo}</span>
+              </button>
+            ) : (
+              <h2 className="truncate text-[17px] font-semibold tracking-[-0.01em] text-ink">
+                Details
+              </h2>
+            )}
             <div className="flex shrink-0 items-center gap-2">
               {onToggleFavorite ? (
                 <button
@@ -107,15 +128,17 @@ export function PlaceDetailSheet({
                   />
                 </button>
               ) : null}
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Close details"
-                data-autofocus
-                className="pressable -mr-1 grid size-9 place-items-center rounded-full bg-fill text-ink-2"
-              >
-                <X size={17} aria-hidden="true" />
-              </button>
+              {backTo ? null : (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Close details"
+                  data-autofocus
+                  className="pressable -mr-1 grid size-9 place-items-center rounded-full bg-fill text-ink-2"
+                >
+                  <X size={17} aria-hidden="true" />
+                </button>
+              )}
             </div>
           </div>
         }
@@ -142,19 +165,35 @@ export function PlaceDetailSheet({
               </p>
             ) : null}
 
+            {/*
+              State reads as a badge, not as a row of facts. "Want to go" and
+              "Favorite" are what this place *is* to you, and belong beside the
+              name — a grouped row headed ON YOUR LIST spent four lines saying
+              what a two-word pill says at a glance.
+            */}
+            {place.wantToGo || place.favorite ? (
+              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                {place.wantToGo ? (
+                  <Badge icon={<Bookmark size={13} aria-hidden="true" />} tone="accent">
+                    Want to go
+                  </Badge>
+                ) : null}
+                {place.favorite ? (
+                  <Badge
+                    icon={<Heart size={13} aria-hidden="true" fill="currentColor" />}
+                    tone="danger"
+                  >
+                    Favorite
+                  </Badge>
+                ) : null}
+              </div>
+            ) : null}
+
             {/* The facts, grouped — the dates, the trip, the coordinates. */}
             <div className="mt-4 divide-y divide-separator overflow-hidden rounded-[18px] bg-fill/60">
-              {place.wantToGo ? (
-                <Fact
-                  icon={<Bookmark size={17} aria-hidden="true" />}
-                  label="On your list"
-                  value="Somewhere you want to go"
-                />
-              ) : null}
-
               {when ? (
                 <Fact
-                  icon={<CalendarRange size={17} aria-hidden="true" />}
+                  icon={<CalendarRange size={16} aria-hidden="true" />}
                   label="Visited"
                   value={days && days > 1 ? `${when} · ${formatDays(days)}` : when}
                 />
@@ -162,7 +201,7 @@ export function PlaceDetailSheet({
 
               {trip && onOpenTrip ? (
                 <Fact
-                  icon={<Luggage size={17} aria-hidden="true" />}
+                  icon={<Luggage size={16} aria-hidden="true" />}
                   label="Trip"
                   value={trip.name}
                   onPress={onOpenTrip}
@@ -170,7 +209,7 @@ export function PlaceDetailSheet({
               ) : null}
 
               <Fact
-                icon={<MapPin size={17} aria-hidden="true" />}
+                icon={<MapPin size={16} aria-hidden="true" />}
                 label="Coordinates"
                 value={formatCoordinates(place.latitude, place.longitude)}
                 tabular
@@ -297,15 +336,13 @@ function Fact({
 }) {
   const body = (
     <>
-      <span className="grid size-9 shrink-0 place-items-center rounded-full bg-fill-strong text-ink-2">
+      <span className="grid size-[30px] shrink-0 place-items-center rounded-[9px] bg-accent-soft text-accent">
         {icon}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-3">
-          {label}
-        </span>
+        <span className="block text-[12.5px] leading-tight text-ink-3">{label}</span>
         <span
-          className={`mt-0.5 block truncate text-[15.5px] text-ink${tabular ? " tabular-nums" : ""}`}
+          className={`mt-[3px] block truncate text-[16px] leading-tight text-ink${tabular ? " tabular-nums" : ""}`}
         >
           {value}
         </span>
@@ -316,7 +353,7 @@ function Fact({
     </>
   );
 
-  const shell = "flex w-full items-center gap-3 px-4 py-3 text-left";
+  const shell = "flex w-full items-center gap-3 px-3.5 py-3 text-left";
 
   return onPress ? (
     <button
@@ -331,12 +368,33 @@ function Fact({
   );
 }
 
+/** A two-word statement of what this place is to you. */
+function Badge({
+  icon,
+  tone,
+  children,
+}: {
+  icon: ReactNode;
+  tone: "accent" | "danger";
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-pill px-2.5 py-[5px] text-[13px] font-semibold",
+        tone === "accent" ? "bg-accent-soft text-accent" : "bg-danger-soft text-danger",
+      )}
+    >
+      {icon}
+      {children}
+    </span>
+  );
+}
+
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="mt-6">
-      <h3 className="pb-2 text-[13px] font-semibold uppercase tracking-[0.06em] text-ink-3">
-        {title}
-      </h3>
+      <h3 className="pb-2 text-[15px] font-semibold tracking-[-0.01em] text-ink">{title}</h3>
       {children}
     </section>
   );

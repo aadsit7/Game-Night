@@ -84,7 +84,7 @@ export function ActionSheet({
             className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-[520px] px-3"
             style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 12px)" }}
           >
-            <div className="overflow-hidden rounded-[20px] glass border border-glass-border shadow-float">
+            <div className="sheet-surface overflow-hidden rounded-[20px] border border-glass-border shadow-float">
               {(title || description) && (
                 <div className="border-b border-separator px-5 py-3.5 text-center">
                   {title ? (
@@ -127,7 +127,13 @@ export function ActionSheet({
             <button
               type="button"
               onClick={onClose}
-              className="pressable mt-2 min-h-[54px] w-full rounded-[20px] glass border border-glass-border text-[17px] font-semibold text-accent shadow-soft"
+              /*
+                Opaque, like the list above it. Translucent material let the
+                floating tab bar read straight through the Cancel button, which
+                is exactly where the eye goes to leave — a presented sheet is
+                opaque on iOS for this reason.
+              */
+              className="pressable sheet-surface mt-2 min-h-[54px] w-full rounded-[20px] border border-glass-border text-[17px] font-semibold text-accent shadow-soft"
             >
               Cancel
             </button>

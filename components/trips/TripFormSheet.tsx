@@ -69,7 +69,7 @@ export function TripFormSheet({
   onDelete,
   saving,
   error,
-  recessed,
+  depth,
   onRequestClose,
 }: {
   open: boolean;
@@ -81,7 +81,8 @@ export function TripFormSheet({
   onDelete?: () => void;
   saving: boolean;
   error: string | null;
-  recessed?: boolean;
+  /** Position in the sheet stack; see BottomSheet. */
+  depth?: number;
   onRequestClose?: () => boolean;
 }) {
   const ids = {
@@ -109,7 +110,7 @@ export function TripFormSheet({
       open={open}
       onClose={onClose}
       onRequestClose={onRequestClose}
-      recessed={recessed}
+      depth={depth}
       label={mode === "create" ? "New trip" : `Edit ${draft.name || "trip"}`}
       header={
         <div className="flex items-center justify-between gap-3 pb-3 pt-1">
