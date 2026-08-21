@@ -12,9 +12,11 @@ export type SegmentedOption<T extends string> = {
 };
 
 /**
- * The app's primary navigation. Modelled on the iOS segmented control: a
- * single track, a sliding thumb, and labels that are always legible — never a
- * row of buttons that only reveal state on hover.
+ * An iOS segmented control: a single track, a sliding thumb, and labels that
+ * are always legible — never a row of buttons that only reveal state on hover.
+ *
+ * For picking one value out of a small set. Navigation is a tab bar and lives
+ * in `AppTabBar`, which is a different thing wearing a similar shape.
  */
 export function SegmentedControl<T extends string>({
   options,
@@ -46,17 +48,10 @@ export function SegmentedControl<T extends string>({
             type="button"
             role="tab"
             aria-selected={active}
-            // Named for assistive tech even when the label is hidden below.
-            aria-label={option.label}
             onClick={() => onChange(option.value)}
             className={cn(
-              "relative isolate flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1.5",
-              "rounded-pill font-semibold transition-colors duration-200",
-              // Three segments plus the add button is more than a narrow phone
-              // has room for at the roomier padding, and a truncated label is
-              // worse than a tighter one.
-              options.length > 2 ? "px-2" : "px-4",
-              options.length > 3 ? "text-[14px]" : "text-[15px]",
+              "relative isolate flex min-h-11 flex-1 items-center justify-center gap-1.5",
+              "rounded-pill px-4 text-[15px] font-semibold transition-colors duration-200",
               active ? "text-ink" : "text-ink-2",
             )}
           >
@@ -78,13 +73,11 @@ export function SegmentedControl<T extends string>({
               </span>
             ) : null}
             {/*
-              With four segments and the add button, a phone has no room for
-              four words: below 480px the icons carry the meaning on their own,
-              rather than four labels each truncated to three letters.
+              Never truncated. A segment reading "Cou…" tells nobody anything;
+              if the labels do not fit, the control is too narrow and that is
+              what needs fixing.
             */}
-            <span className={cn("truncate", options.length > 3 && "hidden min-[480px]:inline")}>
-              {option.label}
-            </span>
+            <span className="whitespace-nowrap">{option.label}</span>
           </button>
         );
       })}

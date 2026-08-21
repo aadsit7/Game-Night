@@ -30,7 +30,7 @@ export function TripDetailSheet({
   trip,
   places,
   open,
-  recessed,
+  depth,
   onClose,
   onEdit,
   onOpenPlace,
@@ -39,7 +39,8 @@ export function TripDetailSheet({
   trip: Trip | null;
   places: VisitedPlace[];
   open: boolean;
-  recessed?: boolean;
+  /** Position in the sheet stack; see BottomSheet. */
+  depth?: number;
   onClose: () => void;
   onEdit: () => void;
   onOpenPlace: (id: string) => void;
@@ -59,7 +60,7 @@ export function TripDetailSheet({
     <BottomSheet
       open={open && Boolean(trip)}
       onClose={onClose}
-      recessed={recessed}
+      depth={depth}
       label={trip ? `${trip.name} trip` : "Trip"}
       header={
         <div className="flex items-center justify-between gap-3 pb-2 pt-1">
@@ -92,7 +93,7 @@ export function TripDetailSheet({
             {trip.name}
           </h1>
           {when ? <p className="mt-1 text-[16px] text-ink-2">{when}</p> : null}
-          <p className="mt-0.5 text-[15px] tabular-nums text-ink-3">
+          <p className="mt-0.5 text-[15px] tabular-nums text-ink-2">
             {[formatTripLength(summary.days), formatPlaceCount(summary.places)]
               .filter(Boolean)
               .join(" · ")}

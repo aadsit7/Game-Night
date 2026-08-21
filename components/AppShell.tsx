@@ -47,6 +47,7 @@ import {
   withTrip,
   type PlaceDraft,
 } from "@/lib/store/draft";
+import { sheetDepth } from "@/lib/ui/sheetStack";
 import { boundsForPlaces } from "@/lib/utils/geo";
 import { createId } from "@/lib/utils/id";
 import type { LocationResult, VisitedPlace } from "@/types/place";
@@ -188,6 +189,32 @@ export function AppShell() {
   const tripOverlay = overlays.find((overlay) => overlay.kind === "trip");
   const openTrip = getTrip(tripOverlay?.kind === "trip" ? tripOverlay.id : null);
   const tripFormOverlay = overlays.find((overlay) => overlay.kind === "tripForm");
+
+  /**
+   * How far back in the stack a sheet sits — 0 for the one in front.
+   *
+   * The sheets are rendered in a fixed order below, but the order they are
+   * *stacked* in is whatever the user did: opening a place from a trip has to
+   * put the place in front, and opening a trip from a place the other way
+   * round. Layering therefore has to be read off this array, never off the
+   * order the JSX happens to be written in.
+   */
+  const depthOf = useCallback(
+    (kind: Overlay["kind"]) => sheetDepth(overlays, kind),
+    [overlays],
+  );
+
+  /**
+   * What the place sheet returns to when it is closed, when that is somewhere
+   * rather than nowhere. Closing already goes back to the trip; naming it in
+   * the header is what makes that predictable instead of a guess.
+   */
+  const detailBackTo = (() => {
+    const index = overlays.findIndex((overlay) => overlay.kind === "detail");
+    if (index <= 0) return undefined;
+    const beneath = overlays[index - 1];
+    return beneath.kind === "trip" ? (getTrip(beneath.id)?.name ?? "Trip") : undefined;
+  })();
 
   /* Measure the tab bar so sheets, toasts and camera padding all agree. */
   useEffect(() => {
@@ -1127,7 +1154,8 @@ export function AppShell() {
       <PlaceDetailSheet
         place={detailPlace ?? null}
         open={Boolean(detailOverlay)}
-        recessed={topOverlay?.kind !== "detail"}
+        depth={depthOf("detail")}
+        backTo={detailBackTo}
         trip={getTrip(detailPlace?.tripId) ?? null}
         onOpenTrip={() => detailPlace?.tripId && openTripDetail(detailPlace.tripId)}
         onToggleFavorite={() => detailPlace && void toggleFavorite(detailPlace.id)}
@@ -1146,7 +1174,7 @@ export function AppShell() {
       <PlaceFormSheet
         open={Boolean(formOverlay)}
         mode={formOverlay?.kind === "form" ? formOverlay.mode : "create"}
-        recessed={topOverlay?.kind !== "form"}
+        depth={depthOf("form")}
         draft={resolvedDraft}
         onChange={setDraft}
         onSave={() => void saveForm()}
@@ -1178,7 +1206,7 @@ export function AppShell() {
         trip={openTrip ?? null}
         places={places}
         open={Boolean(tripOverlay)}
-        recessed={topOverlay?.kind !== "trip"}
+        depth={depthOf("trip")}
         onClose={closeAllOverlays}
         onEdit={() => tripOverlay?.kind === "trip" && startEditTrip(tripOverlay.id)}
         onOpenPlace={openDetailFromTrip}
@@ -1191,7 +1219,7 @@ export function AppShell() {
       <TripFormSheet
         open={Boolean(tripFormOverlay)}
         mode={tripFormOverlay?.kind === "tripForm" ? tripFormOverlay.mode : "create"}
-        recessed={topOverlay?.kind !== "tripForm"}
+        depth={depthOf("tripForm")}
         draft={tripDraft}
         onChange={setTripDraft}
         onSave={() => void saveTripForm()}

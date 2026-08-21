@@ -10,6 +10,7 @@ import {
 import { useCallback, useEffect, useId, useRef, type ReactNode } from "react";
 
 import { useKeyboardInset } from "@/lib/hooks/useKeyboardInset";
+import { scrimLayer, sheetLayer } from "@/lib/ui/sheetStack";
 import { cn } from "@/lib/utils/cn";
 
 /**
@@ -24,9 +25,18 @@ import { cn } from "@/lib/utils/cn";
  * Full sheets are dragged by their grabber and header only. Dragging from
  * anywhere would fight with scrolling the content — the same compromise iOS
  * makes once a sheet's content is scrollable.
+ *
+ * Sheets stack. `depth` — 0 for the front one, 1 for the card behind it, and
+ * so on — is what orders them, because the components are rendered in a fixed
+ * order by the shell and the stack they form is decided at runtime. Paint
+ * order therefore cannot come from the DOM: it has to come from the stack, or
+ * a sheet opened second ends up drawn underneath the one it opened from.
  */
 
 const SPRING = { type: "spring" as const, stiffness: 420, damping: 40, mass: 0.9 };
+
+/** How far a card behind peeks above the one in front of it. */
+const PEEK_PX = 10;
 
 export type BottomSheetProps = {
   open: boolean;
@@ -42,8 +52,11 @@ export type BottomSheetProps = {
   /** Lifts a compact sheet clear of the tab bar. */
   bottomOffset?: number;
   className?: string;
-  /** Stacked-sheet effect: recedes this sheet when another opens above it. */
-  recessed?: boolean;
+  /**
+   * Position in the sheet stack: 0 is the sheet in front, 1 sits behind it,
+   * and so on. Drives both the layering and the receded-card treatment.
+   */
+  depth?: number;
   dismissOnBackdrop?: boolean;
   /** Ask before closing — used by forms with unsaved changes. */
   onRequestClose?: () => boolean;
@@ -59,7 +72,7 @@ export function BottomSheet({
   footer,
   bottomOffset = 0,
   className,
-  recessed = false,
+  depth = 0,
   dismissOnBackdrop = true,
   onRequestClose,
 }: BottomSheetProps) {
@@ -69,6 +82,9 @@ export function BottomSheet({
   const dragControls = useDragControls();
   const titleId = useId();
   const isModal = variant === "full";
+
+  const recessed = depth > 0;
+  const layer = sheetLayer(depth);
 
   const requestClose = useCallback(() => {
     if (onRequestClose && onRequestClose() === false) return;
@@ -147,9 +163,10 @@ export function BottomSheet({
               aria-label={`Close ${label}`}
               onClick={dismissOnBackdrop ? requestClose : undefined}
               tabIndex={-1}
-              className="fixed inset-0 z-40 cursor-default bg-scrim"
+              className="fixed inset-0 cursor-default bg-scrim"
+              style={{ zIndex: scrimLayer(depth) }}
               initial={{ opacity: 0 }}
-              animate={{ opacity: recessed ? 0.5 : 1 }}
+              animate={{ opacity: recessed ? 0.55 : 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: reduceMotion ? 0 : 0.22 }}
             />
@@ -171,10 +188,20 @@ export function BottomSheet({
             dragElastic={{ top: 0.02, bottom: 0.6 }}
             onDragEnd={onDragEnd}
             initial={reduceMotion ? { opacity: 0 } : { y: "110%" }}
+            /*
+             * A card behind stays fully opaque and is dimmed by the scrim of
+             * the sheet in front of it. Fading it instead made two sheets
+             * legible at once, their text interleaved — the card behind has to
+             * stay a solid card, exactly as iOS keeps it.
+             */
             animate={
               reduceMotion
                 ? { opacity: 1 }
-                : { y: 0, scale: recessed ? 0.93 : 1, opacity: recessed ? 0.65 : 1 }
+                : {
+                    y: -depth * PEEK_PX,
+                    scale: 1 - Math.min(depth, 3) * 0.045,
+                    opacity: 1,
+                  }
             }
             exit={reduceMotion ? { opacity: 0 } : { y: "110%" }}
             transition={reduceMotion ? { duration: 0 } : SPRING}
@@ -182,9 +209,10 @@ export function BottomSheet({
               bottom: isModal ? 0 : bottomOffset,
               maxHeight: isModal ? `calc(100dvh - ${lift > 0 ? 8 : 40}px)` : undefined,
               transformOrigin: "50% 0%",
+              zIndex: layer,
             }}
             className={cn(
-              "fixed z-50 flex flex-col shadow-float",
+              "fixed flex flex-col shadow-float",
               "border-t border-glass-border",
               isModal
                 ? "sheet-surface inset-x-0 mx-auto w-full max-w-[560px] rounded-t-[28px]"

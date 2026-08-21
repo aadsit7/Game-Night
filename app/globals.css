@@ -17,7 +17,10 @@
   --c-sheet-solid: #fdfdff;
   --c-ink: #0f1115;
   --c-ink-2: #62666e;
-  --c-ink-3: #9aa0a8;
+  /* Tertiary text still has to be readable on a phone held at arm's length in
+     daylight: at #9aa0a8 it sat at 2.6:1 against a sheet, well under the 4.5:1
+     a caption at this size needs, and dates and counts are written in it. */
+  --c-ink-3: #6f757d;
   --c-separator: rgba(60, 60, 67, 0.13);
   --c-fill: rgba(118, 118, 128, 0.1);
   --c-fill-strong: rgba(118, 118, 128, 0.17);
@@ -60,7 +63,7 @@
     --c-sheet-solid: #141418;
     --c-ink: #f6f6f8;
     --c-ink-2: #9ea3ad;
-    --c-ink-3: #6b7078;
+    --c-ink-3: #8b9099;
     --c-separator: rgba(255, 255, 255, 0.1);
     --c-fill: rgba(128, 130, 140, 0.2);
     --c-fill-strong: rgba(128, 130, 140, 0.32);
@@ -150,14 +153,17 @@ body {
   overflow-x: hidden;
 }
 
-button,
-input,
-textarea,
-select {
-  font: inherit;
-  letter-spacing: inherit;
-  color: inherit;
-}
+/*
+ * Tailwind's own preflight already resets `font`, `letter-spacing` and `color`
+ * to `inherit` on form controls, and it does it inside `@layer base` where a
+ * utility can still override it. Repeating the rule here — unlayered — quietly
+ * beat every layered utility, because unlayered CSS outranks any cascade
+ * layer no matter how specific the layered selector is. The effect was that no
+ * `<button>` in the app could set its own text colour, weight or size: the
+ * danger red on "Delete Place", the accent on the selected tab and the white
+ * on a filled button were all being flattened back to body text. Deleted, not
+ * re-layered: the reset it duplicated is already there.
+ */
 
 /* 16px minimum keeps iOS from zooming the viewport on focus. */
 input,
