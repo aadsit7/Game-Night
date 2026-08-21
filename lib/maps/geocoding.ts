@@ -52,15 +52,37 @@ type PhotonFeature = {
   geometry?: { coordinates?: [number, number] };
 };
 
+/**
+ * The OSM tags that mean "somewhere you would write down having visited".
+ *
+ * Checked before `type`, which is the whole point: Photon returns the Eiffel
+ * Tower as `type: "house"` with `osm_key: "man_made"`, and Machu Picchu the
+ * same way. Reading `type` first classified every landmark in the world as a
+ * street address and sorted it into the bottom band — so the one result anyone
+ * searching for a landmark wanted was the one pushed furthest down the list.
+ */
+const POI_KEYS = new Set([
+  "tourism",
+  "historic",
+  "amenity",
+  "leisure",
+  "man_made",
+  "natural",
+  "aeroway",
+  "shop",
+  "building",
+]);
+
 /** Broad category, used only to pick an icon and to rank results. */
 function kindOf(props: PhotonProperties): string {
   const type = props.type;
   if (type === "country") return "country";
   if (type === "state") return "region";
   if (type === "city" || type === "district" || type === "locality") return "place";
+  // A named thing with a point-of-interest tag is a landmark, whatever Photon
+  // calls its geometry.
+  if (props.name && props.osm_key && POI_KEYS.has(props.osm_key)) return "poi";
   if (type === "street" || type === "house") return "address";
-  if (props.osm_key === "tourism" || props.osm_key === "historic") return "poi";
-  if (props.osm_key === "amenity" || props.osm_key === "leisure") return "poi";
   return type ?? "place";
 }
 
@@ -104,10 +126,19 @@ function toResult(feature: PhotonFeature, index: number): LocationResult | null 
     )
     .join(", ");
 
+  // The street line, when there is one — without it, four branches of the same
+  // shop are four identical rows with no way to tell them apart.
+  const address = [street, props.district, city, props.postcode, region, country]
+    .filter((part, position, all): part is string =>
+      Boolean(part) && part !== name && all.indexOf(part) === position,
+    )
+    .join(", ");
+
   return {
     id: `${props.osm_type ?? "x"}${props.osm_id ?? index}`,
     name,
     context,
+    address: address || undefined,
     city,
     region,
     country,
@@ -115,10 +146,42 @@ function toResult(feature: PhotonFeature, index: number): LocationResult | null 
     latitude,
     longitude,
     kind,
+    source: "osm",
   };
 }
 
-function parse(payload: unknown): LocationResult[] {
+/**
+ * Drops results that would read as the same row twice.
+ *
+ * OpenStreetMap holds a building, its entrance and its name as separate
+ * objects, so one landmark can come back four times over. Same name and same
+ * address within about a hundred metres is one place as far as a list is
+ * concerned.
+ */
+function dedupe(results: LocationResult[]): LocationResult[] {
+  const seen = new Set<string>();
+  const unique: LocationResult[] = [];
+
+  for (const result of results) {
+    const key = [
+      result.name.toLowerCase(),
+      (result.address ?? result.context).toLowerCase(),
+      result.latitude.toFixed(3),
+      result.longitude.toFixed(3),
+    ].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(result);
+  }
+  return unique;
+}
+
+/**
+ * Exported so the ranking and de-duplication can be tested without a network.
+ * They are where a search quietly stops being useful — a landmark sorted below
+ * a house number looks like a working search returning the wrong answer.
+ */
+export function parseSearchResults(payload: unknown): LocationResult[] {
   const features = (payload as { features?: PhotonFeature[] })?.features;
   if (!Array.isArray(features)) return [];
 
@@ -127,7 +190,7 @@ function parse(payload: unknown): LocationResult[] {
     .filter((result): result is LocationResult => result !== null);
 
   // Stable sort: keep the geocoder's own ordering within each rank band.
-  return results
+  const ranked = results
     .map((result, index) => ({ result, index }))
     .sort(
       (a, b) =>
@@ -135,6 +198,8 @@ function parse(payload: unknown): LocationResult[] {
         a.index - b.index,
     )
     .map((entry) => entry.result);
+
+  return dedupe(ranked);
 }
 
 function language(): string {
@@ -170,7 +235,7 @@ async function fetchJson(url: string, signal?: AbortSignal): Promise<unknown> {
   }
 }
 
-export async function searchLocations(
+export async function searchWithOpenStreetMap(
   query: string,
   options: { signal?: AbortSignal; proximity?: [number, number] } = {},
 ): Promise<LocationResult[]> {
@@ -187,7 +252,7 @@ export async function searchLocations(
 
   try {
     const payload = await fetchJson(`${PHOTON}/api/?${params}`, options.signal);
-    return parse(payload).slice(0, 8);
+    return parseSearchResults(payload).slice(0, 8);
   } catch (error) {
     if ((error as Error)?.name === "AbortError") throw error;
     throw new GeocodingError("Location search isn’t responding right now.", error);
@@ -213,7 +278,7 @@ export async function reverseGeocode(
 
   try {
     const payload = await fetchJson(`${PHOTON}/reverse?${params}`, options.signal);
-    return parse(payload)[0] ?? null;
+    return parseSearchResults(payload)[0] ?? null;
   } catch (error) {
     if ((error as Error)?.name === "AbortError") throw error;
     return null;

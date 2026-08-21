@@ -312,6 +312,19 @@ a parent re-render can never restart the map.
 
 ### Finding real places
 
+Search runs through OpenStreetMap by default — no key, no account, nothing to
+set up. Add a `GOOGLE_MAPS_API_KEY` script property to the Apps Script and it
+uses Google Places instead, which is markedly better at ordinary businesses:
+four branches of the same coffee shop come back as four rows with four
+addresses rather than four identical ones.
+
+The key lives on the script, never in the bundle, for exactly the reason the
+sheet credentials do — this is a public static site. Google is never a hard
+dependency either: a key that is missing, restricted, unbilled or briefly
+unhappy falls through to the keyless geocoder rather than leaving anyone unable
+to add a place.
+
+
 `lib/maps/geocoding.ts` uses **Photon**, an open geocoder over OpenStreetMap
 data. Raw OSM results lean heavily towards street addresses, so results are
 re-ranked to put cities and points of interest first — "Sagrada Família"

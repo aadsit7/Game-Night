@@ -148,6 +148,7 @@ had no effect, this is almost always why.
 | `Notes_Reviews`, `Media_Links`, `Lists_Tags`, `Trips_Itinerary` | Read into memory, never written. |
 | `Lookups` | Read at startup for dropdown values. |
 | `App_Settings`, `Sync_Log` | Created by the script on first run. |
+| *(no tab)* | `searchPlaces` proxies Google Places when a `GOOGLE_MAPS_API_KEY` script property is set — see [Google Maps search](#optional-google-maps-search). |
 | `Search_View`, `Dashboard`, `Guide` | **Never touched.** The script refuses to write to them by name. |
 
 ### Rules the script enforces
@@ -237,6 +238,81 @@ would go.
 > version → Deploy), the old code keeps serving, the app sees no trips, and
 > creating one fails with a message saying the tab is missing. See
 > [the re-deploy trap](#️-the-re-deploy-trap) above.
+
+---
+
+## Optional: Google Maps search
+
+Out of the box, searching for a place uses OpenStreetMap, which needs no
+account and no key. It is good at cities, countries and famous landmarks, and
+weaker at ordinary businesses — searching for a coffee shop gets you the right
+name and a rough address rather than the polish you would get in Google Maps.
+
+If you want Google's results instead, this takes about ten minutes and needs a
+Google Cloud account. **It is entirely optional.** Without it the app works
+exactly as it does now.
+
+### Why the key goes in the script, not in the app
+
+The website is a public static site: anything built into it is downloaded by
+every visitor and readable from the page source. A Google Maps key put there
+would be a key anyone could take and run up a bill with.
+
+The script you already deployed runs on Google's servers under your account, so
+the key lives there instead. The app asks the script to search; the script asks
+Google; the key never leaves Google's side. Same reason your spreadsheet
+credentials never reach the browser.
+
+### 1 — Get a key
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com/).
+2. Create a project (any name).
+3. **APIs & Services → Library**, search for **Places API (New)**, click
+   **Enable**. Google will ask you to turn on billing — Places has a monthly
+   free allowance that personal use stays well inside, but a card is required.
+4. **APIs & Services → Credentials → Create credentials → API key**. Copy it.
+
+### 2 — Lock the key down
+
+Do this. It is what keeps a stray bill from being possible.
+
+1. Click the key you just made → **Edit API key**.
+2. Under **API restrictions**, choose **Restrict key** and tick **Places API
+   (New)** only.
+3. Leave **Application restrictions** set to **None**. The requests come from
+   Google's own servers running your script, not from a browser, so an HTTP
+   referrer restriction would block them.
+4. Then set a spending cap: **APIs & Services → Places API (New) → Quotas**,
+   and lower the daily request limit to something you would not mind paying
+   for — a few hundred a day is far more than this app can use.
+
+### 3 — Give it to the script
+
+1. Open your sheet → **Extensions → Apps Script**.
+2. **Project Settings** (the gear on the left) → scroll to **Script
+   Properties** → **Add script property**.
+3. Property: `GOOGLE_MAPS_API_KEY`. Value: the key you copied. **Save**.
+
+No re-deploy is needed — script properties are read on every request. Reload
+the app and search for something; results now say **Results from Google Maps**
+underneath.
+
+To turn it off again, delete the property. The app goes back to OpenStreetMap
+on the next reload.
+
+### What it costs
+
+One search is one request, sent after you stop typing rather than on every
+keystroke, and identical searches are cached on the script for half an hour.
+Adding a few hundred places a year does not come close to the free allowance.
+
+### If it does not work
+
+The app never breaks over this — a key that is missing, restricted, unbilled or
+simply having a bad minute falls back to OpenStreetMap, and searching keeps
+working. To see *why*, open the Apps Script editor and run **selfTest**: the log
+says whether it can see a key. Google's own refusal message (wrong API enabled,
+billing off, key restricted) is passed straight through to the browser console.
 
 ---
 

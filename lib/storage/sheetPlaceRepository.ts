@@ -36,7 +36,13 @@ import {
   settle,
   type PendingWrite,
 } from "@/lib/sheets/queue";
-import { SheetError, deleteRow, getAll, upsertRow } from "@/lib/sheets/sheetsClient";
+import {
+  SheetError,
+  deleteRow,
+  getAll,
+  upsertRow,
+  type SheetCapabilities,
+} from "@/lib/sheets/sheetsClient";
 import { PersistenceError, type PlaceRepository } from "@/lib/storage/placeRepository";
 import { createId } from "@/lib/utils/id";
 import { clampLatitude, isValidLatitude, isValidLongitude, normalizeLongitude } from "@/lib/utils/geo";
@@ -97,6 +103,13 @@ export const NO_PLACES: VisitedPlace[] = [];
 /** And one for trips. */
 export const NO_TRIPS: Trip[] = [];
 
+/**
+ * What a deployment can do before it has been asked. Nothing, deliberately:
+ * an app that offered a search the script cannot serve would fail on every
+ * keystroke, and an older script simply omits the field.
+ */
+export const NO_CAPABILITIES: SheetCapabilities = { placesSearch: false };
+
 const RETRY_DELAYS_MS = [2_000, 4_000, 8_000, 16_000, 30_000];
 
 function friendly(error: unknown, fallback: string): string {
@@ -126,6 +139,7 @@ class SheetPlaceRepository implements PlaceRepository {
 
   private lookups: Record<string, string[]> = {};
   private settings: Record<string, string> = {};
+  private capabilities: SheetCapabilities = NO_CAPABILITIES;
   private queue: PendingWrite[] = [];
 
   private status: SheetStatus = INITIAL_STATUS;
@@ -200,6 +214,11 @@ class SheetPlaceRepository implements PlaceRepository {
     return this.settings;
   }
 
+  /** Read by the search layer to decide which geocoder to ask. */
+  getCapabilities(): SheetCapabilities {
+    return this.capabilities;
+  }
+
   getConnection(): SheetConnection | null {
     return this.connection;
   }
@@ -261,6 +280,7 @@ class SheetPlaceRepository implements PlaceRepository {
   disconnect(): void {
     this.lookups = {};
     this.settings = {};
+    this.capabilities = NO_CAPABILITIES;
     clearConnection();
     clearCache();
     this.commitTrips([]);
@@ -315,6 +335,7 @@ class SheetPlaceRepository implements PlaceRepository {
       this.commit(applyLocalPhotos(this.overlayPending(withSpans)));
       this.lookups = snapshot.lookups;
       this.settings = snapshot.settings;
+      this.capabilities = snapshot.capabilities;
 
       this.persist();
       this.setStatus({

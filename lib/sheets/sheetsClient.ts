@@ -1,5 +1,6 @@
 import type { SheetConnection } from "@/lib/sheets/connection";
 import type { SheetTable } from "@/lib/sheets/mapping";
+import type { GooglePlace } from "@/lib/maps/googlePlaces";
 
 /**
  * The only module in the app that touches the network.
@@ -15,7 +16,18 @@ export type SheetSnapshot = {
   lookups: Record<string, string[]>;
   settings: Record<string, string>;
   schemaVersion: string;
+  /**
+   * What this deployment can do beyond rows. Absent from an older script,
+   * which reads as "none of it" and is exactly right — an app that offered a
+   * search the script cannot serve would fail on every keystroke.
+   */
+  capabilities: SheetCapabilities;
   serverTime: string;
+};
+
+export type SheetCapabilities = {
+  /** A Google Maps API key is set on the script, so Places search works. */
+  placesSearch: boolean;
 };
 
 export type UpsertResult = { id: string; row: unknown[]; headers: string[] };
@@ -218,13 +230,39 @@ export async function getAll(
   const tabs: Record<string, SheetTable> = {};
   for (const [name, table] of Object.entries(rawTabs)) tabs[name] = asTable(table);
 
+  const capabilities = (data?.capabilities ?? {}) as Partial<SheetCapabilities>;
+
   return {
     tabs,
     lookups: (data?.lookups ?? {}) as Record<string, string[]>,
     settings: (data?.settings ?? {}) as Record<string, string>,
     schemaVersion: String(data?.schemaVersion ?? ""),
+    capabilities: { placesSearch: capabilities.placesSearch === true },
     serverTime: String(data?.serverTime ?? new Date().toISOString()),
   };
+}
+
+/**
+ * Google Places search, run by the script so its API key never reaches the
+ * browser. Only called when `capabilities.placesSearch` says there is one.
+ */
+export async function searchPlaces(
+  connection: SheetConnection,
+  request: { query: string; proximity?: [number, number]; language?: string },
+  signal?: AbortSignal,
+): Promise<GooglePlace[]> {
+  const params: Record<string, string> = { action: "searchPlaces", q: request.query };
+  if (request.language) params.lang = request.language;
+  if (request.proximity) {
+    params.lng = request.proximity[0].toFixed(4);
+    params.lat = request.proximity[1].toFixed(4);
+  }
+
+  const data = (await getFromSheet(connection, params, signal)) as
+    | { places?: GooglePlace[] }
+    | undefined;
+
+  return Array.isArray(data?.places) ? data.places : [];
 }
 
 export async function getLookups(
