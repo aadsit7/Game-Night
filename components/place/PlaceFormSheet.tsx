@@ -10,6 +10,7 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import {
   isDraftValid,
   withEndDateShown,
+  withTrip,
   withVisitStart,
   withWantToGo,
   type PlaceDraft,
@@ -391,7 +392,7 @@ export function PlaceFormSheet({
                 // "New Trip…" is a door, not a value: the draft keeps whatever
                 // it had until a trip actually exists to point at.
                 if (next === NEW_TRIP_VALUE) onCreateTrip();
-                else set("tripId", next);
+                else onChange(withTrip(draft, next, trips.find((trip) => trip.id === next)));
               }}
               className={cn(inputClass, "appearance-none")}
             >

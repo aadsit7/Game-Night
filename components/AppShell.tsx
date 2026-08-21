@@ -43,6 +43,7 @@ import {
   draftToInput,
   emptyDraft,
   isDraftDirty,
+  withTrip,
   type PlaceDraft,
 } from "@/lib/store/draft";
 import { boundsForPlaces } from "@/lib/utils/geo";
@@ -322,7 +323,11 @@ export function AppShell() {
    */
   const startCreate = useCallback(
     (options: { tripId?: string; keepTripOpen?: boolean } = {}) => {
-      const fresh = { ...emptyDraft(), tripId: options.tripId ?? "" };
+      // Adding from inside a trip dates the place to the trip's first day, so
+      // it lands on Day 1 rather than in the undated footnote at the bottom.
+      const fresh = options.tripId
+        ? withTrip(emptyDraft(), options.tripId, getTrip(options.tripId))
+        : emptyDraft();
       setDraft(fresh);
       setDraftBaseline(fresh);
       setFormError(null);
@@ -335,7 +340,7 @@ export function AppShell() {
         return [...beneath, { kind: "search", purpose: "create" }];
       });
     },
-    [captureProximity],
+    [captureProximity, getTrip],
   );
 
   const startEdit = useCallback(

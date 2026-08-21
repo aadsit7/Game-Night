@@ -10,7 +10,8 @@
  */
 import assert from "node:assert/strict";
 
-const { emptyDraft, withEndDateShown, withVisitStart } = await import("../lib/store/draft.ts");
+const { emptyDraft, withEndDateShown, withTrip, withVisitStart } =
+  await import("../lib/store/draft.ts");
 
 let failures = 0;
 function test(name, body) {
@@ -87,6 +88,55 @@ test("neither helper mutates the draft it was given", () => {
   const snapshot = JSON.stringify(original);
   withVisitStart(original, "2026-09-09");
   withEndDateShown(original);
+  assert.equal(JSON.stringify(original), snapshot);
+});
+
+/* ---------------------------------------------------------------- *
+ * Joining a trip
+ * ---------------------------------------------------------------- */
+
+const JAPAN = { startDate: "2026-05-04" };
+
+test("a place added to a trip is dated to the trip's first day", () => {
+  // Without this it lands in the trip's "no date yet" footnote rather than on
+  // Day 1 — which is the opposite of what adding it to a trip was meant to do.
+  const next = withTrip(emptyDraft(), "TRIP-0001", JAPAN);
+  assert.equal(next.tripId, "TRIP-0001");
+  assert.equal(next.visitedFrom, "2026-05-04");
+  assert.equal(next.visitedTo, "2026-05-04");
+});
+
+test("a date already typed is never overwritten by the trip's", () => {
+  const typed = { ...emptyDraft(), visitedFrom: "2026-05-09", visitedTo: "2026-05-11" };
+  const next = withTrip(typed, "TRIP-0001", JAPAN);
+  assert.equal(next.visitedFrom, "2026-05-09");
+  assert.equal(next.visitedTo, "2026-05-11");
+});
+
+test("a place on the wishlist joins a trip without gaining a date", () => {
+  const wished = { ...emptyDraft(), wantToGo: true };
+  const next = withTrip(wished, "TRIP-0001", JAPAN);
+  assert.equal(next.tripId, "TRIP-0001");
+  assert.equal(next.visitedFrom, "");
+});
+
+test("a trip with no dates of its own leaves the date alone", () => {
+  const next = withTrip(emptyDraft(), "TRIP-0001", { startDate: undefined });
+  assert.equal(next.tripId, "TRIP-0001");
+  assert.equal(next.visitedFrom, "");
+});
+
+test("leaving a trip clears the trip and keeps the dates", () => {
+  const inTrip = withTrip(emptyDraft(), "TRIP-0001", JAPAN);
+  const out = withTrip(inTrip, "", undefined);
+  assert.equal(out.tripId, "");
+  assert.equal(out.visitedFrom, "2026-05-04");
+});
+
+test("withTrip does not mutate the draft it was given", () => {
+  const original = emptyDraft();
+  const snapshot = JSON.stringify(original);
+  withTrip(original, "TRIP-0001", JAPAN);
   assert.equal(JSON.stringify(original), snapshot);
 });
 
