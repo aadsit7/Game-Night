@@ -18,6 +18,7 @@ const suites = [
   "timeline.test.mjs",
   "draft-dates.test.mjs",
   "trips.test.mjs",
+  "place-search.test.mjs",
 ];
 
 let failed = false;

@@ -57,7 +57,43 @@ var LOG_TAB = 'Sync_Log';
 var LOG_MAX_ROWS = 1000;
 var LOG_TRIM_TO = 900;
 
-var SCHEMA_VERSION = '2';
+var SCHEMA_VERSION = '3';
+
+/* ------------------------------------------------------------------ *
+ * Google Places search
+ *
+ * The website is a public static site: an API key compiled into it is
+ * handed to every visitor and readable from the page source. This script
+ * already runs server-side under the sheet owner's own account, so the key
+ * lives here instead — in a Script Property, never in this file and never in
+ * the bundle — and the browser asks this script to do the searching.
+ *
+ * Optional. With no key set, the app falls back to its keyless geocoder and
+ * everything keeps working; this only makes the results better.
+ * ------------------------------------------------------------------ */
+
+var PLACES_KEY_PROPERTY = 'GOOGLE_MAPS_API_KEY';
+var PLACES_ENDPOINT = 'https://places.googleapis.com/v1/places:searchText';
+
+/**
+ * Exactly the fields the app draws, and no more. Places (New) bills by field
+ * mask, so asking for everything would cost more for data nothing displays.
+ */
+var PLACES_FIELDS = [
+  'places.id',
+  'places.displayName',
+  'places.formattedAddress',
+  'places.location',
+  'places.types',
+  'places.addressComponents'
+].join(',');
+
+/**
+ * Repeat queries are the normal case — typing a name, deleting it, typing it
+ * again — and each one is a billable call. Half an hour is long enough to
+ * absorb that and far short of the 30 days Google's terms allow.
+ */
+var PLACES_CACHE_SECONDS = 1800;
 
 /**
  * The shared code this script checks on every request.
@@ -111,11 +147,16 @@ function doGet(e) {
     authorize_(params.code);
 
     switch (params.action) {
-      case 'getAll':      return getAll_();
-      case 'getLookups':  return { lookups: readLookups_() };
-      case 'ping':        return { ok: true, schemaVersion: SCHEMA_VERSION };
+      case 'getAll':        return getAll_();
+      case 'getLookups':    return { lookups: readLookups_() };
+      case 'searchPlaces':  return searchPlaces_(params);
+      case 'ping':
+        return { ok: true, schemaVersion: SCHEMA_VERSION, capabilities: capabilities_() };
       default:
-        throw new Error('Unknown action "' + (params.action || '') + '". Expected getAll, getLookups or ping.');
+        throw new Error(
+          'Unknown action "' + (params.action || '') +
+          '". Expected getAll, getLookups, searchPlaces or ping.'
+        );
     }
   });
 }
@@ -324,8 +365,17 @@ function getAll_() {
     lookups: readLookups_(),
     settings: readSettings_(),
     schemaVersion: SCHEMA_VERSION,
+    capabilities: capabilities_(),
     serverTime: nowStamp_()
   };
+}
+
+/**
+ * What this deployment can do beyond reading and writing rows, so the app can
+ * offer a better search when there is one and never advertise one there isn't.
+ */
+function capabilities_() {
+  return { placesSearch: Boolean(placesKey_()) };
 }
 
 /**
@@ -350,6 +400,134 @@ function readLookups_() {
     lookups[name] = values;
   }
   return lookups;
+}
+
+/* ------------------------------------------------------------------ *
+ * Google Places search — the key never leaves this script
+ * ------------------------------------------------------------------ */
+
+function placesKey_() {
+  return PropertiesService.getScriptProperties().getProperty(PLACES_KEY_PROPERTY) || '';
+}
+
+/**
+ * One Text Search call, turned into the shape the app already draws.
+ *
+ * Text Search rather than Autocomplete on purpose: Autocomplete returns
+ * predictions with no coordinates, so every tap would need a second billable
+ * Place Details call before the pin could be placed. Text Search answers the
+ * whole question at once — name, address, coordinates and country — which is
+ * both cheaper and one round trip instead of two.
+ */
+function searchPlaces_(params) {
+  var key = placesKey_();
+  if (!key) {
+    throw new Error(
+      'No Google Maps API key is set on this script, so Places search is off. ' +
+      'Add a GOOGLE_MAPS_API_KEY script property to switch it on.'
+    );
+  }
+
+  var query = String(params.q || '').trim();
+  if (query.length < 2) return { places: [], source: 'google' };
+
+  var body = { textQuery: query, maxResultCount: 8 };
+
+  var language = String(params.lang || '').trim();
+  if (/^[a-z]{2}$/i.test(language)) body.languageCode = language.toLowerCase();
+
+  // Biasing toward what is on screen is what separates the Springfield you
+  // meant from the eleven you didn't.
+  var lat = parseFloat(params.lat);
+  var lng = parseFloat(params.lng);
+  if (!isNaN(lat) && !isNaN(lng)) {
+    body.locationBias = {
+      circle: { center: { latitude: lat, longitude: lng }, radius: 50000 }
+    };
+  }
+
+  var cacheKey = 'places:' + Utilities.base64Encode(JSON.stringify(body)).slice(0, 200);
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (parseError) {
+      // A corrupt entry is not worth failing a search over.
+    }
+  }
+
+  var response = UrlFetchApp.fetch(PLACES_ENDPOINT, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': PLACES_FIELDS },
+    payload: JSON.stringify(body),
+    muteHttpExceptions: true
+  });
+
+  var code = response.getResponseCode();
+  var text = response.getContentText();
+
+  if (code !== 200) {
+    // Google's own message is far more useful than "search failed" — a key
+    // that is restricted, unbilled or missing the API all say so precisely.
+    var detail = '';
+    try {
+      detail = (JSON.parse(text).error || {}).message || '';
+    } catch (parseError) {
+      detail = '';
+    }
+    throw new Error('Google Places refused the search (' + code + ')' + (detail ? ': ' + detail : '.'));
+  }
+
+  var payload;
+  try {
+    payload = JSON.parse(text);
+  } catch (parseError) {
+    throw new Error('Google Places sent back something unreadable.');
+  }
+
+  var result = { places: (payload.places || []).map(toPlaceResult_), source: 'google' };
+  try {
+    cache.put(cacheKey, JSON.stringify(result), PLACES_CACHE_SECONDS);
+  } catch (cacheError) {
+    // Caching is an optimisation, never a reason to fail.
+  }
+  return result;
+}
+
+/** Pulls one component out of Places' address parts, by its type. */
+function addressPart_(components, type, useShort) {
+  for (var i = 0; i < (components || []).length; i++) {
+    var part = components[i];
+    if ((part.types || []).indexOf(type) !== -1) {
+      return useShort ? part.shortText : part.longText;
+    }
+  }
+  return '';
+}
+
+function toPlaceResult_(place) {
+  var components = place.addressComponents || [];
+  var location = place.location || {};
+
+  return {
+    id: place.id || '',
+    name: (place.displayName || {}).text || '',
+    address: place.formattedAddress || '',
+    latitude: location.latitude,
+    longitude: location.longitude,
+    // locality first, then the two fallbacks Google uses where there is no
+    // formal city — a district, or the smallest administrative area.
+    city:
+      addressPart_(components, 'locality', false) ||
+      addressPart_(components, 'postal_town', false) ||
+      addressPart_(components, 'administrative_area_level_2', false),
+    region: addressPart_(components, 'administrative_area_level_1', false),
+    country: addressPart_(components, 'country', false),
+    countryCode: addressPart_(components, 'country', true),
+    types: place.types || []
+  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -734,6 +912,12 @@ function selfTest() {
     override
       ? 'Access code: using the ACCESS_CODE script property.'
       : 'Access code: using the one built into this file. Nothing to set up.'
+  );
+
+  Logger.log(
+    placesKey_()
+      ? 'Google Places search: on (a GOOGLE_MAPS_API_KEY property is set).'
+      : 'Google Places search: off. The app will use its keyless geocoder.'
   );
 
   ensureTripsTab_();

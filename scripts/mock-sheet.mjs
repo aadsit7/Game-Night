@@ -111,6 +111,45 @@ const visits = [
 /** Trips start empty, the way a sheet that has never had one does. */
 const trips = [];
 
+/**
+ * Google Places is off unless asked for — `MOCK_PLACES=1 npm run mock-sheet` —
+ * because a sheet with no API key is the default case and the one most worth
+ * developing against.
+ */
+const CAPABILITIES = { placesSearch: process.env.MOCK_PLACES === "1" };
+
+/** A few results shaped exactly like the script's, for the on case. */
+const MOCK_PLACES = [
+  {
+    id: "ChIJmock0001", name: "Blue Bottle Coffee",
+    address: "66 Mint Plaza, San Francisco, CA 94103, USA",
+    latitude: 37.782, longitude: -122.409,
+    city: "San Francisco", region: "California", country: "United States",
+    countryCode: "US", types: ["cafe", "point_of_interest"],
+  },
+  {
+    id: "ChIJmock0002", name: "Blue Bottle Coffee",
+    address: "315 Linden St, San Francisco, CA 94102, USA",
+    latitude: 37.7761, longitude: -122.4241,
+    city: "San Francisco", region: "California", country: "United States",
+    countryCode: "US", types: ["cafe", "point_of_interest"],
+  },
+  {
+    id: "ChIJmock0003", name: "Eiffel Tower",
+    address: "Av. Gustave Eiffel, 75007 Paris, France",
+    latitude: 48.8584, longitude: 2.2945,
+    city: "Paris", region: "Île-de-France", country: "France",
+    countryCode: "FR", types: ["tourist_attraction", "point_of_interest"],
+  },
+  {
+    id: "ChIJmock0004", name: "Kyoto",
+    address: "Kyoto, Japan",
+    latitude: 35.0116, longitude: 135.7681,
+    city: "Kyoto", region: "Kyoto Prefecture", country: "Japan",
+    countryCode: "JP", types: ["locality", "political"],
+  },
+];
+
 // Seeded rows arrive with their derived coordinate columns already correct, the
 // way a real sheet's rows do — otherwise the first write fills them in and an
 // "unrelated edit changed nothing else" assertion has nothing to assert.
@@ -191,7 +230,19 @@ function nextId() {
 }
 
 function handle(action, body) {
-  if (action === "ping") return { ok: true, schemaVersion: "2" };
+  if (action === "ping") return { ok: true, schemaVersion: "3", capabilities: CAPABILITIES };
+
+  // Stands in for the script's Google Places proxy. Off unless this process
+  // was started with MOCK_PLACES=1, so the keyless path is what you get by
+  // default — which is what a sheet with no API key actually does.
+  if (action === "searchPlaces") {
+    if (!CAPABILITIES.placesSearch) throw new Error("No Google Maps API key is set on this script.");
+    const query = String(body.q || "").trim().toLowerCase();
+    const places = MOCK_PLACES.filter((place) =>
+      `${place.name} ${place.address}`.toLowerCase().includes(query),
+    );
+    return { places, source: "google" };
+  }
 
   if (action === "getAll") {
     return {
@@ -204,7 +255,8 @@ function handle(action, body) {
         Trips_Itinerary: { headers: [], rows: [] },
         Trips: { headers: TRIP_HEADERS, rows: trips },
       },
-      lookups: LOOKUPS, settings, schemaVersion: "2", serverTime: new Date().toISOString(),
+      lookups: LOOKUPS, settings, schemaVersion: "3",
+      capabilities: CAPABILITIES, serverTime: new Date().toISOString(),
     };
   }
 
@@ -294,7 +346,9 @@ createServer((req, res) => {
   if (req.method === "GET") {
     try {
       if (url.searchParams.get("code") !== ACCESS_CODE) throw new Error("Wrong or missing access code.");
-      send({ ok: true, data: handle(url.searchParams.get("action"), {}) });
+      // The query string is the body for a GET, which is how searchPlaces
+      // receives its query — the same shape `e.parameter` has in Apps Script.
+      send({ ok: true, data: handle(url.searchParams.get("action"), Object.fromEntries(url.searchParams)) });
     } catch (error) { send({ ok: false, error: error.message }); }
     return;
   }

@@ -90,6 +90,11 @@ export type LocationResult = {
   name: string;
   /** Secondary label, e.g. "Barcelona, Spain". */
   context: string;
+  /**
+   * The full street address, when the provider knows one. What tells four
+   * branches of the same coffee shop apart in a list of results.
+   */
+  address?: string;
   city?: string;
   region?: string;
   country?: string;
@@ -98,4 +103,6 @@ export type LocationResult = {
   longitude: number;
   /** Broad category from the geocoder, used only to pick an icon. */
   kind?: string;
+  /** Which service answered. Shown as attribution, and nothing else. */
+  source?: "google" | "osm";
 };

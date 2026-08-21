@@ -5,7 +5,7 @@ import { Building2, Globe2, Landmark, MapPin, PencilLine, Search, X } from "luci
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
-import { searchLocations } from "@/lib/maps/geocoding";
+import { searchLocations } from "@/lib/maps/placeSearch";
 import { cn } from "@/lib/utils/cn";
 import type { LocationResult } from "@/types/place";
 
@@ -136,7 +136,7 @@ export function LocationSearchSheet({
               spellCheck={false}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="City, country, landmark…"
+              placeholder="Search for a place, address or landmark"
               aria-label="Search for a location"
               className={cn(
                 "min-h-[46px] w-full rounded-sm bg-fill py-2.5 pl-10 pr-4 text-[16px]",
@@ -184,9 +184,15 @@ export function LocationSearchSheet({
                       <span className="block truncate text-[16px] font-medium text-ink">
                         {result.name}
                       </span>
-                      {result.context ? (
+                      {/*
+                        The address, when there is one, is what tells four
+                        branches of the same shop apart. The short context line
+                        is the fallback for a city or a country, which has no
+                        street to give.
+                      */}
+                      {result.address ?? result.context ? (
                         <span className="block truncate text-[13.5px] text-ink-2">
-                          {result.context}
+                          {result.address ?? result.context}
                         </span>
                       ) : null}
                     </span>
@@ -212,6 +218,14 @@ export function LocationSearchSheet({
             </p>
           </div>
         )}
+
+        {results.length > 0 ? (
+          <p className="px-1 pt-2 text-[12px] text-ink-3">
+            {results[0].source === "google"
+              ? "Results from Google Maps"
+              : "Results from OpenStreetMap"}
+          </p>
+        ) : null}
 
         {/* Always leave a way forward — including when there is no map at all. */}
         <div className="mt-3 border-t border-separator pt-3">
