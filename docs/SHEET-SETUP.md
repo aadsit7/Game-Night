@@ -142,7 +142,7 @@ had no effect, this is almost always why.
 
 | Tab | App behaviour |
 |---|---|
-| `Places` | Read and written. The main table. A place joins a trip through its existing `Trip ID / Collection` column. |
+| `Places` | Read and written. The main table. A place joins a trip through its existing `Trip ID / Collection` column; `Favorite` and `Status` back the favourites and want-to-go lists. |
 | `Trips` | Read and written. One row per trip. **Created by the script on first run** if it isn't there. |
 | `Dates_Visits` | Read only — multiple visits on one place fold into a single date range. |
 | `Notes_Reviews`, `Media_Links`, `Lists_Tags`, `Trips_Itinerary` | Read into memory, never written. |
@@ -172,6 +172,11 @@ an old copy of the app is open in some other tab:
   number plus one.
 - **Existing spellings are matched** — `"Been"` and `"Want to go"` from the
   `Lookups` tab, `"Yes"`/`"No"` rather than true/false.
+- **`Status` is only written when it changes.** The app knows two of the
+  `Lookups` words, and every other one — `Lived there`, `Passed through`,
+  `Booked` — also means *been*. Comparing before writing is what lets those
+  survive: a place marked `Lived there` keeps saying so unless you actually
+  move it to the want-to-go list and back.
 - **One `setValues` per row**, never one call per cell.
 
 ---

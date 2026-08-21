@@ -20,6 +20,19 @@ export type VisitedPlace = {
   visitedTo?: string;
   notes?: string;
   /**
+   * Saved as a favourite. The one mark that says "this one mattered", kept
+   * separate from every other kind of note so it can be found in a tap.
+   */
+  favorite?: boolean;
+  /**
+   * Somewhere still to go, rather than somewhere been.
+   *
+   * A travel record is half memory and half intention, and the two behave
+   * differently: a place you want to go has no visit date, takes no place in
+   * the chronology, and does not count towards the countries you have seen.
+   */
+  wantToGo?: boolean;
+  /**
    * The trip this visit belongs to, if any. Optional by design: a place
    * recorded before trips existed — or one that simply isn't part of a trip —
    * carries a blank cell in the sheet and no trip here.
@@ -44,6 +57,16 @@ export type NewPlaceInput = Omit<VisitedPlace, "id" | "createdAt" | "updatedAt">
 
 /** A partial patch. `id` and `createdAt` are immutable once assigned. */
 export type PlaceChanges = Partial<Omit<VisitedPlace, "id" | "createdAt">>;
+
+/** The two ways to slice the collection, beyond a country. */
+export type PlaceFilter = "all" | "favorites" | "been" | "wantToGo";
+
+export const PLACE_FILTER_LABELS: Record<PlaceFilter, string> = {
+  all: "All",
+  favorites: "Favorites",
+  been: "Been",
+  wantToGo: "Want to go",
+};
 
 export type PlaceSort =
   | "recentlyAdded"

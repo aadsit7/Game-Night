@@ -73,7 +73,7 @@ export function GlobeEmptyState({
               Your world starts here
             </h2>
             <p className="mx-auto mt-2 max-w-[32ch] text-balance text-[15px] leading-relaxed text-ink-2">
-              Add the places you’ve been and watch your travel history come to life.
+              Save the places you’ve been and the ones you still want to go, and watch your travel history come to life.
             </p>
             <button
               type="button"

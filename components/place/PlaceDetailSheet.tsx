@@ -2,12 +2,24 @@
 
 import { useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { CalendarRange, ChevronRight, Globe2, Luggage, MapPin, Pencil, Trash2, X } from "lucide-react";
+import {
+  Bookmark,
+  CalendarRange,
+  ChevronRight,
+  Globe2,
+  Heart,
+  Luggage,
+  MapPin,
+  Pencil,
+  Trash2,
+  X,
+} from "lucide-react";
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { PlaceImage } from "@/components/ui/PlaceImage";
 import { formatDays } from "@/lib/timeline/buildTimeline";
 import { formatVisitRange, inclusiveDayCount } from "@/lib/utils/date";
+import { cn } from "@/lib/utils/cn";
 import { countryFlag, formatCoordinates, placeSubtitle } from "@/lib/utils/geo";
 import type { VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
@@ -32,6 +44,7 @@ export function PlaceDetailSheet({
   recessed,
   trip,
   onOpenTrip,
+  onToggleFavorite,
 }: {
   place: VisitedPlace | null;
   open: boolean;
@@ -43,6 +56,8 @@ export function PlaceDetailSheet({
   /** The trip this visit belongs to, when it belongs to one. */
   trip?: Trip | null;
   onOpenTrip?: () => void;
+  /** Saving a favourite is one tap from here, not a trip through the form. */
+  onToggleFavorite?: () => void;
 }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const reduceMotion = useReducedMotion();
@@ -73,15 +88,35 @@ export function PlaceDetailSheet({
             <h2 className="truncate text-[17px] font-semibold tracking-[-0.01em] text-ink">
               Details
             </h2>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close details"
-              data-autofocus
-              className="pressable -mr-1 grid size-9 shrink-0 place-items-center rounded-full bg-fill text-ink-2"
-            >
-              <X size={17} aria-hidden="true" />
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              {onToggleFavorite ? (
+                <button
+                  type="button"
+                  onClick={onToggleFavorite}
+                  aria-pressed={Boolean(place?.favorite)}
+                  aria-label={place?.favorite ? "Remove from favorites" : "Add to favorites"}
+                  className={cn(
+                    "pressable grid size-9 place-items-center rounded-full",
+                    place?.favorite ? "bg-danger-soft text-danger" : "bg-fill text-ink-2",
+                  )}
+                >
+                  <Heart
+                    size={17}
+                    aria-hidden="true"
+                    fill={place?.favorite ? "currentColor" : "none"}
+                  />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close details"
+                data-autofocus
+                className="pressable -mr-1 grid size-9 place-items-center rounded-full bg-fill text-ink-2"
+              >
+                <X size={17} aria-hidden="true" />
+              </button>
+            </div>
           </div>
         }
       >
@@ -109,6 +144,14 @@ export function PlaceDetailSheet({
 
             {/* The facts, grouped — the dates, the trip, the coordinates. */}
             <div className="mt-4 divide-y divide-separator overflow-hidden rounded-[18px] bg-fill/60">
+              {place.wantToGo ? (
+                <Fact
+                  icon={<Bookmark size={17} aria-hidden="true" />}
+                  label="On your list"
+                  value="Somewhere you want to go"
+                />
+              ) : null}
+
               {when ? (
                 <Fact
                   icon={<CalendarRange size={17} aria-hidden="true" />}

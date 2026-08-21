@@ -20,6 +20,13 @@ Four ways to look at the same travel history:
   places belong to none, and deleting a trip leaves every place exactly where
   it was.
 
+A saved place is one of two things, and the app keeps them apart: somewhere
+you have **been**, or somewhere you **want to go**. A wishlist entry has no
+visit date, stays off the timeline, does not count towards the countries you
+have seen, and shows on the globe in its own colour. Either kind can be marked
+a **favourite** — one tap from the card, the pin or the detail sheet — and
+Places filters to favourites, been, or still to go without opening a menu.
+
 Adding, pinning, editing, moving and deleting a place are the core of the app,
 and every change lands in all four views on the same frame.
 
@@ -155,6 +162,12 @@ Only the fields you actually changed are sent. The Apps Script reads the rest of
 the row from the sheet and writes it straight back, so the ~60 `Places` columns
 the app has no screen for survive untouched — and columns are addressed by
 header text, never by position, so inserting one is safe across all 78.
+
+**Favourites and the wishlist were already in the sheet.** `Favorite` is a
+`Yes`/`No` column and `Status` holds the sheet's own words, so neither needed a
+schema change. `Status` is written only when the answer to "have I been?"
+actually changes, which is what stops a place marked `Lived there` or
+`Passed through` being flattened to `Been` by an unrelated save.
 
 **Trips live in their own tab.** A `Trips` row holds a trip's name, dates and
 description; a place joins one through the `Trip ID / Collection` column that

@@ -68,6 +68,11 @@ export function buildTimeline(places: VisitedPlace[]): Timeline {
   const undated: VisitedPlace[] = [];
 
   for (const place of places) {
+    // Somewhere still to go has not happened yet, so it has no place in a
+    // chronology — not even in the "waiting for dates" list, which is about
+    // visits whose dates were never filled in.
+    if (place.wantToGo) continue;
+
     const entry = toEntry(place);
     if (entry) entries.push(entry);
     else undated.push(place);

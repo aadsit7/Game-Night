@@ -39,6 +39,20 @@ const place = (name, from, to, extra = {}) => ({
 
 console.log("timeline");
 
+test("a place you only want to go to has no place in the chronology", () => {
+  const t = buildTimeline([
+    place("Kyoto", "2024-03-25", "2024-04-02"),
+    // Dated or not, a wish has not happened: it belongs on neither the
+    // timeline nor the "waiting for dates" list underneath it.
+    place("Patagonia", undefined, undefined, { wantToGo: true }),
+    place("Petra", "2030-01-01", "2030-01-05", { wantToGo: true }),
+  ]);
+
+  assert.deepEqual(t.years.flatMap((y) => y.entries.map((e) => e.place.name)), ["Kyoto"]);
+  assert.deepEqual(t.undated.map((p) => p.name), []);
+  assert.equal(t.totals.places, 1);
+});
+
 test("groups places into years, oldest first", () => {
   const t = buildTimeline([
     place("Kyoto", "2024-03-25", "2024-04-02"),

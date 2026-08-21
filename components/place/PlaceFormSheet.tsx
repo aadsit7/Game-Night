@@ -1,15 +1,17 @@
 "use client";
 
 import { useId, useState } from "react";
-import { CalendarRange, ChevronRight, MapPin, Trash2, TriangleAlert } from "lucide-react";
+import { CalendarRange, ChevronRight, Heart, MapPin, Trash2, TriangleAlert } from "lucide-react";
 
 import { PhotoPicker } from "@/components/place/PhotoPicker";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { Button } from "@/components/ui/Button";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import {
   isDraftValid,
   withEndDateShown,
   withVisitStart,
+  withWantToGo,
   type PlaceDraft,
 } from "@/lib/store/draft";
 import { isVisitOutsideTrip } from "@/lib/trips/tripDays";
@@ -289,11 +291,52 @@ export function PlaceFormSheet({
                 />
               </Field>
             </div>
+
+            <button
+              type="button"
+              onClick={() => set("favorite", !draft.favorite)}
+              aria-pressed={draft.favorite}
+              className={cn(
+                "pressable inline-flex min-h-11 items-center gap-2 rounded-pill px-3.5 text-[15px] font-medium",
+                draft.favorite ? "bg-danger-soft text-danger" : "bg-fill-strong text-ink-2",
+              )}
+            >
+              <Heart
+                size={16}
+                aria-hidden="true"
+                fill={draft.favorite ? "currentColor" : "none"}
+              />
+              {draft.favorite ? "Favorite" : "Add to favorites"}
+            </button>
           </div>
         </Section>
 
-        <Section title="When">
+        {/* A heading that stays put as the answer changes underneath it. */}
+        <Section title="Have you been?">
           <div className="space-y-3 px-4 py-3.5">
+            {/*
+              The first question a travel app has to answer about a place, and
+              the one this form never used to ask: have you been, or is this one
+              for later? It was guessed from whether a date was typed.
+            */}
+            <SegmentedControl
+              ariaLabel="Have you been here?"
+              value={draft.wantToGo ? "wantToGo" : "been"}
+              onChange={(value) => onChange(withWantToGo(draft, value === "wantToGo"))}
+              className="bg-fill"
+              options={[
+                { value: "been", label: "Been here" },
+                { value: "wantToGo", label: "Want to go" },
+              ]}
+            />
+
+            {draft.wantToGo ? (
+              <p className="text-[13px] leading-relaxed text-ink-2">
+                Saved to your list. It shows on the globe in its own color, and joins the
+                timeline once you&rsquo;ve been and added the dates.
+              </p>
+            ) : (
+              <>
             <Field id={ids.from} label="Date visited">
               <input
                 id={ids.from}
@@ -329,6 +372,8 @@ export function PlaceFormSheet({
                 <CalendarRange size={16} aria-hidden="true" />
                 Add an end date
               </button>
+            )}
+              </>
             )}
           </div>
         </Section>

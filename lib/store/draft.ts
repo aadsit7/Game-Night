@@ -21,6 +21,9 @@ export type PlaceDraft = {
   visitedFrom: string;
   visitedTo: string;
   notes: string;
+  favorite: boolean;
+  /** Somewhere still to go. A wishlist entry has no visit date. */
+  wantToGo: boolean;
   /** The trip this visit belongs to. Empty means it belongs to none. */
   tripId: string;
   /** Ordered; the first entry is the cover photo. */
@@ -40,6 +43,8 @@ export function emptyDraft(): PlaceDraft {
     visitedFrom: "",
     visitedTo: "",
     notes: "",
+    favorite: false,
+    wantToGo: false,
     tripId: "",
     photos: [],
     locationLabel: "",
@@ -83,6 +88,22 @@ export function withEndDateShown(draft: PlaceDraft): PlaceDraft {
   return { ...draft, visitedTo: draft.visitedFrom };
 }
 
+/**
+ * Moves a draft between "been here" and "want to go".
+ *
+ * A place still to go has no visit date, so the dates are dropped on the way
+ * to the wishlist — visibly, since the fields go with them, and before
+ * anything is saved, so backing out of the form costs nothing. Coming back the
+ * other way leaves the fields empty rather than resurrecting a date the person
+ * may no longer mean.
+ */
+export function withWantToGo(draft: PlaceDraft, wantToGo: boolean): PlaceDraft {
+  if (draft.wantToGo === wantToGo) return draft;
+  return wantToGo
+    ? { ...draft, wantToGo, visitedFrom: "", visitedTo: "" }
+    : { ...draft, wantToGo };
+}
+
 export function draftFromPlace(place: VisitedPlace): PlaceDraft {
   return {
     id: place.id,
@@ -96,6 +117,8 @@ export function draftFromPlace(place: VisitedPlace): PlaceDraft {
     visitedFrom: place.visitedFrom ?? "",
     visitedTo: place.visitedTo ?? "",
     notes: place.notes ?? "",
+    favorite: Boolean(place.favorite),
+    wantToGo: Boolean(place.wantToGo),
     tripId: place.tripId ?? "",
     photos: [place.coverImage, ...(place.photos ?? [])].filter(
       (photo): photo is string => Boolean(photo),
@@ -143,10 +166,14 @@ export function draftToInput(draft: PlaceDraft): NewPlaceInput {
     countryCode: draft.countryCode,
     latitude: draft.latitude as number,
     longitude: draft.longitude as number,
-    visitedFrom: draft.visitedFrom || undefined,
+    // Somewhere still to go has not been visited, so it carries no visit date.
+    visitedFrom: draft.wantToGo ? undefined : draft.visitedFrom || undefined,
     // An end date without a start date has no meaning.
-    visitedTo: draft.visitedFrom && draft.visitedTo ? draft.visitedTo : undefined,
+    visitedTo:
+      !draft.wantToGo && draft.visitedFrom && draft.visitedTo ? draft.visitedTo : undefined,
     notes: draft.notes.trim() || undefined,
+    favorite: draft.favorite,
+    wantToGo: draft.wantToGo,
     // Always present, even when empty: an absent key would leave the sheet's
     // existing cell alone, and clearing the trip is a thing a person does.
     tripId: draft.tripId.trim() || undefined,
@@ -167,6 +194,8 @@ export function isDraftDirty(current: PlaceDraft, original: PlaceDraft): boolean
     "visitedFrom",
     "visitedTo",
     "notes",
+    "favorite",
+    "wantToGo",
     "tripId",
   ];
   if (keys.some((key) => current[key] !== original[key])) return true;

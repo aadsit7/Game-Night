@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, Pencil } from "lucide-react";
+import { ChevronRight, Heart, MapPin, Pencil } from "lucide-react";
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { PlaceImage } from "@/components/ui/PlaceImage";
@@ -52,6 +52,14 @@ export function PlacePreviewSheet({
 
             <div className="min-w-0 flex-1">
               <h2 className="wrap-anywhere clamp-2 text-[19px] font-semibold leading-tight tracking-[-0.02em] text-ink">
+                {place.favorite ? (
+                  <Heart
+                    size={15}
+                    aria-label="Favorite"
+                    fill="currentColor"
+                    className="mr-1.5 inline-block shrink-0 align-baseline text-danger"
+                  />
+                ) : null}
                 {place.name}
               </h2>
               {subtitle ? (
@@ -60,7 +68,14 @@ export function PlacePreviewSheet({
                   {subtitle}
                 </p>
               ) : null}
-              {when ? <p className="mt-0.5 truncate text-[13px] text-ink-3">{when}</p> : null}
+              {place.wantToGo ? (
+                <p className="mt-1 inline-flex max-w-full items-center gap-1 rounded-pill bg-accent-soft px-2 py-0.5 text-[12.5px] font-medium text-accent">
+                  <MapPin size={12} aria-hidden="true" className="shrink-0" />
+                  Want to go
+                </p>
+              ) : when ? (
+                <p className="mt-0.5 truncate text-[13px] text-ink-3">{when}</p>
+              ) : null}
             </div>
           </div>
 

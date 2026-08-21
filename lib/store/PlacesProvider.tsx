@@ -31,7 +31,12 @@ type PlacesContextValue = {
   /** True until this browser has been given the sheet address and code. */
   needsSetup: boolean;
   getPlace: (id: string | null | undefined) => VisitedPlace | undefined;
-  stats: { places: number; countries: number };
+  /**
+   * The coverage read-out. Counts only places actually visited: somewhere you
+   * want to go is not a country you have seen, and letting a wishlist inflate
+   * "% of world" would make the one number on the screen a lie.
+   */
+  stats: { saved: number; visited: number; countries: number };
   countries: Array<{ key: string; label: string; code?: string; count: number }>;
   createPlace: (input: NewPlaceInput) => Promise<VisitedPlace>;
   updatePlace: (id: string, changes: PlaceChanges) => Promise<VisitedPlace>;
@@ -206,6 +211,7 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
   const countries = useMemo(() => {
     const map = new Map<string, { key: string; label: string; code?: string; count: number }>();
     for (const place of places) {
+      if (place.wantToGo) continue;
       const label = place.country?.trim();
       if (!label) continue;
       const key = (place.countryCode ?? label).toLowerCase();
@@ -220,8 +226,12 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
   }, [places]);
 
   const stats = useMemo(
-    () => ({ places: places.length, countries: countries.length }),
-    [places.length, countries.length],
+    () => ({
+      saved: places.length,
+      visited: places.filter((place) => !place.wantToGo).length,
+      countries: countries.length,
+    }),
+    [places, countries.length],
   );
 
   /**

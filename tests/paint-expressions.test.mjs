@@ -171,14 +171,97 @@ check("roads are never in the pin's hue family", () => {
 check("the pin reads against land and water in both schemes", () => {
   for (const dark of [false, true]) {
     const ground = theme.paletteFor(dark);
-    const { pin } = paint.overlayFor(dark);
-    for (const [name, against] of [["land", ground.land], ["water", ground.water]]) {
-      const contrast = ratio(pin, against);
-      assert.ok(
-        contrast >= 2.4,
-        `${dark ? "dark" : "light"} pin vs ${name} is ${contrast.toFixed(2)}:1`,
-      );
+    const { pin, pinWishlist } = paint.overlayFor(dark);
+    for (const [label, colour] of [["pin", pin], ["wishlist pin", pinWishlist]]) {
+      for (const [name, against] of [["land", ground.land], ["water", ground.water]]) {
+        const contrast = ratio(colour, against);
+        assert.ok(
+          contrast >= 2.4,
+          `${dark ? "dark" : "light"} ${label} vs ${name} is ${contrast.toFixed(2)}:1`,
+        );
+      }
     }
+  }
+});
+
+/** Hue angle in degrees, which is the axis these two are told apart on. */
+function hue(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const span = max - min;
+  if (span === 0) return 0;
+  const angle =
+    max === r ? ((g - b) / span) % 6 : max === g ? (b - r) / span + 2 : (r - g) / span + 4;
+  return ((angle * 60) % 360 + 360) % 360;
+}
+
+/** Shortest way round the wheel. */
+function hueDistance(a, b) {
+  const gap = Math.abs(hue(a) - hue(b)) % 360;
+  return gap > 180 ? 360 - gap : gap;
+}
+
+check("a place you want to go is not the same mark as one you have been to", () => {
+  // Two states of the same 5px dot, so the difference has to carry on colour
+  // alone. Contrast is the wrong axis here — a red and a violet of the same
+  // lightness are unmistakable and would fail a ratio test — so this measures
+  // the axis they actually differ on.
+  for (const dark of [false, true]) {
+    const { pin, pinWishlist } = paint.overlayFor(dark);
+    assert.notEqual(pin, pinWishlist);
+
+    const apart = hueDistance(pin, pinWishlist);
+    assert.ok(
+      apart >= 60,
+      `${dark ? "dark" : "light"} wishlist pin is only ${apart.toFixed(0)}° from the visited pin`,
+    );
+
+    // And not simply the selection colour by another name: three states on one
+    // dot, all three of which have to be distinct.
+    const { pinSelected } = paint.overlayFor(dark);
+    assert.ok(
+      hueDistance(pinWishlist, pinSelected) >= 40,
+      `${dark ? "dark" : "light"} wishlist pin is too close to the selected pin`,
+    );
+  }
+});
+
+check("the wishlist colour actually reaches a pin that wants it", () => {
+  // Validity is not the same as correctness: the expression above compiles
+  // whichever branch it takes. This runs it the way the renderer does, against
+  // a feature carrying the property the globe puts there, so a paint that is
+  // valid but wired to the wrong key still fails here.
+  const nothingSelected = ["boolean", false];
+  for (const dark of [false, true]) {
+    const overlay = paint.overlayFor(dark);
+    const compiled = compile("circle-color", paint.pinColor(nothingSelected, overlay));
+    assert.equal(compiled.result, "success", "the pin colour expression did not compile");
+
+    // A parsed colour comes back with 0–1 channels, so both sides are put in
+    // the same terms rather than compared as formatted strings.
+    const channels = (colour) => [colour.r, colour.g, colour.b].map((c) => Math.round(c * 255));
+    const fromHex = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    const paintFor = (properties) =>
+      channels(compiled.value.evaluate({ zoom: 4 }, { properties }));
+
+    assert.deepEqual(paintFor({ wantToGo: true }), fromHex(overlay.pinWishlist));
+    assert.deepEqual(paintFor({ wantToGo: false }), fromHex(overlay.pin));
+    // A place saved before the flag existed carries no such property at all,
+    // and has to keep the colour it has always had.
+    assert.deepEqual(paintFor({}), fromHex(overlay.pin));
+  }
+});
+
+check("the wishlist colour is outside the water's hue family too", () => {
+  for (const dark of [false, true]) {
+    const { water } = theme.paletteFor(dark);
+    const { pinWishlist } = paint.overlayFor(dark);
+    const contrast = ratio(pinWishlist, water);
+    assert.ok(
+      contrast >= 2.4,
+      `${dark ? "dark" : "light"} wishlist pin vs water is ${contrast.toFixed(2)}:1`,
+    );
   }
 });
 

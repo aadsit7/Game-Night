@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Cloud, CloudOff, Compass, Loader2, MapPin, Plus, RefreshCw, SearchX } from "lucide-react";
+import { Cloud, CloudOff, Compass, Heart, Loader2, MapPin, Plus, RefreshCw, SearchX } from "lucide-react";
 
 import { PlaceCard } from "@/components/places/PlaceCard";
 import { TravelStats } from "@/components/places/TravelStats";
@@ -13,7 +13,7 @@ import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import { visitTimestamp } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
 import type { SheetStatus } from "@/lib/storage/sheetPlaceRepository";
-import type { PlaceSort, VisitedPlace } from "@/types/place";
+import { PLACE_FILTER_LABELS, type PlaceFilter, type PlaceSort, type VisitedPlace } from "@/types/place";
 
 /**
  * One column on a phone, more once there is room — the iPhone layout is never
@@ -76,7 +76,7 @@ export function PlacesView({
 }: {
   places: VisitedPlace[];
   countries: Array<{ key: string; label: string; code?: string; count: number }>;
-  stats: { places: number; countries: number };
+  stats: { saved: number; visited: number; countries: number };
   loading: boolean;
   bottomInset: number;
   onOpenPlace: (id: string) => void;
@@ -89,6 +89,7 @@ export function PlacesView({
   const reduceMotion = useReducedMotion();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<PlaceSort>("recentlyAdded");
+  const [filter, setFilter] = useState<PlaceFilter>("all");
   const [country, setCountry] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -97,6 +98,9 @@ export function PlacesView({
   const visible = useMemo(() => {
     const term = debouncedQuery.trim().toLowerCase();
     let result = places;
+    if (filter === "favorites") result = result.filter((place) => place.favorite);
+    else if (filter === "been") result = result.filter((place) => !place.wantToGo);
+    else if (filter === "wantToGo") result = result.filter((place) => place.wantToGo);
     if (country) {
       result = result.filter(
         (place) => (place.countryCode ?? place.country).toLowerCase() === country,
@@ -104,7 +108,18 @@ export function PlacesView({
     }
     if (term) result = result.filter((place) => matches(place, term));
     return sortPlaces(result, sort);
-  }, [places, debouncedQuery, sort, country]);
+  }, [places, debouncedQuery, sort, country, filter]);
+
+  /** Only the counts worth a chip: an empty one is a dead end, so it is hidden. */
+  const counts = useMemo(
+    () => ({
+      all: places.length,
+      favorites: places.filter((place) => place.favorite).length,
+      been: places.filter((place) => !place.wantToGo).length,
+      wantToGo: places.filter((place) => place.wantToGo).length,
+    }),
+    [places],
+  );
 
   const filtersActive = country !== null || sort !== "recentlyAdded";
   const isEmpty = places.length === 0;
@@ -132,7 +147,7 @@ export function PlacesView({
             </div>
           ) : !isEmpty ? (
             <div className="mt-3">
-              <TravelStats places={stats.places} countries={stats.countries} />
+              <TravelStats visited={stats.visited} countries={stats.countries} />
             </div>
           ) : null}
         </header>
@@ -150,6 +165,26 @@ export function PlacesView({
               filtersActive={filtersActive}
               resultCount={visible.length}
             />
+
+            {/*
+              The two questions a travel app is actually asked — what did I
+              love, and where do I still want to go — answered in one tap
+              rather than from inside a sort-and-filter sheet.
+            */}
+            <div className="-mx-4 mt-2.5 flex gap-2 overflow-x-auto scrollbar-none px-4">
+              {(["all", "favorites", "been", "wantToGo"] as PlaceFilter[])
+                .filter((key) => key === "all" || counts[key] > 0)
+                .map((key) => (
+                  <FilterChip
+                    key={key}
+                    active={filter === key}
+                    count={counts[key]}
+                    icon={key === "favorites" ? <Heart size={13} aria-hidden="true" /> : null}
+                    label={PLACE_FILTER_LABELS[key]}
+                    onPress={() => setFilter(key)}
+                  />
+                ))}
+            </div>
           </div>
         )}
 
@@ -168,7 +203,7 @@ export function PlacesView({
             className="pt-8"
             icon={<Compass size={28} aria-hidden="true" />}
             title="Your world starts here"
-            description="Add the places you’ve been and watch your travel history come to life."
+            description="Save the places you’ve been and the ones you still want to go, and watch your travel history come to life."
             action={
               <div className="flex flex-col items-center gap-3">
                 <button
@@ -196,12 +231,13 @@ export function PlacesView({
             title="No places found"
             description="Try another city, country, or place name."
             action={
-              query || country ? (
+              query || country || filter !== "all" ? (
                 <button
                   type="button"
                   onClick={() => {
                     setQuery("");
                     setCountry(null);
+                    setFilter("all");
                   }}
                   className="pressable min-h-11 rounded-pill bg-fill px-5 text-[16px] font-medium text-ink"
                 >
@@ -232,9 +268,9 @@ export function PlacesView({
         {!isEmpty && visible.length > 0 ? (
           <p className="flex items-center justify-center gap-1.5 pb-6 pt-2 text-[13px] text-ink-3">
             <MapPin size={13} aria-hidden="true" />
-            {visible.length === stats.places
-              ? `${stats.places} ${stats.places === 1 ? "place" : "places"} in your history`
-              : `${visible.length} of ${stats.places} shown`}
+            {visible.length === stats.saved
+              ? `${stats.saved} ${stats.saved === 1 ? "place" : "places"} saved`
+              : `${visible.length} of ${stats.saved} shown`}
           </p>
         ) : null}
       </div>
@@ -258,6 +294,40 @@ export function PlacesView({
         countries={countries}
       />
     </div>
+  );
+}
+
+/** One tap, one slice of the collection, with its size on it. */
+function FilterChip({
+  active,
+  count,
+  icon,
+  label,
+  onPress,
+}: {
+  active: boolean;
+  count: number;
+  icon?: React.ReactNode;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onPress}
+      aria-pressed={active}
+      className={cn(
+        "pressable inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-pill px-3.5",
+        "text-[14px] font-medium transition-colors",
+        active ? "bg-accent text-on-accent" : "bg-fill text-ink-2",
+      )}
+    >
+      {icon}
+      {label}
+      <span className={cn("tabular-nums", active ? "text-on-accent/75" : "text-ink-3")}>
+        {count}
+      </span>
+    </button>
   );
 }
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Globe2, MapPin, Pencil, Trash2 } from "lucide-react";
+import { Globe2, Heart, MapPin, Pencil, Trash2 } from "lucide-react";
 
 import { AppTabBar, type AppMode } from "@/components/AppTabBar";
 import { GlobeEmptyState, PickModeBanner } from "@/components/globe/GlobeOverlay";
@@ -573,6 +573,32 @@ export function AppShell() {
     [deleteTrip, getTrip, showToast],
   );
 
+  /**
+   * Saving a favourite, from wherever it is asked for.
+   *
+   * One tap and one write — no form, no confirmation. The toast names what
+   * happened rather than just "saved", because the heart is small and the
+   * change is easy to miss.
+   */
+  const toggleFavorite = useCallback(
+    async (id: string) => {
+      const place = getPlace(id);
+      if (!place) return;
+      const next = !place.favorite;
+      try {
+        await updatePlace(id, { favorite: next });
+        showToast(
+          next ? `${place.name} added to favorites` : `${place.name} removed from favorites`,
+        );
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "That couldn’t be saved.", {
+          tone: "error",
+        });
+      }
+    },
+    [getPlace, updatePlace, showToast],
+  );
+
   /* Only warn when there is genuinely something to lose. */
   const guardFormClose = useCallback(() => {
     if (!isDraftDirty(draft, draftBaseline)) return true;
@@ -988,6 +1014,7 @@ export function AppShell() {
         recessed={topOverlay?.kind !== "detail"}
         trip={getTrip(detailPlace?.tripId) ?? null}
         onOpenTrip={() => detailPlace?.tripId && openTripDetail(detailPlace.tripId)}
+        onToggleFavorite={() => detailPlace && void toggleFavorite(detailPlace.id)}
         // Closing a place opened from a trip returns to the trip; opened on
         // its own, it closes the stack.
         onClose={() => (overlays.length > 1 ? popOverlay() : closeAllOverlays())}
@@ -1106,6 +1133,13 @@ export function AppShell() {
         onClose={() => setActionsFor(null)}
         title={actionsPlace?.name}
         actions={[
+          {
+            label: actionsPlace?.favorite ? "Remove from Favorites" : "Add to Favorites",
+            icon: (
+              <Heart size={18} fill={actionsPlace?.favorite ? "currentColor" : "none"} />
+            ),
+            onSelect: () => actionsFor && void toggleFavorite(actionsFor),
+          },
           {
             label: "Show on Globe",
             icon: <Globe2 size={18} />,
