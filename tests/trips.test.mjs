@@ -178,6 +178,10 @@ test("counts places, countries and cities from the visits themselves", () => {
 
   assert.equal(summary.places, 3);
   assert.deepEqual(summary.countries, ["Japan", "South Korea"]);
+  // The codes travel alongside the names, in the same first-visited order,
+  // because a trip's row draws its flags from them and there is no
+  // name-to-code table anywhere in this app to recover them from.
+  assert.deepEqual(summary.countryCodes, ["JP", "KR"]);
   assert.deepEqual(summary.cities, ["Tokyo", "Kyoto", "Busan"]);
 });
 

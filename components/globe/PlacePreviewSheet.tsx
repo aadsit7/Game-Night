@@ -1,10 +1,11 @@
 "use client";
 
-import { ChevronRight, Heart, MapPin, Pencil } from "lucide-react";
+import { ChevronRight, Pencil } from "lucide-react";
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
+import { flagVariant } from "@/lib/ui/flags";
 import { formatVisitShort } from "@/lib/utils/date";
 import { countryFlag, placeSubtitle } from "@/lib/utils/geo";
 import type { VisitedPlace } from "@/types/place";
@@ -30,9 +31,16 @@ export function PlacePreviewSheet({
   onEdit: () => void;
   bottomOffset: number;
 }) {
-  const subtitle = place ? placeSubtitle(place) : "";
-  const when = place ? formatVisitShort(place.visitedFrom, place.visitedTo) : null;
+  const hasPhoto = Boolean(place?.coverImage);
   const hasFlag = Boolean(place && countryFlag(place.countryCode));
+  const detail = place
+    ? [
+        placeSubtitle(place),
+        place.wantToGo ? "Want to go" : formatVisitShort(place.visitedFrom, place.visitedTo),
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
 
   return (
     <BottomSheet
@@ -45,37 +53,35 @@ export function PlacePreviewSheet({
       {place ? (
         <div className="pb-1">
           <div className="flex items-center gap-3.5 pt-1">
-            <PlaceImage
-              place={place}
-              alt=""
-              className="size-[72px] shrink-0 rounded-[18px]"
-            />
+            {/* The photograph, or the country — never a tinted rectangle
+                standing in for a photograph that does not exist. */}
+            {place.coverImage ? (
+              <PlaceImage place={place} alt="" className="size-[64px] shrink-0 rounded-[18px]" />
+            ) : (
+              <FlagChip
+                countryCode={place.countryCode}
+                variant={flagVariant(place)}
+                size="lg"
+              />
+            )}
 
             <div className="min-w-0 flex-1">
-              <h2 className="wrap-anywhere clamp-2 text-[19px] font-semibold leading-tight tracking-[-0.02em] text-ink">
-                {place.favorite ? (
-                  <Heart
-                    size={15}
-                    aria-label="Favorite"
-                    fill="currentColor"
-                    className="mr-1.5 inline-block shrink-0 align-baseline text-danger"
-                  />
-                ) : null}
+              {/* No heart before the name: the chip to its left is already
+                  wearing one, and the same fact twice in two centimetres is
+                  not emphasis. */}
+              <h2 className="wrap-anywhere clamp-2 text-[18px] font-semibold leading-tight tracking-[-0.02em] text-ink">
                 {place.name}
               </h2>
-              {subtitle ? (
-                <p className="mt-0.5 truncate text-[14px] text-ink-2">
-                  {hasFlag ? <FlagChip countryCode={place.countryCode} className="mr-1.5" /> : null}
-                  {subtitle}
+              {/* Where and when on one line, the same caption the lists use.
+                  The chip beside it is repeated only when a photograph has
+                  taken the leading chip's place. */}
+              {detail ? (
+                <p className="mt-0.5 truncate text-[13.5px] text-ink-2">
+                  {hasPhoto && hasFlag ? (
+                    <FlagChip countryCode={place.countryCode} className="mr-1.5" />
+                  ) : null}
+                  {detail}
                 </p>
-              ) : null}
-              {place.wantToGo ? (
-                <p className="mt-1 inline-flex max-w-full items-center gap-1 rounded-pill bg-accent-soft px-2 py-0.5 text-[12.5px] font-medium text-accent">
-                  <MapPin size={12} aria-hidden="true" className="shrink-0" />
-                  Want to go
-                </p>
-              ) : when ? (
-                <p className="mt-0.5 truncate text-[13px] text-ink-3">{when}</p>
               ) : null}
             </div>
           </div>

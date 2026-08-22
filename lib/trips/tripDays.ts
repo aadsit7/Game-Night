@@ -46,6 +46,12 @@ export type TripSummary = {
   places: number;
   /** Distinct countries, in the order they were first visited. */
   countries: string[];
+  /**
+   * The same countries as ISO codes, in the same order — what a flag is drawn
+   * from. Kept alongside the names rather than derived from them, because a
+   * name is not a code and no lookup table in this app claims otherwise.
+   */
+  countryCodes: string[];
   /** Distinct cities, in the order they were first visited. */
   cities: string[];
 };
@@ -150,8 +156,10 @@ export function tripSummary(trip: Trip, places: VisitedPlace[]): TripSummary {
   const inTrip = placesInTrip(trip, places);
 
   const countries: string[] = [];
+  const countryCodes: string[] = [];
   const cities: string[] = [];
   const seenCountry = new Set<string>();
+  const seenCode = new Set<string>();
   const seenCity = new Set<string>();
 
   const dated = [...inTrip].sort((a, b) => (a.visitedFrom ?? "").localeCompare(b.visitedFrom ?? ""));
@@ -161,6 +169,11 @@ export function tripSummary(trip: Trip, places: VisitedPlace[]): TripSummary {
       seenCountry.add(country.toLowerCase());
       countries.push(country);
     }
+    const code = place.countryCode?.trim().toUpperCase();
+    if (code && !seenCode.has(code)) {
+      seenCode.add(code);
+      countryCodes.push(code);
+    }
     const city = place.city?.trim();
     if (city && !seenCity.has(city.toLowerCase())) {
       seenCity.add(city.toLowerCase());
@@ -168,7 +181,13 @@ export function tripSummary(trip: Trip, places: VisitedPlace[]): TripSummary {
     }
   }
 
-  return { days: tripLength(trip, inTrip), places: inTrip.length, countries, cities };
+  return {
+    days: tripLength(trip, inTrip),
+    places: inTrip.length,
+    countries,
+    countryCodes,
+    cities,
+  };
 }
 
 function tripLength(trip: Trip, inTrip: VisitedPlace[]): number | null {

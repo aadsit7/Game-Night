@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, CalendarRange, Luggage, Plus } from "lucide-react";
+import { CalendarClock, Luggage, Plus } from "lucide-react";
 
 import { TimelineScrubber } from "@/components/timeline/TimelineScrubber";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -9,7 +9,8 @@ import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
 import { buildTimeline, formatDays, gapLabel, type TimelineEntry } from "@/lib/timeline/buildTimeline";
 import { formatVisitRange } from "@/lib/utils/date";
-import { countryFlag } from "@/lib/utils/geo";
+import { flagVariant } from "@/lib/ui/flags";
+import { countryFlag, placeSubtitle } from "@/lib/utils/geo";
 import { cn } from "@/lib/utils/cn";
 import type { VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
@@ -214,6 +215,12 @@ export function TimelineView({
                 {year.entries.map((entry, index) => {
                   const previous = index > 0 ? year.entries[index - 1] : null;
                   const gap = previous ? gapLabel(previous.end, entry.start) : null;
+                  /* The trip is named once per run, not once per stop. Four
+                     places on the same trip printed "Japan, spring" four
+                     times, in four pills, down four consecutive entries —
+                     a caption that repeats itself stops being read. */
+                  const opensATrip =
+                    Boolean(entry.place.tripId) && entry.place.tripId !== previous?.place.tripId;
                   return (
                     <li key={entry.place.id}>
                       {gap ? <Gap label={gap} /> : null}
@@ -221,7 +228,9 @@ export function TimelineView({
                         entry={entry}
                         last={index === year.entries.length - 1}
                         tripName={
-                          entry.place.tripId ? tripNames.get(entry.place.tripId) : undefined
+                          opensATrip && entry.place.tripId
+                            ? tripNames.get(entry.place.tripId)
+                            : undefined
                         }
                         onOpen={() => onOpenPlace(entry.place.id)}
                         onOpenTrip={() =>
@@ -283,44 +292,57 @@ function Entry({
   onOpenTrip: () => void;
 }) {
   const { place } = entry;
-  const hasFlag = Boolean(countryFlag(place.countryCode));
   const range = formatVisitRange(entry.start, entry.end === entry.start ? undefined : entry.end);
-  const where = [place.city, place.country].filter(Boolean).join(", ");
+  /* "Sintra, Sintra, Portugal" — the city is the place as often as not, and
+     printing it twice is how a list stops being read. */
+  const where = placeSubtitle(place) || place.country;
+  const when = entry.days > 1 ? `${range} · ${formatDays(entry.days)}` : range;
+  const hasFlag = Boolean(countryFlag(place.countryCode));
+  const hasPhoto = Boolean(place.coverImage);
 
   return (
-    <div className="relative flex gap-3.5 pl-1">
+    <div className="relative flex gap-3 pl-1">
       {/* The spine: a dot for this stop, and the line onward to the next. */}
-      <div className="relative flex w-3 shrink-0 justify-center pt-[22px]" aria-hidden="true">
-        <span className="absolute top-[22px] size-[9px] rounded-full bg-accent ring-4 ring-bg" />
-        {!last ? <span className="absolute top-[34px] bottom-[-6px] w-[2px] bg-separator" /> : null}
+      <div className="relative flex w-3 shrink-0 justify-center" aria-hidden="true">
+        <span className="absolute top-[20px] size-[9px] rounded-full bg-accent ring-4 ring-bg" />
+        {!last ? <span className="absolute top-[31px] bottom-[-4px] w-[2px] bg-separator" /> : null}
       </div>
 
-      <div className="mb-1 min-w-0 flex-1">
+      <div className="mb-0.5 min-w-0 flex-1">
         <button
           type="button"
           onClick={onOpen}
-          className="pressable -mx-2 flex w-[calc(100%+1rem)] items-start gap-3.5 rounded-md px-2 py-3 text-left"
+          className="pressable -mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-md px-2 py-2 text-left"
         >
-          <PlaceImage
-            place={place}
-            alt=""
-            className="size-[58px] shrink-0 overflow-hidden rounded-md"
-          />
+          {/* The photograph when there is one; the country's chip when there is
+              not. A tinted rectangle standing in for a missing picture, once
+              per stop, is what made this page a column of grey squares. */}
+          {hasPhoto ? (
+            <PlaceImage
+              place={place}
+              alt=""
+              className="size-[46px] shrink-0 overflow-hidden rounded-[14px]"
+            />
+          ) : (
+            <FlagChip
+              countryCode={place.countryCode}
+              variant={flagVariant(place)}
+              size="lg"
+            />
+          )}
 
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[17px] font-semibold leading-tight text-ink">
+            <span className="block truncate text-[16.5px] font-semibold leading-tight text-ink">
               {place.name}
             </span>
-            <span className="mt-0.5 block truncate text-[14px] text-ink-2">
-              {hasFlag ? <FlagChip countryCode={place.countryCode} className="mr-1.5" /> : null}
-              {where || place.country}
+            <span className="mt-0.5 block truncate text-[13.5px] leading-snug text-ink-2">
+              {hasPhoto && hasFlag ? (
+                <FlagChip countryCode={place.countryCode} className="mr-1.5" />
+              ) : null}
+              {where}
             </span>
-            <span className="mt-1 flex items-center gap-1.5 text-[13px] tabular-nums text-ink-3">
-              <CalendarRange size={13} aria-hidden="true" className="shrink-0" />
-              <span className="truncate">
-                {range}
-                {entry.days > 1 ? ` · ${formatDays(entry.days)}` : null}
-              </span>
+            <span className="block truncate text-[13px] tabular-nums leading-snug text-ink-3">
+              {when}
             </span>
           </span>
         </button>
@@ -333,7 +355,7 @@ function Entry({
           <button
             type="button"
             onClick={onOpenTrip}
-            className="pressable ml-[72px] inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-pill bg-fill px-2.5 text-[12.5px] font-medium text-ink-2"
+            className="pressable ml-[58px] inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-pill bg-fill px-2.5 text-[12.5px] font-medium text-ink-2"
           >
             <Luggage size={12} aria-hidden="true" className="shrink-0" />
             <span className="truncate">{tripName}</span>

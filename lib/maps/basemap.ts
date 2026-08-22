@@ -32,7 +32,6 @@ export const SOURCE_COUNTRIES = "world-countries";
 
 export const LAYER_COUNTRY_FILL = "visited-country-fill";
 export const LAYER_COUNTRY_LINE = "visited-country-line";
-export const LAYER_CLUSTER_GLOW = "visited-cluster-glow";
 export const LAYER_CLUSTER = "visited-cluster";
 export const LAYER_CLUSTER_COUNT = "visited-cluster-count";
 /** The soft disc under the chip you last tapped. */
@@ -41,11 +40,10 @@ export const LAYER_PIN_MARKER = "visited-pin-marker";
 export const LAYER_PIN = "visited-pin-label";
 
 /** Layers a tap can land on, in the order the tap handler considers them. */
-export const INTERACTIVE_LAYERS = [LAYER_PIN_MARKER, LAYER_CLUSTER, LAYER_CLUSTER_GLOW];
+export const INTERACTIVE_LAYERS = [LAYER_PIN_MARKER, LAYER_CLUSTER];
 
 /** Everything belonging to the city-pin view, hidden in Countries mode. */
 export const CITY_LAYERS = [
-  LAYER_CLUSTER_GLOW,
   LAYER_CLUSTER,
   LAYER_CLUSTER_COUNT,
   LAYER_PIN_HALO,
@@ -86,7 +84,6 @@ export type OverlayPalette = {
    */
   pinWishlist: string;
   cluster: string;
-  clusterGlow: string;
   /**
    * The ring around every mark the traveller owns — the flag chip, the cluster
    * disc. It is what lets a saturated flag sit on the ocean, on a coastline or
@@ -107,7 +104,6 @@ const OVERLAY_LIGHT: OverlayPalette = {
   pinSelected: "#0B62C4",
   pinWishlist: "#6D33B8",
   cluster: "#B93A1A",
-  clusterGlow: "#B93A1A",
   pinStroke: "#FFFFFF",
   label: "#16181D",
   labelHalo: "rgba(255,255,255,0.95)",
@@ -120,8 +116,7 @@ const OVERLAY_DARK: OverlayPalette = {
   pin: "#E0562C",
   pinSelected: "#4DA6FF",
   pinWishlist: "#B98CFF",
-  cluster: "#B93A1A",
-  clusterGlow: "#FF9270",
+  cluster: "#C2451F",
   pinStroke: "rgba(233,238,246,0.92)",
   label: "#EDF1F7",
   labelHalo: "rgba(8,11,16,0.90)",
@@ -259,6 +254,48 @@ export const markerSortKey = (selected: ExpressionSpecification): ExpressionSpec
   selected,
   1,
   0,
+];
+
+/**
+ * A cluster is the same chip, a little bigger.
+ *
+ * Not a different mark and not a different colour: "four places in Portugal"
+ * is still Portugal, and the flag is what says so. Size and a counted badge
+ * are what say "four".
+ */
+export const clusterIconSize = (): ExpressionSpecification => [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  0,
+  0.76,
+  3,
+  0.94,
+  8,
+  1.14,
+];
+
+/**
+ * Where the count badge hangs off the chip.
+ *
+ * Top right, which is where a badge goes — and, more to the point, not bottom
+ * right, where the chip already carries the favourite and wishlist marks. A
+ * cluster wears one of its members' chips, so the member being a favourite
+ * would otherwise put a heart and a number in the same few pixels.
+ *
+ * `icon-offset` is in the icon's own pixels and scales with `icon-size`;
+ * `text-offset` is in ems of the text size. They have to describe the same
+ * point on screen or the number floats off its badge, so both are derived
+ * here from one distance rather than tuned separately.
+ */
+export const COUNT_BADGE_NUDGE = 13;
+export const COUNT_BADGE_TEXT_SIZE = 11.5;
+
+export const countBadgeOffset = (): [number, number] => [COUNT_BADGE_NUDGE, -COUNT_BADGE_NUDGE];
+
+export const countBadgeTextOffset = (): [number, number] => [
+  COUNT_BADGE_NUDGE / COUNT_BADGE_TEXT_SIZE,
+  -COUNT_BADGE_NUDGE / COUNT_BADGE_TEXT_SIZE,
 ];
 
 /**

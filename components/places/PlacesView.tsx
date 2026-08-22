@@ -23,7 +23,9 @@ import type { Trip } from "@/types/trip";
  * One column on a phone, more once there is room — the iPhone layout is never
  * compromised to make the desktop one work.
  */
-const GRID = "grid grid-cols-1 gap-x-5 gap-y-7 sm:grid-cols-2 lg:grid-cols-3";
+/* Rows sit close; photo cards are big enough to separate themselves. A 28px
+   gutter was tuned when every entry was a picture. */
+const GRID = "grid grid-cols-1 gap-x-5 gap-y-3.5 sm:grid-cols-2 lg:grid-cols-3";
 
 /**
  * Everything saved, as a scrollable collection. It reads from the same
@@ -193,11 +195,11 @@ export function PlacesView({
       <div className="scroll-area absolute inset-0" style={{ paddingBottom: bottomInset }}>
       <div className="mx-auto w-full max-w-[720px] px-4 sm:max-w-[880px] lg:max-w-[1180px]">
         <header
-          className="pb-4"
-          style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 14px)" }}
+          className="pb-3"
+          style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 12px)" }}
         >
           <div className="flex items-start justify-between gap-3">
-            <h1 className="text-[34px] font-bold leading-[1.1] tracking-[-0.03em] text-ink">
+            <h1 className="text-[28px] font-bold leading-[1.1] tracking-[-0.03em] text-ink">
               My Places
             </h1>
             {selecting ? (
@@ -226,13 +228,11 @@ export function PlacesView({
           </div>
 
           {loading ? (
-            <div className="mt-3 grid grid-cols-3 gap-2.5" aria-hidden="true">
-              {[0, 1, 2].map((index) => (
-                <div key={index} className="skeleton h-[58px] rounded-md" />
-              ))}
+            <div className="mt-2.5 flex gap-2" aria-hidden="true">
+              <div className="skeleton h-4 w-40 rounded" />
             </div>
           ) : !isEmpty ? (
-            <div className="mt-3">
+            <div className="mt-2">
               <TravelStats
                 visited={stats.visited}
                 countries={stats.countries}
@@ -246,7 +246,7 @@ export function PlacesView({
 
         {!isEmpty && (
           <div
-            className="sticky z-10 -mx-4 mb-5 bg-bg/85 px-4 pb-3 pt-1 backdrop-blur-xl"
+            className="sticky z-10 -mx-4 mb-3.5 bg-bg/85 px-4 pb-2.5 pt-1 backdrop-blur-xl"
             // Pins below the status bar, never underneath it.
             style={{ top: "env(safe-area-inset-top, 0px)" }}
           >
@@ -263,7 +263,7 @@ export function PlacesView({
               love, and where do I still want to go — answered in one tap
               rather than from inside a sort-and-filter sheet.
             */}
-            <div className="-mx-4 mt-2.5 flex gap-2 overflow-x-auto scrollbar-none px-4">
+            <div className="-mx-4 mt-2 flex gap-1.5 overflow-x-auto scrollbar-none px-4">
               {(["all", "favorites", "been", "wantToGo"] as PlaceFilter[])
                 .filter((key) => key === "all" || counts[key] > 0)
                 .map((key) => (
@@ -481,8 +481,12 @@ function FilterChip({
       onClick={onPress}
       aria-pressed={active}
       className={cn(
-        "pressable inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-pill px-3.5",
-        "text-[14px] font-medium transition-colors",
+        /* Four filters have to fit the width of a phone without one of them
+           hanging off the edge — a filter you cannot see is a filter nobody
+           uses. This is as tight as the type gets before the counts stop
+           reading. */
+        "pressable inline-flex min-h-9 shrink-0 items-center gap-1 rounded-pill px-3",
+        "text-[13.5px] font-medium transition-colors",
         active ? "bg-accent text-on-accent" : "bg-fill text-ink-2",
       )}
     >

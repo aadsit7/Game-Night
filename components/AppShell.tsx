@@ -49,7 +49,7 @@ import {
 } from "@/lib/store/draft";
 import { alreadyTaggedMessage, placesToRetag, tagSummary } from "@/lib/trips/tagging";
 import { sheetDepth } from "@/lib/ui/sheetStack";
-import { boundsForPlaces } from "@/lib/utils/geo";
+import { hasValidCoordinates } from "@/lib/utils/geo";
 import { createId } from "@/lib/utils/id";
 import type { LocationResult, VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
@@ -317,19 +317,21 @@ export function AppShell() {
       if (inCountry.length === 0) return;
 
       setMapView("cities");
-      const bounds = boundsForPlaces(inCountry);
-      const centre = bounds
-        ? {
-            longitude: (bounds[0][0] + bounds[1][0]) / 2,
-            latitude: (bounds[0][1] + bounds[1][1]) / 2,
-          }
-        : { longitude: inCountry[0].longitude, latitude: inCountry[0].latitude };
+      /* Hand the globe the places rather than a zoom. "Show me inside Japan"
+         and "show me inside Luxembourg" are the same request and nothing like
+         the same camera, and the globe is the only thing here that knows how
+         far back its own projection has to be to hold them all. */
+      const framed = inCountry.filter(hasValidCoordinates);
+      if (framed.length === 0) return;
 
       setCamera({
         token: Date.now(),
-        longitude: centre.longitude,
-        latitude: centre.latitude,
-        zoom: inCountry.length === 1 ? 6.5 : 4.2,
+        longitude: framed[0].longitude,
+        latitude: framed[0].latitude,
+        fit: framed.map((place) => ({
+          longitude: place.longitude,
+          latitude: place.latitude,
+        })),
       });
     },
     [places],
@@ -1215,14 +1217,21 @@ export function AppShell() {
       <MapViewToggle
         value={mapView}
         onChange={setMapView}
+        /* Hidden while a place is previewed rather than lifted above the
+           card. The card's height depends on how much the traveller wrote in
+           it, so any fixed offset is a guess, and the two we tried were both
+           wrong for a place with notes — the switch ended up peeking out from
+           behind the sheet. It is browsing chrome; while you are reading one
+           place, it has nothing to offer. */
         visible={
           mode === "globe" &&
           globeStatus !== "failed" &&
           !pinSession &&
+          !previewVisible &&
           overlays.length === 0 &&
           places.length > 0
         }
-        bottomOffset={tabBarHeight + (previewVisible ? 176 : 8)}
+        bottomOffset={tabBarHeight + 8}
       />
 
       <AppTabBar
