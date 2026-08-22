@@ -1,6 +1,6 @@
 "use client";
 
-import { Heart, MapPin, MoreHorizontal } from "lucide-react";
+import { Check, Heart, MapPin, MoreHorizontal } from "lucide-react";
 
 import { PlaceImage } from "@/components/ui/PlaceImage";
 import { formatVisitShort } from "@/lib/utils/date";
@@ -21,17 +21,27 @@ import type { VisitedPlace } from "@/types/place";
  * The `•••` button sits over the card rather than inside it — interactive
  * elements must not nest, and a fixed corner is easier to hit than something
  * that moves with the text.
+ *
+ * In selection mode the whole card becomes the checkbox and `•••` goes away.
+ * A card that both opens a place and ticks it would be a coin toss every tap.
  */
 export function PlaceCard({
   place,
   onOpen,
   onActions,
   priority,
+  selecting = false,
+  selected = false,
+  onToggleSelect,
 }: {
   place: VisitedPlace;
   onOpen: () => void;
   onActions: () => void;
   priority?: boolean;
+  /** Tapping the card ticks it instead of opening it. */
+  selecting?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const when = formatVisitShort(place.visitedFrom, place.visitedTo);
   const flag = countryFlag(place.countryCode);
@@ -42,10 +52,25 @@ export function PlaceCard({
   // A wishlist entry has no date to show, so it says what it is instead.
   const meta = place.wantToGo ? "Want to go" : when;
 
+  const press = selecting ? onToggleSelect : onOpen;
+  // The tick is a state of the card, so the card carries the pressed state
+  // rather than a separate control the thumb has to find.
+  const selectProps = selecting
+    ? ({ "aria-pressed": selected, "aria-label": place.name } as const)
+    : {};
+
   return (
-    <li className="relative">
+    <li className={cn("relative", selecting && "select-none")}>
       {hasPhoto ? (
-        <button type="button" onClick={onOpen} className="pressable block w-full text-left">
+        <button
+          type="button"
+          onClick={press}
+          {...selectProps}
+          className={cn(
+            "pressable block w-full rounded-[20px] text-left transition-shadow",
+            selected && "ring-2 ring-accent ring-offset-2 ring-offset-bg",
+          )}
+        >
           <PlaceImage
             place={place}
             alt=""
@@ -72,8 +97,13 @@ export function PlaceCard({
       ) : (
         <button
           type="button"
-          onClick={onOpen}
-          className="pressable flex w-full items-start gap-3.5 rounded-[20px] bg-fill/60 p-3 pr-12 text-left"
+          onClick={press}
+          {...selectProps}
+          className={cn(
+            "pressable flex w-full items-start gap-3.5 rounded-[20px] bg-fill/60 p-3 text-left transition-shadow",
+            selecting ? "pr-3" : "pr-12",
+            selected && "ring-2 ring-accent ring-offset-2 ring-offset-bg",
+          )}
         >
           <PlaceImage
             place={place}
@@ -101,7 +131,7 @@ export function PlaceCard({
       )}
 
       {/* A mark, not a control — tapping the card is what opens the place. */}
-      {place.favorite ? (
+      {!selecting && place.favorite ? (
         <span
           aria-label="Favorite"
           className={cn(
@@ -115,19 +145,35 @@ export function PlaceCard({
         </span>
       ) : null}
 
-      <button
-        type="button"
-        onClick={onActions}
-        aria-label={`More actions for ${place.name}`}
-        className={cn(
-          "pressable absolute grid size-9 place-items-center rounded-full",
-          hasPhoto
-            ? "right-2.5 top-2.5 bg-black/35 text-white backdrop-blur-md"
-            : "right-2 top-2 text-ink-3",
-        )}
-      >
-        <MoreHorizontal size={19} aria-hidden="true" />
-      </button>
+      {selecting ? (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none absolute right-2.5 top-2.5 grid size-7 place-items-center rounded-full",
+            selected
+              ? "bg-accent text-on-accent shadow-soft"
+              : hasPhoto
+                ? "border-[1.5px] border-white/85 bg-black/25 backdrop-blur-md"
+                : "border-[1.5px] border-ink-3/60 bg-bg/70",
+          )}
+        >
+          {selected ? <Check size={16} strokeWidth={3} aria-hidden="true" /> : null}
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={onActions}
+          aria-label={`More actions for ${place.name}`}
+          className={cn(
+            "pressable absolute grid size-9 place-items-center rounded-full",
+            hasPhoto
+              ? "right-2.5 top-2.5 bg-black/35 text-white backdrop-blur-md"
+              : "right-2 top-2 text-ink-3",
+          )}
+        >
+          <MoreHorizontal size={19} aria-hidden="true" />
+        </button>
+      )}
     </li>
   );
 }

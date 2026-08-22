@@ -18,7 +18,10 @@ Four ways to look at the same travel history:
   than stored, so nothing goes stale when a date moves. A trip is a label on
   visits, never a container for them: a place belongs to at most one, most
   places belong to none, and deleting a trip leaves every place exactly where
-  it was.
+  it was. **Select** in Places ticks several at once and files the lot into a
+  trip — or into one made on the spot — which is how a trip actually gets
+  built: you come home, add everywhere you went, and only then decide they
+  belonged together.
 
 A saved place is one of two things, and the app keeps them apart: somewhere
 you have **been**, or somewhere you **want to go**. A wishlist entry has no
@@ -348,7 +351,7 @@ components/
   ui/                    BottomSheet, SegmentedControl, dialogs, imagery
 lib/
   maps/                  basemap config and layer ids, geocoding
-  trips/                 day numbering and trip summaries, all derived
+  trips/                 day numbering, trip summaries and bulk tagging
   storage/               PlaceRepository seam, sheetPlaceRepository, photoStore
   store/                 PlacesProvider, draft
   sheets/                sheetsClient (all network), mapping, queue, cache,

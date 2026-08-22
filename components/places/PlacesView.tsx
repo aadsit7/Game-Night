@@ -1,10 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
-import { Cloud, CloudOff, Compass, Heart, Loader2, MapPin, Plus, RefreshCw, SearchX } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import {
+  Cloud, CloudOff, Compass, Heart, Loader2, Luggage, MapPin, Plus, RefreshCw, SearchX,
+} from "lucide-react";
 
 import { PlaceCard } from "@/components/places/PlaceCard";
+import { TripTagSheet } from "@/components/places/TripTagSheet";
 import { TravelStats } from "@/components/places/TravelStats";
 import { PlacesFilters } from "@/components/places/PlacesFilters";
 import { PlacesSearch } from "@/components/places/PlacesSearch";
@@ -14,6 +17,7 @@ import { visitTimestamp } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
 import type { SheetStatus } from "@/lib/storage/sheetPlaceRepository";
 import { PLACE_FILTER_LABELS, type PlaceFilter, type PlaceSort, type VisitedPlace } from "@/types/place";
+import type { Trip } from "@/types/trip";
 
 /**
  * One column on a phone, more once there is room — the iPhone layout is never
@@ -73,6 +77,11 @@ export function PlacesView({
   onShowGlobe,
   syncState,
   onOpenSync,
+  trips,
+  tagging,
+  onTagPlaces,
+  onCreateTripFor,
+  onSelectingChange,
 }: {
   places: VisitedPlace[];
   countries: Array<{ key: string; label: string; code?: string; count: number }>;
@@ -85,6 +94,16 @@ export function PlacesView({
   onShowGlobe: () => void;
   syncState: SheetStatus;
   onOpenSync: () => void;
+  /** Every trip a selection can be filed into. */
+  trips: Trip[];
+  /** True while a tag is being written, so the sheet can hold still. */
+  tagging: boolean;
+  /** `null` takes the selection out of whatever trip it is in. */
+  onTagPlaces: (ids: string[], trip: Trip | null) => Promise<boolean>;
+  /** Opens the new-trip form; these places go into whatever comes back. */
+  onCreateTripFor: (ids: string[]) => void;
+  /** Lets the shell stand the tab bar down while the selection bar is up. */
+  onSelectingChange: (selecting: boolean) => void;
 }) {
   const reduceMotion = useReducedMotion();
   const [query, setQuery] = useState("");
@@ -92,6 +111,9 @@ export function PlacesView({
   const [filter, setFilter] = useState<PlaceFilter>("all");
   const [country, setCountry] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [tagOpen, setTagOpen] = useState(false);
 
   const debouncedQuery = useDebouncedValue(query, 140);
 
@@ -124,6 +146,48 @@ export function PlacesView({
   const filtersActive = country !== null || sort !== "recentlyAdded";
   const isEmpty = places.length === 0;
 
+  /*
+   * Selection is held as ids rather than places so it survives a sync landing
+   * mid-selection, and it is narrowed to what is on screen whenever it is
+   * read: filtering down to "Want to go" with three ticks behind it must not
+   * quietly file away places nobody can see.
+   */
+  const selected = useMemo(() => {
+    const ids = new Set(selectedIds);
+    return visible.filter((place) => ids.has(place.id));
+  }, [visible, selectedIds]);
+
+  const setSelectionMode = useCallback(
+    (next: boolean) => {
+      setSelecting(next);
+      if (!next) {
+        setSelectedIds([]);
+        setTagOpen(false);
+      }
+      onSelectingChange(next);
+    },
+    [onSelectingChange],
+  );
+
+  const toggle = useCallback((id: string) => {
+    setSelectedIds((current) =>
+      current.includes(id) ? current.filter((other) => other !== id) : [...current, id],
+    );
+  }, []);
+
+  const allVisibleSelected = visible.length > 0 && selected.length === visible.length;
+
+  const applyTag = useCallback(
+    async (trip: Trip | null) => {
+      const ids = selected.map((place) => place.id);
+      const done = await onTagPlaces(ids, trip);
+      // A failed write keeps the selection, so the tap can simply be repeated
+      // once whatever went wrong is fixed.
+      if (done) setSelectionMode(false);
+    },
+    [selected, onTagPlaces, setSelectionMode],
+  );
+
   return (
     <div className="absolute inset-0 bg-bg">
       <div className="scroll-area absolute inset-0" style={{ paddingBottom: bottomInset }}>
@@ -136,7 +200,29 @@ export function PlacesView({
             <h1 className="text-[34px] font-bold leading-[1.1] tracking-[-0.03em] text-ink">
               My Places
             </h1>
-            <SyncChip state={syncState} onPress={onOpenSync} />
+            {selecting ? (
+              <button
+                type="button"
+                onClick={() => setSelectionMode(false)}
+                className="pressable mt-1.5 min-h-9 shrink-0 rounded-pill px-2 text-[16px] font-semibold text-accent"
+              >
+                Done
+              </button>
+            ) : isEmpty ? (
+              <SyncChip state={syncState} onPress={onOpenSync} />
+            ) : (
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectionMode(true)}
+                  className="pressable mt-1.5 inline-flex min-h-9 items-center gap-1.5 rounded-pill bg-fill px-3 text-[13px] font-medium text-ink-2"
+                >
+                  <Luggage size={14} aria-hidden="true" />
+                  Select
+                </button>
+                <SyncChip state={syncState} onPress={onOpenSync} />
+              </div>
+            )}
           </div>
 
           {loading ? (
@@ -260,6 +346,9 @@ export function PlacesView({
                 priority={index < 2}
                 onOpen={() => onOpenPlace(place.id)}
                 onActions={() => onPlaceActions(place.id)}
+                selecting={selecting}
+                selected={selectedIds.includes(place.id)}
+                onToggleSelect={() => toggle(place.id)}
               />
             ))}
           </motion.ul>
@@ -292,6 +381,75 @@ export function PlacesView({
         country={country}
         onCountryChange={setCountry}
         countries={countries}
+      />
+
+      {/*
+        Stands where the tab bar was — the shell hides it while this is up, the
+        way iOS swaps its own toolbar out during a selection. Two bars stacked
+        would put "Add to Trip" and "Add a place" a thumb-width apart.
+      */}
+      <AnimatePresence>
+        {selecting ? (
+          <motion.div
+            className="fixed inset-x-0 bottom-0 z-30 px-4 pt-3"
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 12px)" }}
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 20 }}
+            transition={{ duration: reduceMotion ? 0 : 0.24, ease: [0.2, 0.8, 0.3, 1] }}
+          >
+            <div className="glass mx-auto flex max-w-[520px] items-center gap-2 rounded-[26px] border border-glass-border p-2 pl-3 shadow-float">
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedIds(allVisibleSelected ? [] : visible.map((place) => place.id))
+                }
+                className="pressable min-h-11 shrink-0 rounded-pill px-2 text-[15px] font-medium text-accent"
+              >
+                {allVisibleSelected ? "Clear" : "Select all"}
+              </button>
+
+              <p
+                aria-live="polite"
+                className="min-w-0 flex-1 truncate text-center text-[14px] tabular-nums text-ink-2"
+              >
+                {selected.length === 0
+                  ? "Pick some places"
+                  : `${selected.length} selected`}
+              </p>
+
+              <button
+                type="button"
+                onClick={() => setTagOpen(true)}
+                disabled={selected.length === 0}
+                className={cn(
+                  "pressable inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-pill px-4",
+                  "text-[15px] font-semibold transition-colors",
+                  selected.length === 0
+                    ? "bg-fill text-ink-3"
+                    : "bg-accent text-on-accent",
+                )}
+              >
+                <Luggage size={16} aria-hidden="true" />
+                Add to Trip
+              </button>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      <TripTagSheet
+        open={tagOpen && selected.length > 0}
+        selected={selected}
+        trips={trips}
+        places={places}
+        saving={tagging}
+        onClose={() => setTagOpen(false)}
+        onChoose={(trip) => void applyTag(trip)}
+        onCreateTrip={() => {
+          onCreateTripFor(selected.map((place) => place.id));
+          setSelectionMode(false);
+        }}
       />
     </div>
   );
