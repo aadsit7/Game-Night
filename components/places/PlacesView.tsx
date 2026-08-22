@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
-  Cloud, CloudOff, Compass, Heart, Loader2, Luggage, MapPin, Plus, RefreshCw, SearchX,
+  Cloud, CloudOff, Compass, Heart, Loader2, Luggage, MapPin, Plus, RefreshCw, SearchX, Trash2,
 } from "lucide-react";
 
 import { PlaceCard } from "@/components/places/PlaceCard";
@@ -12,6 +12,7 @@ import { TravelStats } from "@/components/places/TravelStats";
 import { PlacesFilters } from "@/components/places/PlacesFilters";
 import { PlacesSearch } from "@/components/places/PlacesSearch";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { SwipeRow } from "@/components/ui/SwipeRow";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import { visitTimestamp } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
@@ -83,6 +84,7 @@ export function PlacesView({
   tagging,
   onTagPlaces,
   onCreateTripFor,
+  onDeletePlace,
   onSelectingChange,
 }: {
   places: VisitedPlace[];
@@ -104,6 +106,11 @@ export function PlacesView({
   onTagPlaces: (ids: string[], trip: Trip | null) => Promise<boolean>;
   /** Opens the new-trip form; these places go into whatever comes back. */
   onCreateTripFor: (ids: string[]) => void;
+  /**
+   * Removes a place. Swiping a row is a decision, not a question, so this is
+   * expected to delete and leave an undo standing rather than ask again.
+   */
+  onDeletePlace: (id: string) => void;
   /** Lets the shell stand the tab bar down while the selection bar is up. */
   onSelectingChange: (selecting: boolean) => void;
 }) {
@@ -115,7 +122,14 @@ export function PlacesView({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [tagOpen, setTagOpen] = useState(false);
+  /*
+   * Who is being filed into a trip: the ticked selection, or the single place
+   * whose row was swiped. Held as ids for the same reason the selection is —
+   * a sync landing mid-gesture must not leave a stale record in a sheet.
+   */
+  const [tagIds, setTagIds] = useState<string[] | null>(null);
+  /** The one row currently pulled open, so two can never be. */
+  const [swipedId, setSwipedId] = useState<string | null>(null);
 
   const debouncedQuery = useDebouncedValue(query, 140);
 
@@ -164,7 +178,7 @@ export function PlacesView({
       setSelecting(next);
       if (!next) {
         setSelectedIds([]);
-        setTagOpen(false);
+        setTagIds(null);
       }
       onSelectingChange(next);
     },
@@ -179,15 +193,24 @@ export function PlacesView({
 
   const allVisibleSelected = visible.length > 0 && selected.length === visible.length;
 
+  /** The places the tag sheet is about, whichever way it was opened. */
+  const tagTargets = useMemo(() => {
+    if (!tagIds) return [];
+    const ids = new Set(tagIds);
+    return places.filter((place) => ids.has(place.id));
+  }, [places, tagIds]);
+
   const applyTag = useCallback(
     async (trip: Trip | null) => {
-      const ids = selected.map((place) => place.id);
-      const done = await onTagPlaces(ids, trip);
+      if (!tagIds) return;
+      const done = await onTagPlaces(tagIds, trip);
       // A failed write keeps the selection, so the tap can simply be repeated
       // once whatever went wrong is fixed.
-      if (done) setSelectionMode(false);
+      if (!done) return;
+      setTagIds(null);
+      if (selecting) setSelectionMode(false);
     },
-    [selected, onTagPlaces, setSelectionMode],
+    [tagIds, selecting, onTagPlaces, setSelectionMode],
   );
 
   return (
@@ -346,16 +369,37 @@ export function PlacesView({
             transition={{ duration: reduceMotion ? 0 : 0.28, ease: [0.2, 0.8, 0.3, 1] }}
           >
             {visible.map((place, index) => (
-              <PlaceCard
+              <SwipeRow
                 key={place.id}
-                place={place}
-                priority={index < 2}
-                onOpen={() => onOpenPlace(place.id)}
-                onActions={() => onPlaceActions(place.id)}
-                selecting={selecting}
-                selected={selectedIds.includes(place.id)}
-                onToggleSelect={() => toggle(place.id)}
-              />
+                open={swipedId === place.id}
+                onOpenChange={(next) => setSwipedId(next ? place.id : null)}
+                // Ticking places is its own mode with its own gestures; a row
+                // that both swipes and selects is a coin toss every touch.
+                disabled={selecting}
+                radius={place.coverImage ? 20 : 18}
+                left={{
+                  label: "Trip",
+                  tone: "accent",
+                  icon: <Luggage size={19} aria-hidden="true" />,
+                  onAction: () => setTagIds([place.id]),
+                }}
+                right={{
+                  label: "Delete",
+                  tone: "danger",
+                  icon: <Trash2 size={19} aria-hidden="true" />,
+                  onAction: () => onDeletePlace(place.id),
+                }}
+              >
+                <PlaceCard
+                  place={place}
+                  priority={index < 2}
+                  onOpen={() => onOpenPlace(place.id)}
+                  onActions={() => onPlaceActions(place.id)}
+                  selecting={selecting}
+                  selected={selectedIds.includes(place.id)}
+                  onToggleSelect={() => toggle(place.id)}
+                />
+              </SwipeRow>
             ))}
           </motion.ul>
         )}
@@ -426,7 +470,7 @@ export function PlacesView({
 
               <button
                 type="button"
-                onClick={() => setTagOpen(true)}
+                onClick={() => setTagIds(selected.map((place) => place.id))}
                 disabled={selected.length === 0}
                 className={cn(
                   "pressable inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-pill px-4",
@@ -445,15 +489,16 @@ export function PlacesView({
       </AnimatePresence>
 
       <TripTagSheet
-        open={tagOpen && selected.length > 0}
-        selected={selected}
+        open={tagTargets.length > 0}
+        selected={tagTargets}
         trips={trips}
         places={places}
         saving={tagging}
-        onClose={() => setTagOpen(false)}
+        onClose={() => setTagIds(null)}
         onChoose={(trip) => void applyTag(trip)}
         onCreateTrip={() => {
-          onCreateTripFor(selected.map((place) => place.id));
+          onCreateTripFor(tagTargets.map((place) => place.id));
+          setTagIds(null);
           setSelectionMode(false);
         }}
       />
