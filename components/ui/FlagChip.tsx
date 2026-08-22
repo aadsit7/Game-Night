@@ -57,6 +57,7 @@ export function FlagChip({
   variant = "visited",
   size = "sm",
   className,
+  style,
   title,
 }: {
   countryCode?: string;
@@ -64,6 +65,8 @@ export function FlagChip({
   variant?: FlagVariant;
   size?: FlagChipSize;
   className?: string;
+  /** Layout only — the chip owns its own size and colour. */
+  style?: React.CSSProperties;
   /** Screen-reader name. Omit for a chip that only repeats adjacent text. */
   title?: string;
 }) {
@@ -81,12 +84,19 @@ export function FlagChip({
     <span
       {...a11y}
       className={cn("relative inline-grid shrink-0 place-items-center align-middle", className)}
-      style={{ width: box, height: box }}
+      style={{ width: box, height: box, ...style }}
     >
       <span
         className="relative grid size-full place-items-center overflow-hidden rounded-full bg-fill-strong"
         style={{
-          boxShadow: `0 0 0 ${ring}px var(--c-chip-ring), 0 1px 3px rgba(12, 16, 22, 0.22)`,
+          /* Ring, hairline, shadow. The hairline is what keeps a white flag —
+             Japan's is mostly white, Finland's nearly all of it — from
+             dissolving into a white ring on a pale card. */
+          boxShadow: [
+            `0 0 0 ${ring}px var(--c-chip-ring)`,
+            `0 0 0 ${ring + 0.5}px rgba(16, 20, 28, 0.1)`,
+            "0 1px 3px rgba(12, 16, 22, 0.2)",
+          ].join(", "),
           // The tint stands in for a flag we cannot draw; where we can, the
           // flag itself covers the disc and this never shows.
           background: emoji && supported ? undefined : flagTint(countryCode),

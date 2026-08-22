@@ -4,14 +4,14 @@ import { FlagChip } from "@/components/ui/FlagChip";
 import { cn } from "@/lib/utils/cn";
 
 /**
- * A small progress read-out, in the spirit of a travel app's "coverage" screen
- * but kept to a single row rather than a tab of its own — the point of this app
- * is still the places, not the scoreboard.
+ * How much of the world, and which of it.
  *
- * Under the numbers, the countries themselves. Three figures say how much of
- * the world you have seen; the rail says *which* of it, in the same chips the
- * globe drops on the Earth — and tapping one filters the list, so the row is a
- * way through the collection rather than a trophy shelf.
+ * This was three tiles and a progress ring — seventy pixels of chrome to say
+ * three short facts, above a rail of flags that says the same thing better. A
+ * line of text carries the figures now, and the countries themselves carry the
+ * coverage: nine flags reads as "nine countries" without anyone counting, and
+ * tapping one filters the list, so the row is a way through the collection
+ * rather than a trophy shelf.
  */
 
 export type CountryTally = { key: string; label: string; code?: string; count: number };
@@ -35,28 +35,27 @@ export function TravelStats({
   onSelect?: (key: string | null) => void;
 }) {
   const coverage = Math.min(100, (countries / COUNTRIES_IN_THE_WORLD) * 100);
+  const share = coverage > 0 && coverage < 1 ? "<1%" : `${Math.round(coverage)}%`;
 
   return (
     <div>
-      <div className="grid grid-cols-3 gap-2.5">
-        <Tile value={visited.toLocaleString()} label="Visited" />
-        <Tile
-          value={countries.toLocaleString()}
-          label={countries === 1 ? "Country" : "Countries"}
-        />
-        <Tile
-          value={coverage < 1 && coverage > 0 ? "<1%" : `${Math.round(coverage)}%`}
-          label="Of world"
-          ring={coverage}
-        />
-      </div>
+      <p className="text-[14px] text-ink-2">
+        {/* "Visited", not "places": the wishlist is not somewhere you have been,
+            and this figure has never counted it. */}
+        <Figure value={visited} label="visited" />
+        <Dot />
+        <Figure value={countries} label={countries === 1 ? "country" : "countries"} />
+        <Dot />
+        <span className="font-semibold tabular-nums text-ink">{share}</span>{" "}
+        <span>of the world</span>
+      </p>
 
       {/* One country is not a collection, and a rail of one is just a bullet. */}
       {onSelect && collected.length > 1 ? (
         <div
           role="group"
           aria-label="Filter by country"
-          className="scrollbar-none -mx-1 mt-2.5 flex gap-2.5 overflow-x-auto px-1 pb-1 pt-0.5"
+          className="scrollbar-none -mx-4 mt-2.5 flex gap-2 overflow-x-auto px-4 pb-0.5"
         >
           {collected.map((country) => {
             const active = selected === country.key;
@@ -84,61 +83,19 @@ export function TravelStats({
   );
 }
 
-function Tile({
-  value,
-  label,
-  ring,
-}: {
-  value: string;
-  label: string;
-  ring?: number;
-}) {
+function Figure({ value, label }: { value: number; label: string }) {
   return (
-    <div className="flex items-center gap-2.5 rounded-md bg-fill/60 px-3 py-2.5">
-      {ring !== undefined ? <Ring percent={ring} /> : null}
-      <div className="min-w-0">
-        <p className="truncate text-[19px] font-semibold leading-none tracking-[-0.02em] text-ink tabular-nums">
-          {value}
-        </p>
-        <p className="mt-1 truncate text-[12px] text-ink-2">{label}</p>
-      </div>
-    </div>
+    <>
+      <span className="font-semibold tabular-nums text-ink">{value.toLocaleString()}</span>{" "}
+      <span>{label}</span>
+    </>
   );
 }
 
-function Ring({ percent }: { percent: number }) {
-  const radius = 13;
-  const circumference = 2 * Math.PI * radius;
-  // A sliver of arc for any non-zero value, so "visited something" always reads.
-  const filled = percent > 0 ? Math.max(circumference * (percent / 100), 2) : 0;
-
+function Dot() {
   return (
-    <svg
-      viewBox="0 0 32 32"
-      className="size-8 shrink-0 -rotate-90"
-      aria-hidden="true"
-      role="presentation"
-    >
-      <circle
-        cx="16"
-        cy="16"
-        r={radius}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="3"
-        className="text-fill-strong"
-      />
-      <circle
-        cx="16"
-        cy="16"
-        r={radius}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeLinecap="round"
-        strokeDasharray={`${filled} ${circumference}`}
-        className="text-accent"
-      />
-    </svg>
+    <span aria-hidden="true" className="mx-1.5 text-ink-3">
+      ·
+    </span>
   );
 }

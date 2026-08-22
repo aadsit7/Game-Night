@@ -167,26 +167,17 @@ export function PlaceDetailSheet({
             ) : null}
 
             {/*
-              State reads as a badge, not as a row of facts. "Want to go" and
-              "Favorite" are what this place *is* to you, and belong beside the
-              name — a grouped row headed ON YOUR LIST spent four lines saying
-              what a two-word pill says at a glance.
+              State reads as a badge, not as a row of facts — but only where
+              nothing else is already saying it. The favourite control in the
+              header is a filled red heart when it is on, three centimetres
+              above where a pill reading "Favorite" used to repeat it; a wish,
+              which has no control of its own here, still needs saying.
             */}
-            {place.wantToGo || place.favorite ? (
+            {place.wantToGo ? (
               <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                {place.wantToGo ? (
-                  <Badge icon={<Bookmark size={13} aria-hidden="true" />} tone="accent">
-                    Want to go
-                  </Badge>
-                ) : null}
-                {place.favorite ? (
-                  <Badge
-                    icon={<Heart size={13} aria-hidden="true" fill="currentColor" />}
-                    tone="danger"
-                  >
-                    Favorite
-                  </Badge>
-                ) : null}
+                <Badge icon={<Bookmark size={13} aria-hidden="true" />} tone="accent">
+                  Want to go
+                </Badge>
               </div>
             ) : null}
 

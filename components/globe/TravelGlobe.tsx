@@ -15,6 +15,7 @@ import { GlobeFallback } from "@/components/globe/GlobeFallback";
 import { usePrefersDark, usePrefersReducedMotion } from "@/lib/hooks/useMediaQuery";
 import {
   CITY_LAYERS,
+  COUNT_BADGE_TEXT_SIZE,
   COUNTRIES_URL,
   COUNTRY_BEFORE_IDS,
   COUNTRY_FILL_OPACITY,
@@ -27,7 +28,6 @@ import {
   LABEL_OPACITY_DEFAULT,
   LAYER_CLUSTER,
   LAYER_CLUSTER_COUNT,
-  LAYER_CLUSTER_GLOW,
   LAYER_COUNTRY_FILL,
   LAYER_COUNTRY_LINE,
   LAYER_PIN,
@@ -39,6 +39,9 @@ import {
   SOURCE_ID,
   STYLE_URLS,
   assetUrl,
+  clusterIconSize,
+  countBadgeOffset,
+  countBadgeTextOffset,
   labelOpacity,
   labelSortKey,
   loadMapLibre,
@@ -50,10 +53,23 @@ import {
   type MapView,
   type OverlayPalette,
 } from "@/lib/maps/basemap";
-import { MARKER_PIXEL_RATIO, drawMarker, markerImageId } from "@/lib/maps/flagMarkers";
+import {
+  COUNT_BADGE_IMAGE,
+  MARKER_PIXEL_RATIO,
+  drawCountBadge,
+  drawMarker,
+  markerImageId,
+} from "@/lib/maps/flagMarkers";
 import { applyBasemapTheme, paletteFor } from "@/lib/maps/theme";
 import { flagVariant, type FlagVariant } from "@/lib/ui/flags";
-import { boundsForPlaces, hasValidCoordinates, placeSubtitle } from "@/lib/utils/geo";
+import {
+  angularDistance,
+  hasValidCoordinates,
+  horizonRing,
+  largestZoomThatFits,
+  placeSubtitle,
+  sphericalCentre,
+} from "@/lib/utils/geo";
 import type { VisitedPlace } from "@/types/place";
 
 export type GlobePoint = { longitude: number; latitude: number };
@@ -65,6 +81,13 @@ export type CameraRequest = {
   latitude: number;
   zoom?: number;
   duration?: number;
+  /**
+   * Frame all of these rather than flying to a fixed zoom. Used when the
+   * request means "show me what is inside this", where the right distance
+   * depends on how far apart the contents are — a country the size of Canada
+   * and a weekend in Lisbon are the same request and not the same camera.
+   */
+  fit?: GlobePoint[];
 };
 
 export type TravelGlobeHandle = {
@@ -102,6 +125,12 @@ type Props = {
 };
 
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+/** How far from the equator a whole-planet view is allowed to look. */
+const WORLD_VIEW_LATITUDE = 52;
+
+/** Just inside the silhouette, where the sphere is still drawing itself. */
+const HORIZON_DEGREES = 87;
 
 function toFeatureCollection(places: VisitedPlace[]): FeatureCollection {
   return {
@@ -155,6 +184,15 @@ function registerMarkerImages(
     }
   };
 
+  try {
+    if (!map.hasImage(COUNT_BADGE_IMAGE)) {
+      const badge = drawCountBadge(overlay);
+      if (badge) map.addImage(COUNT_BADGE_IMAGE, badge, { pixelRatio: MARKER_PIXEL_RATIO });
+    }
+  } catch {
+    // Same reasoning as the chips below.
+  }
+
   // Somewhere the geocoder could not name a country for still gets a mark.
   add(undefined, "visited");
   for (const place of places) add(place.countryCode, flagVariant(place));
@@ -183,6 +221,12 @@ function installStyleLayers(
          is that you can see it from up there. */
       clusterRadius: 36,
       clusterMaxZoom: 9,
+      /* Carry one of the members' chips up to the cluster. `coalesce` keeps
+         whichever arrived first rather than the last, so the flag a cluster
+         wears does not flicker between its members as the map moves. */
+      clusterProperties: {
+        icon: [["coalesce", ["accumulated"], ["get", "icon"]], ["get", "icon"]],
+      },
     });
   }
 
@@ -233,36 +277,25 @@ function installStyleLayers(
     // Country highlighting is a garnish; never let it break the globe.
   }
 
-  if (!map.getLayer(LAYER_CLUSTER_GLOW)) {
-    map.addLayer({
-      id: LAYER_CLUSTER_GLOW,
-      type: "circle",
-      source: SOURCE_ID,
-      filter: ["has", "point_count"],
-      paint: {
-        /* Atmosphere, not information — the ring and the count already say
-           "several places here", and this only has to suggest that they spread
-           out. A darker, higher-opacity aura measures better and looks like a
-           smudge; in the traveller's own warm hue at low alpha it reads as a
-           halo. It doubles as a generous tap target for the cluster. */
-        "circle-color": overlay.clusterGlow,
-        "circle-opacity": 0.14,
-        "circle-radius": ["step", ["get", "point_count"], 26, 5, 31, 15, 37, 40, 43],
-      },
-    });
-  }
-
+  /*
+   * A cluster wears the flag of one of the places inside it.
+   *
+   * Which one is whichever the source happened to reduce first — there is no
+   * "most common country" to be had out of a clustering index, and it does not
+   * matter: places this close together are nearly always in the same country,
+   * and where they are not, the flag is a fair sample rather than a claim. The
+   * count badge is what carries the number.
+   */
   if (!map.getLayer(LAYER_CLUSTER)) {
     map.addLayer({
       id: LAYER_CLUSTER,
-      type: "circle",
+      type: "symbol",
       source: SOURCE_ID,
       filter: ["has", "point_count"],
-      paint: {
-        "circle-color": overlay.cluster,
-        "circle-radius": ["step", ["get", "point_count"], 17, 5, 21, 15, 26, 40, 31],
-        "circle-stroke-width": 2.5,
-        "circle-stroke-color": overlay.pinStroke,
+      layout: {
+        "icon-image": MARKER_ICON_IMAGE,
+        "icon-size": clusterIconSize(),
+        "icon-allow-overlap": true,
       },
     });
   }
@@ -274,9 +307,14 @@ function installStyleLayers(
       source: SOURCE_ID,
       filter: ["has", "point_count"],
       layout: {
+        "icon-image": COUNT_BADGE_IMAGE,
+        "icon-offset": countBadgeOffset(),
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
         "text-field": ["get", "point_count_abbreviated"],
         "text-font": FONT_BOLD,
-        "text-size": ["step", ["get", "point_count"], 13, 15, 14, 40, 15],
+        "text-size": COUNT_BADGE_TEXT_SIZE,
+        "text-offset": countBadgeTextOffset(),
         "text-allow-overlap": true,
         "text-ignore-placement": true,
       },
@@ -738,13 +776,6 @@ export function TravelGlobe({
       if (map.getLayer(LAYER_PIN_HALO)) {
         map.setPaintProperty(LAYER_PIN_HALO, "circle-color", overlay.pinSelected);
       }
-      if (map.getLayer(LAYER_CLUSTER)) {
-        map.setPaintProperty(LAYER_CLUSTER, "circle-color", overlay.cluster);
-        map.setPaintProperty(LAYER_CLUSTER, "circle-stroke-color", overlay.pinStroke);
-      }
-      if (map.getLayer(LAYER_CLUSTER_GLOW)) {
-        map.setPaintProperty(LAYER_CLUSTER_GLOW, "circle-color", overlay.clusterGlow);
-      }
       if (map.getLayer(LAYER_COUNTRY_FILL)) {
         map.setPaintProperty(LAYER_COUNTRY_FILL, "fill-color", overlay.country);
       }
@@ -791,33 +822,114 @@ export function TravelGlobe({
     }
   }, [places, prefersDark, styleReady, styleEpoch]);
 
-  /* Frame the traveller's world once the data has arrived, with a gentle
-     arrival rather than a jump-cut. */
+  /**
+   * Frame the traveller's world once the data has arrived.
+   *
+   * Centre and zoom are answered separately because they are different kinds
+   * of question. The centre is spherical geometry and belongs in a pure
+   * function; the zoom depends on how this renderer draws a sphere, so the
+   * renderer is asked — `jumpTo` and `project` inside one task, which the
+   * browser never paints between, so the search is invisible.
+   */
+  const frameOn = useCallback(
+    (points: GlobePoint[], maxZoom: number): { center: [number, number]; zoom: number } | null => {
+      const map = mapRef.current;
+      const centre = sphericalCentre(points);
+      if (!map || !centre) return null;
+
+      /* A place more than a quarter turn from the centre is behind the planet,
+         and no zoom brings it round — `project` still returns a coordinate for
+         it, which would otherwise read as "fits". */
+      const overHorizon = points.some((point) => angularDistance(centre, point) >= 88);
+
+      /*
+       * When the collection wraps the planet there is no frame that holds all
+       * of it, and the honest answer is the whole globe. Which face of it,
+       * though, is a matter of taste rather than arithmetic: a traveller with
+       * Svalbard, Iceland and the Faroes on the list has a mean direction well
+       * inside the Arctic circle, and a globe seen down its own axis reads as a
+       * diagram of the pole rather than as anybody's world. Easing the latitude
+       * back towards the equator costs nothing — those northern places are
+       * still comfortably in view — and buys a picture that looks like Earth.
+       */
+      const latitude = overHorizon
+        ? Math.max(-WORLD_VIEW_LATITUDE, Math.min(WORLD_VIEW_LATITUDE, centre.latitude))
+        : centre.latitude;
+      const center: [number, number] = [centre.longitude, latitude];
+
+      /* Nothing to frame but the planet itself, so frame the planet: its own
+         horizon, as a ring of points, goes through the same search as any
+         other collection and comes back with the zoom that fills the screen
+         with Earth instead of leaving it adrift in the middle. */
+      const framed = overHorizon
+        ? horizonRing({ longitude: centre.longitude, latitude }, HORIZON_DEGREES)
+        : points;
+
+      const padding = cameraPadding();
+      const container = map.getContainer();
+      /* The planet is allowed nearly the full width of the phone. A sphere on
+         a screen this narrow is width-bound whatever else is on it, and the
+         side margin that keeps a *pin* off the edge only shrinks the Earth —
+         which is the one thing this screen is for. */
+      const side = overHorizon ? 10 : padding.left;
+      const box = {
+        left: side,
+        right: container.clientWidth - side,
+        top: padding.top,
+        bottom: container.clientHeight - padding.bottom,
+      };
+
+      const fits = (zoom: number) => {
+        map.jumpTo({ center, zoom });
+        return framed.every((point) => {
+          const at = map.project([point.longitude, point.latitude]);
+          return at.x >= box.left && at.x <= box.right && at.y >= box.top && at.y <= box.bottom;
+        });
+      };
+
+      try {
+        const before = { center: map.getCenter(), zoom: map.getZoom() };
+        const zoom = largestZoomThatFits(fits, map.getMinZoom(), maxZoom);
+        // Put the camera back: the caller decides how it travels to the frame.
+        map.jumpTo({ center: before.center, zoom: before.zoom });
+        return { center, zoom };
+      } catch {
+        return null;
+      }
+    },
+    [cameraPadding],
+  );
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleReady || !dataReady || framedRef.current) return;
     framedRef.current = true;
 
-    const bounds = boundsForPlaces(places);
-    if (!bounds) {
+    // A lone place would otherwise be framed from its own rooftop.
+    const frame = frameOn(places.filter(hasValidCoordinates), 5.6);
+    if (!frame) {
       map.jumpTo({ center: DEFAULT_CAMERA.center, zoom: DEFAULT_CAMERA.zoom });
       return;
     }
 
     try {
-      // Let the renderer solve the framing, then rewind and fly into it.
-      map.fitBounds(bounds, { padding: cameraPadding(), maxZoom: 3.4, duration: 0 });
-      const center = map.getCenter();
-      const zoom = map.getZoom();
-
-      if (reduceMotion) return;
-
-      map.jumpTo({ center, zoom: Math.max(0.45, zoom - 1.15) });
-      map.easeTo({ center, zoom, duration: 2000, easing: easeOutCubic });
+      if (reduceMotion) {
+        map.jumpTo({ center: frame.center, zoom: frame.zoom, padding: cameraPadding() });
+        return;
+      }
+      // Rewind and fly in, so the planet arrives rather than appearing.
+      map.jumpTo({ center: frame.center, zoom: Math.max(map.getMinZoom(), frame.zoom - 1.1) });
+      map.easeTo({
+        center: frame.center,
+        zoom: frame.zoom,
+        padding: cameraPadding(),
+        duration: 2000,
+        easing: easeOutCubic,
+      });
     } catch {
       map.jumpTo({ center: DEFAULT_CAMERA.center, zoom: DEFAULT_CAMERA.zoom });
     }
-  }, [places, dataReady, styleReady, reduceMotion, cameraPadding]);
+  }, [places, dataReady, styleReady, reduceMotion, cameraPadding, frameOn]);
 
   /* ---------------------------------------------------------------------- */
   /* Selection                                                                */
@@ -893,9 +1005,12 @@ export function TravelGlobe({
     const map = mapRef.current;
     if (!map || !styleReady || !cameraRequest || cameraToken === null) return;
 
+    // Never closer than a neighbourhood, however tightly the places cluster.
+    const frame = cameraRequest.fit?.length ? frameOn(cameraRequest.fit, 9) : null;
+
     map.flyTo({
-      center: [cameraRequest.longitude, cameraRequest.latitude],
-      zoom: cameraRequest.zoom ?? 6.5,
+      center: frame?.center ?? [cameraRequest.longitude, cameraRequest.latitude],
+      zoom: frame?.zoom ?? cameraRequest.zoom ?? 6.5,
       duration: reduceMotion ? 0 : (cameraRequest.duration ?? 1800),
       curve: 1.5,
       speed: 1.1,

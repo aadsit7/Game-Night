@@ -22,6 +22,7 @@ const suites = [
   "sheet-stack.test.mjs",
   "tagging.test.mjs",
   "flag-chips.test.mjs",
+  "globe-frame.test.mjs",
 ];
 
 let failed = false;

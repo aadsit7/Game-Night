@@ -86,6 +86,51 @@ function starPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, outer: 
   ctx.closePath();
 }
 
+/** The id of the badge that turns a chip into "several places here". */
+export const COUNT_BADGE_IMAGE = "flag:count-badge";
+
+/** CSS pixels of the badge sprite — wide enough for three characters. */
+export const COUNT_BADGE_BOX = 26;
+
+/**
+ * The disc a cluster's count sits in.
+ *
+ * A cluster is the same chip as a single place — a flag, cropped to a circle —
+ * because a group of places in Portugal is still Portugal. What makes it a
+ * group is this: a filled badge in the traveller's own colour, ringed like the
+ * chip it hangs off, with the number drawn over it by the label layer.
+ */
+export function drawCountBadge(overlay: OverlayPalette): ImageData | null {
+  if (typeof document === "undefined") return null;
+
+  const scale = MARKER_PIXEL_RATIO;
+  const canvas = document.createElement("canvas");
+  canvas.width = COUNT_BADGE_BOX * scale;
+  canvas.height = COUNT_BADGE_BOX * scale;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+
+  ctx.scale(scale, scale);
+  const centre = COUNT_BADGE_BOX / 2;
+
+  ctx.save();
+  ctx.shadowColor = "rgba(8, 12, 20, 0.4)";
+  ctx.shadowBlur = 4;
+  ctx.shadowOffsetY = 1;
+  ctx.fillStyle = overlay.pinStroke;
+  ctx.beginPath();
+  ctx.arc(centre, centre, centre - 1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = overlay.cluster;
+  ctx.beginPath();
+  ctx.arc(centre, centre, centre - 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  return ctx.getImageData(0, 0, canvas.width, canvas.height);
+}
+
 /**
  * One chip, as pixels.
  *

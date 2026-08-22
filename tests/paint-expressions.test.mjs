@@ -45,6 +45,29 @@ const SPEC = {
   "icon-image": styleSpec.layout_symbol["icon-image"],
 };
 
+/**
+ * `icon-offset` and `text-offset` are handed to the renderer as plain
+ * two-number arrays, which is how every offset in this app is written and what
+ * the spec calls for. They are deliberately not run through the expression
+ * compiler: to that, a bare `[13, -13]` is a call to an operator named `13`.
+ */
+const OFFSET_SPEC = {
+  "icon-offset": styleSpec.layout_symbol["icon-offset"],
+  "text-offset": styleSpec.layout_symbol["text-offset"],
+};
+for (const [name, def] of Object.entries(OFFSET_SPEC)) {
+  if (!def || def.type !== "array" || def.length !== 2) {
+    throw new Error(`the spec no longer describes ${name} as a pair of numbers`);
+  }
+}
+
+function validOffset(property, value) {
+  assert.ok(Array.isArray(value) && value.length === 2, `${property} is not a pair`);
+  for (const part of value) {
+    assert.ok(Number.isFinite(part), `${property} has a non-number in it: ${part}`);
+  }
+}
+
 for (const [name, def] of Object.entries(SPEC)) {
   if (!def) throw new Error(`the style spec has no definition for ${name}`);
 }
@@ -79,6 +102,43 @@ check("icon-size default", () => valid("icon-size", paint.MARKER_ICON_SIZE_DEFAU
 check("icon-image", () => valid("icon-image", paint.MARKER_ICON_IMAGE));
 check("halo radius", () => valid("circle-radius", paint.HALO_RADIUS));
 check("text-opacity default", () => valid("text-opacity", paint.LABEL_OPACITY_DEFAULT));
+
+console.log("clusters, which are chips too");
+
+check("the cluster's own layout compiles", () => {
+  valid("icon-size", paint.clusterIconSize());
+  validOffset("icon-offset", paint.countBadgeOffset());
+  validOffset("text-offset", paint.countBadgeTextOffset());
+});
+
+check("a cluster reads as bigger than one place, at every zoom", () => {
+  const one = compile("icon-size", paint.MARKER_ICON_SIZE_DEFAULT);
+  const many = compile("icon-size", paint.clusterIconSize());
+  for (const zoom of [0, 1, 3, 6, 9]) {
+    const single = one.value.evaluate({ zoom }, {});
+    const cluster = many.value.evaluate({ zoom }, {});
+    assert.ok(cluster > single, `at zoom ${zoom} a cluster (${cluster}) is not bigger than a pin (${single})`);
+  }
+});
+
+check("the count sits on its badge rather than beside it", () => {
+  /* Two properties in two different units describing one point on screen:
+     `icon-offset` in the icon's pixels, `text-offset` in ems of the text. Drift
+     between them is invisible in code and obvious on the map — a number
+     hanging off the edge of the disc it is supposed to be inside. */
+  const [iconX, iconY] = paint.countBadgeOffset();
+  const [textX, textY] = paint.countBadgeTextOffset();
+  const size = paint.COUNT_BADGE_TEXT_SIZE;
+  assert.ok(Math.abs(textX * size - iconX) < 0.5, `badge x is ${iconX}px, its number is ${(textX * size).toFixed(1)}px`);
+  assert.ok(Math.abs(textY * size - iconY) < 0.5, `badge y is ${iconY}px, its number is ${(textY * size).toFixed(1)}px`);
+});
+
+check("the badge hangs clear of the marks the chip already carries", () => {
+  // Bottom right belongs to the favourite and wishlist badges, and a cluster
+  // wears one of its members' chips — so the count goes the other way.
+  const [, y] = paint.countBadgeOffset();
+  assert.ok(y < 0, "the count badge is on top of the favourite badge");
+});
 
 console.log("the behaviour the expressions are meant to encode");
 

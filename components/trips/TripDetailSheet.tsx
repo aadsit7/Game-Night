@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarRange, MapPin, Pencil, Plus, TriangleAlert, X } from "lucide-react";
+import { MapPin, Pencil, Plus, TriangleAlert, X } from "lucide-react";
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -14,7 +14,8 @@ import {
   type TripDay,
 } from "@/lib/trips/tripDays";
 import { formatVisitRange } from "@/lib/utils/date";
-import { countryFlag } from "@/lib/utils/geo";
+import { flagVariant } from "@/lib/ui/flags";
+import { countryFlag, placeSubtitle } from "@/lib/utils/geo";
 import type { VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
 
@@ -213,33 +214,40 @@ function DaySection({ day, onOpenPlace }: { day: TripDay; onOpenPlace: (id: stri
  */
 function PlaceRow({ place, onOpen }: { place: VisitedPlace; onOpen: () => void }) {
   const hasFlag = Boolean(countryFlag(place.countryCode));
-  const where = [place.city, place.country].filter(Boolean).join(", ");
+  // The city is the place as often as not: "Sintra, Sintra, Portugal".
+  const where = placeSubtitle(place) || place.country;
   const span =
     place.visitedTo && place.visitedTo !== place.visitedFrom
       ? formatVisitRange(place.visitedFrom, place.visitedTo)
       : null;
 
+  const hasPhoto = Boolean(place.coverImage);
+
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="pressable -mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-md px-2 py-2 text-left"
+      className="pressable -mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-md px-2 py-1.5 text-left"
     >
-      <PlaceImage place={place} alt="" className="size-[46px] shrink-0 overflow-hidden rounded-sm" />
+      {hasPhoto ? (
+        <PlaceImage
+          place={place}
+          alt=""
+          className="size-[42px] shrink-0 overflow-hidden rounded-[13px]"
+        />
+      ) : (
+        <FlagChip countryCode={place.countryCode} variant={flagVariant(place)} size="lg" />
+      )}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[16px] font-medium leading-tight text-ink">
           {place.name}
         </span>
-        <span className="mt-0.5 block truncate text-[13px] text-ink-2">
-          {hasFlag ? <FlagChip countryCode={place.countryCode} className="mr-1.5" /> : null}
-          {where || place.country}
+        <span className="block truncate text-[13px] leading-snug text-ink-2">
+          {hasPhoto && hasFlag ? (
+            <FlagChip countryCode={place.countryCode} className="mr-1.5" />
+          ) : null}
+          {[where, span].filter(Boolean).join(" · ")}
         </span>
-        {span ? (
-          <span className="mt-0.5 flex items-center gap-1.5 text-[12.5px] tabular-nums text-ink-3">
-            <CalendarRange size={12} aria-hidden="true" className="shrink-0" />
-            <span className="truncate">{span}</span>
-          </span>
-        ) : null}
       </span>
     </button>
   );

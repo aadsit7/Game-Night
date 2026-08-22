@@ -1,30 +1,28 @@
 "use client";
 
-import { Check, Heart, MapPin, MoreHorizontal } from "lucide-react";
+import { Check, Heart, MoreHorizontal } from "lucide-react";
 
 import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
 import { formatVisitShort } from "@/lib/utils/date";
+import { flagVariant } from "@/lib/ui/flags";
 import { countryFlag } from "@/lib/utils/geo";
 import { cn } from "@/lib/utils/cn";
 import type { VisitedPlace } from "@/types/place";
 
 /**
- * A travel-journal entry, not a table row: a wide photograph, the name in a
- * confident size, and just enough detail underneath.
+ * A travel-journal entry, not a table row.
  *
- * A place with no photograph gets the compact form instead. The tall card is
- * built around a picture, and standing a tinted placeholder in for one costs
- * most of an iPhone screen to say nothing — two photo-less places used to fill
- * the whole list. The same details, laid out around a small mark, put four or
- * five on screen at once and read as deliberate rather than unfinished.
+ * Two forms, decided by one thing: whether there is a photograph. With one,
+ * the card is built around it — a wide picture and the details underneath,
+ * which is what a journal looks like. Without one, the card is a row: the
+ * country's chip, the name, and a line of detail.
  *
- * The `•••` button sits over the card rather than inside it — interactive
- * elements must not nest, and a fixed corner is easier to hit than something
- * that moves with the text.
- *
- * In selection mode the whole card becomes the checkbox and `•••` goes away.
- * A card that both opens a place and ticks it would be a coin toss every tap.
+ * The row used to stand a tinted gradient in for the missing photograph, at
+ * the same size as a real one. Twelve of those down a page is most of a phone
+ * screen spent saying "no picture here" twelve times, in a mark that carries
+ * no information at all. The chip in its place is both smaller and true: it
+ * says which country you are looking at.
  */
 export function PlaceCard({
   place,
@@ -44,14 +42,24 @@ export function PlaceCard({
   selected?: boolean;
   onToggleSelect?: () => void;
 }) {
-  const when = formatVisitShort(place.visitedFrom, place.visitedTo);
   const hasFlag = Boolean(countryFlag(place.countryCode));
-  const location = [place.city, place.country]
-    .filter((part): part is string => Boolean(part && part !== place.name))
-    .join(", ");
   const hasPhoto = Boolean(place.coverImage);
-  // A wishlist entry has no date to show, so it says what it is instead.
-  const meta = place.wantToGo ? "Want to go" : when;
+  /*
+   * Where and when, on one line.
+   *
+   * They were two lines and a pill: the city, then the dates, then — for
+   * somewhere still to go — an accent chip saying so. Three rows of type for
+   * six words. The chip beside the name carries the wishlist mark now, which
+   * leaves this free to be what it always was: a caption.
+   */
+  const detail = [
+    [place.city, place.country]
+      .filter((part): part is string => Boolean(part && part !== place.name))
+      .join(", "),
+    place.wantToGo ? "Want to go" : formatVisitShort(place.visitedFrom, place.visitedTo),
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   const press = selecting ? onToggleSelect : onOpen;
   // The tick is a state of the card, so the card carries the pressed state
@@ -79,19 +87,16 @@ export function PlaceCard({
             className="aspect-[16/10] w-full rounded-[20px]"
           />
 
-          <div className="px-0.5 pt-2.5">
-            <h3 className="wrap-anywhere clamp-2 text-[19px] font-semibold leading-tight tracking-[-0.02em] text-ink">
+          <div className="px-0.5 pt-2">
+            <h3 className="wrap-anywhere clamp-2 text-[18px] font-semibold leading-tight tracking-[-0.02em] text-ink">
               {place.name}
             </h3>
-            {location ? (
-              <p className="mt-1 truncate text-[14px] text-ink-2">
-                {hasFlag ? <FlagChip countryCode={place.countryCode} className="mr-1.5" /> : null}
-                {location}
-              </p>
-            ) : null}
-            {meta ? <Meta text={meta} wantToGo={place.wantToGo} /> : null}
+            <p className="mt-1 truncate text-[13.5px] text-ink-2">
+              {hasFlag ? <FlagChip countryCode={place.countryCode} className="mr-1.5" /> : null}
+              {detail}
+            </p>
             {place.notes ? (
-              <p className="clamp-2 mt-1.5 text-[14px] leading-relaxed text-ink-2">{place.notes}</p>
+              <p className="clamp-1 mt-1 text-[13.5px] leading-snug text-ink-3">{place.notes}</p>
             ) : null}
           </div>
         </button>
@@ -101,46 +106,37 @@ export function PlaceCard({
           onClick={press}
           {...selectProps}
           className={cn(
-            "pressable flex w-full items-start gap-3.5 rounded-[20px] bg-fill/60 p-3 text-left transition-shadow",
-            selecting ? "pr-3" : "pr-12",
+            "pressable flex w-full items-center gap-3 rounded-[18px] bg-fill/50 py-2.5 pl-3 text-left transition-shadow",
+            selecting ? "pr-3" : "pr-11",
             selected && "ring-2 ring-accent ring-offset-2 ring-offset-bg",
           )}
         >
-          <PlaceImage
-            place={place}
-            alt=""
-            priority={priority}
-            className="size-[68px] shrink-0 rounded-[16px]"
+          <FlagChip
+            countryCode={place.countryCode}
+            variant={flagVariant(place)}
+            size="lg"
           />
 
-          <div className="min-w-0 flex-1 pt-0.5">
-            <h3 className="wrap-anywhere clamp-2 text-[17px] font-semibold leading-tight tracking-[-0.02em] text-ink">
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate text-[16.5px] font-semibold leading-tight tracking-[-0.02em] text-ink">
               {place.name}
             </h3>
-            {location ? (
-              <p className="mt-1 truncate text-[14px] text-ink-2">
-                {hasFlag ? <FlagChip countryCode={place.countryCode} className="mr-1.5" /> : null}
-                {location}
-              </p>
+            {detail ? (
+              <p className="mt-0.5 truncate text-[13.5px] leading-snug text-ink-2">{detail}</p>
             ) : null}
-            {meta ? <Meta text={meta} wantToGo={place.wantToGo} /> : null}
             {place.notes ? (
-              <p className="clamp-2 mt-1.5 text-[14px] leading-relaxed text-ink-2">{place.notes}</p>
+              <p className="truncate text-[13px] leading-snug text-ink-3">{place.notes}</p>
             ) : null}
           </div>
         </button>
       )}
 
-      {/* A mark, not a control — tapping the card is what opens the place. */}
-      {!selecting && place.favorite ? (
+      {/* A mark, not a control — tapping the card is what opens the place. On a
+          row the chip already carries it, so this belongs to photo cards only. */}
+      {!selecting && hasPhoto && place.favorite ? (
         <span
           aria-label="Favorite"
-          className={cn(
-            "pointer-events-none absolute grid size-9 place-items-center rounded-full",
-            hasPhoto
-              ? "right-[52px] top-2.5 bg-black/35 text-white backdrop-blur-md"
-              : "right-[42px] top-2 text-danger",
-          )}
+          className="pointer-events-none absolute right-[52px] top-2.5 grid size-9 place-items-center rounded-full bg-black/35 text-white backdrop-blur-md"
         >
           <Heart size={16} aria-hidden="true" fill="currentColor" />
         </span>
@@ -166,26 +162,15 @@ export function PlaceCard({
           onClick={onActions}
           aria-label={`More actions for ${place.name}`}
           className={cn(
-            "pressable absolute grid size-9 place-items-center rounded-full",
+            "pressable absolute grid place-items-center rounded-full",
             hasPhoto
-              ? "right-2.5 top-2.5 bg-black/35 text-white backdrop-blur-md"
-              : "right-2 top-2 text-ink-3",
+              ? "right-2.5 top-2.5 size-9 bg-black/35 text-white backdrop-blur-md"
+              : "right-1 top-1/2 size-9 -translate-y-1/2 text-ink-3",
           )}
         >
           <MoreHorizontal size={19} aria-hidden="true" />
         </button>
       )}
     </li>
-  );
-}
-
-/** The line under the name: when you were there, or that you have not been. */
-function Meta({ text, wantToGo }: { text: string; wantToGo?: boolean }) {
-  if (!wantToGo) return <p className="mt-0.5 truncate text-[13px] text-ink-3">{text}</p>;
-  return (
-    <p className="mt-1 inline-flex max-w-full items-center gap-1 rounded-pill bg-accent-soft px-2 py-0.5 text-[12.5px] font-medium text-accent">
-      <MapPin size={12} aria-hidden="true" className="shrink-0" />
-      <span className="truncate">{text}</span>
-    </p>
   );
 }

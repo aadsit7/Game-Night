@@ -7,7 +7,15 @@ import {
   useReducedMotion,
   type PanInfo,
 } from "framer-motion";
-import { useCallback, useEffect, useId, useRef, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 
 import { useKeyboardInset } from "@/lib/hooks/useKeyboardInset";
 import { scrimLayer, sheetLayer } from "@/lib/ui/sheetStack";
@@ -31,9 +39,22 @@ import { cn } from "@/lib/utils/cn";
  * order by the shell and the stack they form is decided at runtime. Paint
  * order therefore cannot come from the DOM: it has to come from the stack, or
  * a sheet opened second ends up drawn underneath the one it opened from.
+ *
+ * And every sheet is rendered into `document.body` rather than where it is
+ * written. A `z-index` only ranks a box against its siblings: the Places view
+ * sits in a stacking context of its own, so a sheet opened from inside it —
+ * the sort-and-filter sheet, the trip tagger — was ranked *within* that view
+ * and painted underneath the tab bar, which floats above it. The bottom
+ * eighty pixels of those sheets, counts and all, were behind the tab bar.
+ * A portal takes the sheet out to the top level, where its layer means what it
+ * says.
  */
 
 const SPRING = { type: "spring" as const, stiffness: 420, damping: 40, mass: 0.9 };
+
+/** Whether there is a DOM to portal into. Never changes once answered. */
+const noSubscription = () => () => {};
+const useIsClient = () => useSyncExternalStore(noSubscription, () => true, () => false);
 
 /** How far a card behind peeks above the one in front of it. */
 const PEEK_PX = 10;
@@ -150,10 +171,11 @@ export function BottomSheet({
     [requestClose],
   );
 
+  const isClient = useIsClient();
   const lift = Math.max(keyboardInset, 0);
   const safeBottom = "max(env(safe-area-inset-bottom, 0px), 14px)";
 
-  return (
+  const tree = (
     <AnimatePresence>
       {open ? (
         <>
@@ -276,4 +298,8 @@ export function BottomSheet({
       ) : null}
     </AnimatePresence>
   );
+
+  // Nothing to portal into until there is a document. Sheets are never open on
+  // a first render, so the server and the client agree on "nothing here yet".
+  return isClient ? createPortal(tree, document.body) : null;
 }

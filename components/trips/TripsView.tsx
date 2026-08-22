@@ -4,6 +4,7 @@ import { ChevronRight, Luggage, Plus } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
 
 import { EmptyState } from "@/components/ui/EmptyState";
+import { FlagChip } from "@/components/ui/FlagChip";
 import {
   formatPlaceCount,
   formatTripLength,
@@ -43,11 +44,11 @@ export function TripsView({
       <div className="scroll-area absolute inset-0" style={{ paddingBottom: bottomInset }}>
         <div className="mx-auto w-full max-w-[720px] px-4 sm:max-w-[880px]">
           <header
-            className="pb-4"
-            style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 14px)" }}
+            className="pb-3"
+            style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 12px)" }}
           >
             <div className="flex items-start justify-between gap-3">
-              <h1 className="text-[34px] font-bold leading-[1.1] tracking-[-0.03em] text-ink">
+              <h1 className="text-[28px] font-bold leading-[1.1] tracking-[-0.03em] text-ink">
                 Trips
               </h1>
               {trips.length > 0 ? (
@@ -62,7 +63,7 @@ export function TripsView({
               ) : null}
             </div>
             {!loading && trips.length > 0 ? (
-              <p className="mt-1 text-[15px] text-ink-2">
+              <p className="mt-1 text-[14px] text-ink-2">
                 {trips.length === 1 ? "1 trip" : `${trips.length} trips`}
               </p>
             ) : null}
@@ -93,7 +94,7 @@ export function TripsView({
             />
           ) : (
             <motion.ul
-              className="space-y-3 pb-6 sm:grid sm:grid-cols-2 sm:gap-3 sm:space-y-0"
+              className="space-y-2.5 pb-6 sm:grid sm:grid-cols-2 sm:gap-2.5 sm:space-y-0"
               initial={reduceMotion ? false : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: reduceMotion ? 0 : 0.28, ease: [0.2, 0.8, 0.3, 1] }}
@@ -118,6 +119,43 @@ export function TripsView({
         style={{ height: "env(safe-area-inset-top, 0px)" }}
       />
     </div>
+  );
+}
+
+/**
+ * Where a trip went, as flags.
+ *
+ * A trip's identity is its countries, so that is what leads the row. The
+ * generic suitcase that used to sit here was identical on every trip ever
+ * taken — a mark that cannot tell two things apart is decoration. It survives
+ * for the one case it is actually true of: a trip with nothing in it yet.
+ */
+function FlagStack({ codes }: { codes: string[] }) {
+  if (codes.length === 0) {
+    return (
+      <span className="grid size-9 shrink-0 place-items-center rounded-full bg-accent-soft text-accent">
+        <Luggage size={17} aria-hidden="true" />
+      </span>
+    );
+  }
+
+  // Three is the most that reads as a stack rather than a smear; the count on
+  // the line below says how many there really were.
+  const shown = codes.slice(0, 3);
+
+  return (
+    <span className="flex shrink-0 items-center" aria-hidden="true">
+      {shown.map((code, index) => (
+        <FlagChip
+          key={code}
+          countryCode={code}
+          size="lg"
+          // First country on top, the way a stack of anything is read.
+          style={{ zIndex: shown.length - index }}
+          className={index > 0 ? "-ml-3.5" : undefined}
+        />
+      ))}
+    </span>
   );
 }
 
@@ -147,25 +185,22 @@ function TripRow({
       <button
         type="button"
         onClick={onOpen}
-        className="pressable flex w-full items-center gap-3 rounded-[20px] bg-fill/60 px-4 py-4 text-left"
+        className="pressable flex w-full items-center gap-3 rounded-[18px] bg-fill/50 py-2.5 pl-3 pr-2 text-left"
       >
-        <span className="grid size-11 shrink-0 place-items-center rounded-full bg-accent-soft text-accent">
-          <Luggage size={20} aria-hidden="true" />
-        </span>
+        <FlagStack codes={summary.countryCodes} />
 
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[18px] font-semibold leading-tight tracking-[-0.01em] text-ink">
+          <span className="block truncate text-[17px] font-semibold leading-tight tracking-[-0.01em] text-ink">
             {trip.name}
           </span>
           {when ? (
-            <span className="mt-0.5 block truncate text-[14px] text-ink-2">{when}</span>
+            <span className="mt-0.5 block truncate text-[13.5px] leading-snug text-ink-2">
+              {when}
+            </span>
           ) : null}
-          <span className="mt-0.5 block truncate text-[13px] tabular-nums text-ink-3">
-            {[length, formatPlaceCount(summary.places)].filter(Boolean).join(" · ")}
+          <span className="block truncate text-[13px] leading-snug text-ink-3">
+            {[length, formatPlaceCount(summary.places), where].filter(Boolean).join(" · ")}
           </span>
-          {where ? (
-            <span className="mt-0.5 block truncate text-[13px] text-ink-3">{where}</span>
-          ) : null}
         </span>
 
         <ChevronRight size={18} aria-hidden="true" className="shrink-0 text-ink-3" />
