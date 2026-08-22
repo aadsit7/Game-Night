@@ -1156,6 +1156,11 @@ export function AppShell() {
                 tagAfterCreate.current = ids;
                 startCreateTrip();
               }}
+              /* Straight to the delete, with the undo it already leaves in the
+                 toast. The confirmation dialog belongs to the menu, where the
+                 tap that opened it could have been a mis-tap; a swipe across
+                 half a row could not. */
+              onDeletePlace={(id) => void performDelete(id)}
               onSelectingChange={setSelectingPlaces}
             />
           </motion.div>

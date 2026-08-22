@@ -23,6 +23,7 @@ const suites = [
   "tagging.test.mjs",
   "flag-chips.test.mjs",
   "globe-frame.test.mjs",
+  "swipe.test.mjs",
 ];
 
 let failed = false;

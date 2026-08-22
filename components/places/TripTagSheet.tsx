@@ -5,7 +5,8 @@ import { Check, Luggage, MapPinMinus, Plus, X } from "lucide-react";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { canUntag, tagState } from "@/lib/trips/tagging";
-import { formatPlaceCount, placesInTrip, sortTrips } from "@/lib/trips/tripDays";
+import { FlagChip } from "@/components/ui/FlagChip";
+import { formatPlaceCount, placesInTrip, sortTrips, tripSummary } from "@/lib/trips/tripDays";
 import { formatVisitRange } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
 import type { VisitedPlace } from "@/types/place";
@@ -101,6 +102,7 @@ export function TripTagSheet({
               const state = tagState(selected, trip.id);
               const when = formatVisitRange(trip.startDate, trip.endDate);
               const held = placesInTrip(trip, places).length;
+              const { countryCodes } = tripSummary(trip, places);
               return (
                 <li key={trip.id}>
                   <button
@@ -110,9 +112,10 @@ export function TripTagSheet({
                     aria-pressed={state === "all"}
                     className="pressable flex w-full items-center gap-3 rounded-[16px] py-3 pr-2 text-left disabled:opacity-40"
                   >
-                    <span className="grid size-10 shrink-0 place-items-center rounded-[12px] bg-fill-strong text-ink-2">
-                      <Luggage size={19} aria-hidden="true" />
-                    </span>
+                    {/* The countries it went to, the way the trips list shows
+                        them. A suitcase repeated down a list of trips is a mark
+                        that cannot tell any two of them apart. */}
+                    <TripFlags codes={countryCodes} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[17px] font-medium text-ink">
                         {trip.name}
@@ -188,5 +191,38 @@ export function TripTagSheet({
         ) : null}
       </div>
     </BottomSheet>
+  );
+}
+
+/**
+ * A trip's countries, at row size — the same stack the trips list leads with,
+ * so a trip looks like itself wherever it is offered. Falls back to the
+ * suitcase for a trip with nothing in it yet, which is the one trip that
+ * really is like every other.
+ */
+function TripFlags({ codes }: { codes: string[] }) {
+  if (codes.length === 0) {
+    return (
+      <span className="grid size-10 shrink-0 place-items-center rounded-full bg-fill-strong text-ink-2">
+        <Luggage size={19} aria-hidden="true" />
+      </span>
+    );
+  }
+
+  const shown = codes.slice(0, 3);
+
+  return (
+    <span className="flex shrink-0 items-center" aria-hidden="true">
+      {shown.map((code, index) => (
+        <FlagChip
+          key={code}
+          countryCode={code}
+          size="lg"
+          // First country on top, the way a stack of anything is read.
+          style={{ zIndex: shown.length - index }}
+          className={index > 0 ? "-ml-3.5" : undefined}
+        />
+      ))}
+    </span>
   );
 }

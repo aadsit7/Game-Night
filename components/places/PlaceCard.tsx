@@ -18,6 +18,10 @@ import type { VisitedPlace } from "@/types/place";
  * which is what a journal looks like. Without one, the card is a row: the
  * country's chip, the name, and a line of detail.
  *
+ * The card is the *contents* of a list row rather than the row itself: the
+ * `<li>` and the swipe that goes with it belong to `SwipeRow`, which has to
+ * own both to slide one over the other.
+ *
  * The row used to stand a tinted gradient in for the missing photograph, at
  * the same size as a real one. Twelve of those down a page is most of a phone
  * screen spent saying "no picture here" twelve times, in a mark that carries
@@ -69,14 +73,19 @@ export function PlaceCard({
     : {};
 
   return (
-    <li className={cn("relative", selecting && "select-none")}>
+    <div className={cn("relative", selecting && "select-none")}>
       {hasPhoto ? (
         <button
           type="button"
           onClick={press}
           {...selectProps}
           className={cn(
-            "pressable block w-full rounded-[20px] text-left transition-shadow",
+            /* A card, like the row beside it. The photograph used to sit on
+               the page with its caption underneath and nothing holding the two
+               together, which was fine until the cell could slide: pulled
+               aside, the caption's half read as a gap in the list rather than
+               as part of the thing being moved. */
+            "pressable block w-full rounded-[20px] bg-fill/50 p-2 text-left transition-shadow",
             selected && "ring-2 ring-accent ring-offset-2 ring-offset-bg",
           )}
         >
@@ -84,10 +93,10 @@ export function PlaceCard({
             place={place}
             alt=""
             priority={priority}
-            className="aspect-[16/10] w-full rounded-[20px]"
+            className="aspect-[16/10] w-full rounded-[14px]"
           />
 
-          <div className="px-0.5 pt-2">
+          <div className="px-1 pb-0.5 pt-2">
             <h3 className="wrap-anywhere clamp-2 text-[18px] font-semibold leading-tight tracking-[-0.02em] text-ink">
               {place.name}
             </h3>
@@ -136,7 +145,7 @@ export function PlaceCard({
       {!selecting && hasPhoto && place.favorite ? (
         <span
           aria-label="Favorite"
-          className="pointer-events-none absolute right-[52px] top-2.5 grid size-9 place-items-center rounded-full bg-black/35 text-white backdrop-blur-md"
+          className="pointer-events-none absolute right-[54px] top-4 grid size-9 place-items-center rounded-full bg-black/35 text-white backdrop-blur-md"
         >
           <Heart size={16} aria-hidden="true" fill="currentColor" />
         </span>
@@ -146,7 +155,7 @@ export function PlaceCard({
         <span
           aria-hidden="true"
           className={cn(
-            "pointer-events-none absolute right-2.5 top-2.5 grid size-7 place-items-center rounded-full",
+            "pointer-events-none absolute right-4 top-4 grid size-7 place-items-center rounded-full",
             selected
               ? "bg-accent text-on-accent shadow-soft"
               : hasPhoto
@@ -164,13 +173,13 @@ export function PlaceCard({
           className={cn(
             "pressable absolute grid place-items-center rounded-full",
             hasPhoto
-              ? "right-2.5 top-2.5 size-9 bg-black/35 text-white backdrop-blur-md"
+              ? "right-4 top-4 size-9 bg-black/35 text-white backdrop-blur-md"
               : "right-1 top-1/2 size-9 -translate-y-1/2 text-ink-3",
           )}
         >
           <MoreHorizontal size={19} aria-hidden="true" />
         </button>
       )}
-    </li>
+    </div>
   );
 }
