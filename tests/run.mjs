@@ -20,6 +20,7 @@ const suites = [
   "trips.test.mjs",
   "place-search.test.mjs",
   "sheet-stack.test.mjs",
+  "tagging.test.mjs",
 ];
 
 let failed = false;

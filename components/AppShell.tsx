@@ -47,10 +47,12 @@ import {
   withTrip,
   type PlaceDraft,
 } from "@/lib/store/draft";
+import { alreadyTaggedMessage, placesToRetag, tagSummary } from "@/lib/trips/tagging";
 import { sheetDepth } from "@/lib/ui/sheetStack";
 import { boundsForPlaces } from "@/lib/utils/geo";
 import { createId } from "@/lib/utils/id";
 import type { LocationResult, VisitedPlace } from "@/types/place";
+import type { Trip } from "@/types/trip";
 
 /**
  * The one place that knows what is on screen.
@@ -124,6 +126,10 @@ export function AppShell() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [overlays, setOverlays] = useState<Overlay[]>([]);
   const [actionsFor, setActionsFor] = useState<string | null>(null);
+  const [selectingPlaces, setSelectingPlaces] = useState(false);
+  const [tagging, setTagging] = useState(false);
+  /** Places waiting on a trip that is still being typed into the form. */
+  const tagAfterCreate = useRef<string[] | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [discardPrompt, setDiscardPrompt] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
@@ -531,6 +537,76 @@ export function AppShell() {
     [getTrip, pushOverlay],
   );
 
+  /**
+   * Filing several places into a trip at once.
+   *
+   * Each place is its own row in the sheet, so this is N writes however it is
+   * presented — but they go through the same queue as every other edit, in
+   * order, and the queue is what makes them survive a tunnel. Places already
+   * in the target trip are skipped rather than rewritten, and the toast counts
+   * what actually moved.
+   *
+   * Undo restores each place's previous trip individually, because a selection
+   * can span several: five places going into "Japan 2026" might have come from
+   * two other trips and no trip at all, and putting them all back as "no trip"
+   * would be a second mistake rather than an undo.
+   */
+  const tagPlacesWithTrip = useCallback(
+    async (ids: string[], trip: Trip | null): Promise<boolean> => {
+      const tripId = trip?.id ?? null;
+      const tripName = trip?.name ?? null;
+
+      const selected = ids
+        .map((id) => getPlace(id))
+        .filter((place): place is VisitedPlace => Boolean(place));
+      const changing = placesToRetag(selected, tripId);
+
+      if (changing.length === 0) {
+        showToast(alreadyTaggedMessage(selected.length, tripName));
+        return true;
+      }
+
+      const previous = changing.map((place) => ({ id: place.id, tripId: place.tripId }));
+
+      setTagging(true);
+      try {
+        for (const place of changing) {
+          await updatePlace(place.id, { tripId: tripId ?? undefined });
+        }
+        showToast(whenOffline(
+          tagSummary(changing.length, tripName),
+          `${tagSummary(changing.length, tripName)} — it’ll sync when you’re back`,
+        ), {
+          action: {
+            label: "Undo",
+            onPress: () => {
+              void (async () => {
+                for (const record of previous) {
+                  try {
+                    await updatePlace(record.id, { tripId: record.tripId ?? undefined });
+                  } catch {
+                    // Best effort: one place that will not go back must not
+                    // stop the others from returning.
+                  }
+                }
+                showToast("Undone");
+              })();
+            },
+          },
+        });
+        return true;
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "Those couldn’t be saved.", {
+          tone: "error",
+        });
+        return false;
+      } finally {
+        setTagging(false);
+      }
+    },
+    [getPlace, updatePlace, showToast],
+  );
+
   const saveTripForm = useCallback(async () => {
     setTripSaving(true);
     setTripFormError(null);
@@ -554,6 +630,16 @@ export function AppShell() {
       setTripDraftBaseline(tripDraft);
       popOverlay();
 
+      // Created from "New Trip" inside the tag sheet: the selection that was
+      // waiting on it goes straight in, and that write announces itself, so
+      // there is no second toast here.
+      const waiting = tagAfterCreate.current;
+      tagAfterCreate.current = null;
+      if (waiting && waiting.length > 0) {
+        void tagPlacesWithTrip(waiting, created);
+        return created;
+      }
+
       // Created from the place form: select it there. The rest of that form is
       // untouched — it has been sitting underneath this sheet the whole time.
       const fromPlaceForm = overlays.some((overlay) => overlay.kind === "form");
@@ -575,7 +661,7 @@ export function AppShell() {
     } finally {
       setTripSaving(false);
     }
-  }, [tripDraft, overlays, createTrip, updateTrip, popOverlay, showToast]);
+  }, [tripDraft, overlays, createTrip, updateTrip, popOverlay, showToast, tagPlacesWithTrip]);
 
   const guardTripFormClose = useCallback(() => {
     if (!isTripDraftDirty(tripDraft, tripDraftBaseline)) return true;
@@ -952,7 +1038,7 @@ export function AppShell() {
     return tabBarHeight;
   }, [pinSession, previewVisible, tabBarHeight]);
 
-  const tabBarHidden = Boolean(pinSession);
+  const tabBarHidden = Boolean(pinSession) || selectingPlaces;
   const actionsPlace = getPlace(actionsFor);
   const confirmPlace = getPlace(confirmDeleteId);
   const searchOverlay = topOverlay?.kind === "search" ? topOverlay : null;
@@ -1061,6 +1147,14 @@ export function AppShell() {
               onShowGlobe={() => setMode("globe")}
               syncState={sync.state}
               onOpenSync={() => setSyncOpen(true)}
+              trips={trips}
+              tagging={tagging}
+              onTagPlaces={tagPlacesWithTrip}
+              onCreateTripFor={(ids) => {
+                tagAfterCreate.current = ids;
+                startCreateTrip();
+              }}
+              onSelectingChange={setSelectingPlaces}
             />
           </motion.div>
         ) : null}
