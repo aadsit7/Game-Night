@@ -1160,10 +1160,11 @@ export function TravelGlobe({
   }
 
   return (
-    // The space the planet sits in. Matched to the atmosphere nearest the edge
-    // of the screen, so a frame the renderer hasn't painted yet is never a flash
-    // of white behind a night globe — or of black behind a daylight one.
-    <div className="absolute inset-0" style={{ background: paletteFor(prefersDark).backdrop }}>
+    /* The space the planet sits in — and it is space, not a backdrop colour.
+       The canvas is transparent everywhere the Earth and its atmosphere are
+       not, so this is what a globe view is seen against, and it stops being
+       visible the moment the map fills the screen. */
+    <div className="globe-space absolute inset-0">
       <div
         ref={containerRef}
         className="size-full"
@@ -1178,10 +1179,12 @@ export function TravelGlobe({
         className={`pointer-events-none absolute inset-0 transition-opacity duration-700 ${
           styleReady ? "opacity-0" : "opacity-100"
         }`}
+        /* A planet-shaped hint of what is coming, in the colours of the space
+           it will arrive in — never a flash of a scheme the globe does not
+           use. */
         style={{
-          background: prefersDark
-            ? "radial-gradient(circle at 50% 42%, #1A2029 0%, #0C1119 55%, #05070B 100%)"
-            : "radial-gradient(circle at 50% 42%, #F3F6F9 0%, #E9EFF4 55%, #DCE4EC 100%)",
+          background:
+            "radial-gradient(circle at 50% 42%, rgba(86, 122, 190, 0.22) 0%, rgba(28, 44, 78, 0.14) 46%, rgba(0, 0, 0, 0) 68%)",
         }}
       />
       <span className="sr-only" role="status">

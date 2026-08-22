@@ -100,8 +100,9 @@ const OVERLAY_LIGHT: OverlayPalette = {
   // that makes every visited country look permanently selected.
   countryLine: "#0A5F53",
   pin: "#BF421F",
-  // Against a light ground, salience means going darker, not brighter.
-  pinSelected: "#0B62C4",
+  // Against a light ground, salience means going darker, not brighter — and
+  // the ground got richer when the ocean did, so this went with it.
+  pinSelected: "#0A55AC",
   pinWishlist: "#6D33B8",
   cluster: "#B93A1A",
   pinStroke: "#FFFFFF",
@@ -115,7 +116,9 @@ const OVERLAY_DARK: OverlayPalette = {
   countryLine: "#7FE0CE",
   pin: "#E0562C",
   pinSelected: "#4DA6FF",
-  pinWishlist: "#B98CFF",
+  // Deep enough to hold its own inside the chip's near-white ring, which is
+  // the only ground this colour ever touches.
+  pinWishlist: "#A472FF",
   cluster: "#C2451F",
   pinStroke: "rgba(233,238,246,0.92)",
   label: "#EDF1F7",

@@ -63,8 +63,6 @@ export type Palette = {
   reliefOpacity: number;
   /** The atmosphere, and the colour of the space the globe sits in. */
   sky: { sky: string; horizon: string; fog: string };
-  /** Behind the canvas, so a frame without tiles is never a flash of the wrong colour. */
-  backdrop: string;
 };
 
 /**
@@ -73,9 +71,15 @@ export type Palette = {
  * The Natural Earth relief goes to zero. At world scale it was the most
  * saturated and most textured thing on screen and the part of the picture the
  * traveller has no relationship with; with it gone, the globe's shape comes
- * from the land/water edge, which is what a map is. Water loses most of its
- * chroma for the same reason — at globe zoom the ocean is most of the display,
- * and a strong blue there leaves nowhere for a pin to be the brightest thing.
+ * from the land/water edge, which is what a map is.
+ *
+ * Water was drained of most of its chroma for the same reason, and that reason
+ * has since expired. It was there to protect a five-pixel coloured dot: at
+ * globe zoom the ocean is most of the display, and a strong blue left nowhere
+ * for that dot to be the brightest thing on screen. The dot is a flag in a
+ * white ring now, which protects itself — a ring and a drop shadow are legible
+ * on any ground there is — so the sea can be the sea, and a planet seen from
+ * space can look like one.
  *
  * Roads go white-on-warm-grey, the way every modern light basemap draws them.
  * That is not only taste: OpenFreeMap's motorways are `hsl(26,87%,62%)`, which
@@ -83,29 +87,31 @@ export type Palette = {
  * places competed as the same kind of mark.
  */
 const LIGHT: Palette = {
-  land: "#EFECE6",
-  water: "#B4C8D8",
-  waterway: "#A6BCCF",
-  green: "#E4E7DB",
-  ice: "#F7F8F9",
-  sand: "#F0EADD",
-  urban: "rgba(228,223,214,0.55)",
-  building: "#E6E2DB",
-  buildingOutline: "#D9D4CC",
+  land: "#D8CCAF",
+  water: "#7CA9D2",
+  waterway: "#6E9CC6",
+  green: "#BDCFA6",
+  ice: "#EEF3F8",
+  sand: "#E2D3AE",
+  urban: "rgba(210,199,175,0.55)",
+  building: "#D0C5A8",
+  buildingOutline: "#C2B698",
   road: "#FFFFFF",
-  roadCasing: "#DCD7CE",
-  roadMinor: "#FBF9F6",
-  roadRail: "#DDD8D0",
-  aeroway: "#E9E5DE",
-  boundary: "#ADA69B",
-  boundaryMinor: "#C9C3B9",
+  roadCasing: "#C9BFA5",
+  roadMinor: "#F6F1E4",
+  roadRail: "#CCC2A8",
+  aeroway: "#D5C9AC",
+  boundary: "#9C917B",
+  boundaryMinor: "#B8AD95",
   label: "#4A5058",
   labelHalo: "rgba(248,246,242,0.92)",
   labelWater: "#4C6178",
   labelMinor: "#6B7178",
   reliefOpacity: 0,
-  sky: { sky: "#A9C4E4", horizon: "#DCE6F0", fog: "#E9EFF4" },
-  backdrop: "#E9EFF4",
+  /* The atmosphere, which is now the only thing between the planet and the
+     black. A white rim read as a cut-out against space; a blue one reads as
+     air. */
+  sky: { sky: "#7FB2E8", horizon: "#BEDCF7", fog: "#DCEBFA" },
 };
 
 /**
@@ -121,12 +127,12 @@ const LIGHT: Palette = {
  * night map ships and the opposite of what this style did.
  */
 const DARK: Palette = {
-  land: "#2B3138",
-  water: "#0C121B",
-  waterway: "#16202D",
-  green: "#2E3630",
-  ice: "#3C434C",
-  sand: "#35392F",
+  land: "#333B44",
+  water: "#0B1826",
+  waterway: "#132538",
+  green: "#2F3E34",
+  ice: "#454E59",
+  sand: "#3B3D31",
   urban: "#343B45",
   building: "#333940",
   buildingOutline: "#262B31",
@@ -137,13 +143,14 @@ const DARK: Palette = {
   aeroway: "#31373E",
   boundary: "#545C69",
   boundaryMinor: "#3E444E",
-  label: "#9BA3AE",
+  // Lifted with the land under it: graphite continents cost the names some of
+  // the contrast they had over a darker ground.
+  label: "#A3ABB6",
   labelHalo: "rgba(8,11,16,0.88)",
   labelWater: "#6E8398",
   labelMinor: "#7F8792",
   reliefOpacity: 0,
-  sky: { sky: "#05070B", horizon: "#33517C", fog: "#0A0F16" },
-  backdrop: "#05070B",
+  sky: { sky: "#04070E", horizon: "#4B7BBE", fog: "#0A121C" },
 };
 
 export const paletteFor = (dark: boolean): Palette => (dark ? DARK : LIGHT);

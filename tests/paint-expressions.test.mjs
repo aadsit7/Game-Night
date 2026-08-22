@@ -272,18 +272,96 @@ check("roads are never in the pin's hue family", () => {
   }
 });
 
-check("the pin reads against land and water in both schemes", () => {
+/** The dark ring is given as `rgba(...)`; its own colour is what is compared. */
+function rgbOf(colour) {
+  if (colour.startsWith("#")) return colour;
+  const [r, g, b] = colour.match(/[\d.]+/g).map(Number);
+  return `#${[r, g, b].map((c) => Math.round(c).toString(16).padStart(2, "0")).join("")}`;
+}
+
+check("the chip's ring is always the lightest thing under it", () => {
+  /*
+   * What makes a mark findable on a globe is no longer its own colour. Every
+   * one of these is drawn inside a white ring now, so the adjacency that
+   * decides whether you can see a place is the ring against the ground — and
+   * the direction of that edge must never invert, or the chip stops reading as
+   * a disc sitting on the world and starts reading as a hole cut in it.
+   *
+   * Direction rather than ratio, on land, and deliberately: over pale sand the
+   * ring clears its ground by well under any published figure, and what
+   * separates it there is the drop shadow beneath it, which no contrast ratio
+   * can measure. Over water — most of what a globe view is — there is a real
+   * number to hold to.
+   */
   for (const dark of [false, true]) {
     const ground = theme.paletteFor(dark);
-    const { pin, pinWishlist } = paint.overlayFor(dark);
-    for (const [label, colour] of [["pin", pin], ["wishlist pin", pinWishlist]]) {
-      for (const [name, against] of [["land", ground.land], ["water", ground.water]]) {
-        const contrast = ratio(colour, against);
-        assert.ok(
-          contrast >= 2.4,
-          `${dark ? "dark" : "light"} ${label} vs ${name} is ${contrast.toFixed(2)}:1`,
-        );
-      }
+    const ring = rgbOf(paint.overlayFor(dark).pinStroke);
+    for (const [name, against] of [["land", ground.land], ["water", ground.water]]) {
+      assert.ok(
+        luminance(ring) > luminance(against),
+        `${dark ? "dark" : "light"} ring is darker than the ${name} under it`,
+      );
+    }
+    const overWater = ratio(ring, ground.water);
+    assert.ok(overWater >= 2, `${dark ? "dark" : "light"} ring vs water is ${overWater.toFixed(2)}:1`);
+  }
+});
+
+check("a badge reads against the ring it hangs on", () => {
+  // The favourite heart, the wishlist star, the cluster's count: all of them
+  // are a filled disc inside the chip's ring, so the ring is the only ground
+  // any of these colours actually touches.
+  for (const dark of [false, true]) {
+    const { pin, pinWishlist, pinStroke } = paint.overlayFor(dark);
+    for (const [label, colour] of [["favourite", pin], ["wishlist", pinWishlist]]) {
+      const contrast = ratio(colour, rgbOf(pinStroke));
+      assert.ok(
+        contrast >= 2.4,
+        `${dark ? "dark" : "light"} ${label} badge vs the ring is ${contrast.toFixed(2)}:1`,
+      );
+    }
+  }
+});
+
+check("the basemap's own names survive the ground they are written on", () => {
+  /*
+   * The land under these got richer to make a globe look like a planet, and
+   * type is what pays for that: a caption is unreadable long before a coastline
+   * is. Two rules, because labels are carried by two different things — the
+   * ground for the ones large enough to sit on it, and the halo for everything
+   * else, which is why a village name survives a coastline running under it.
+   */
+  for (const dark of [false, true]) {
+    const ground = theme.paletteFor(dark);
+    const scheme = dark ? "dark" : "light";
+
+    const onLand = ratio(ground.label, ground.land);
+    assert.ok(onLand >= 4.5, `${scheme} place names on land are ${onLand.toFixed(2)}:1`);
+
+    const halo = rgbOf(ground.labelHalo);
+    for (const [name, colour] of [
+      ["place names", ground.label],
+      ["road and POI names", ground.labelMinor],
+      ["sea names", ground.labelWater],
+    ]) {
+      const contrast = ratio(colour, halo);
+      assert.ok(contrast >= 4.5, `${scheme} ${name} vs their halo is ${contrast.toFixed(2)}:1`);
+    }
+  }
+});
+
+check("the selection halo reads against land and water in both schemes", () => {
+  // The one mark still painted straight onto the map, with nothing between it
+  // and the world: it has to hold its own on both grounds.
+  for (const dark of [false, true]) {
+    const ground = theme.paletteFor(dark);
+    const { pinSelected } = paint.overlayFor(dark);
+    for (const [name, against] of [["land", ground.land], ["water", ground.water]]) {
+      const contrast = ratio(pinSelected, against);
+      assert.ok(
+        contrast >= 2.4,
+        `${dark ? "dark" : "light"} halo vs ${name} is ${contrast.toFixed(2)}:1`,
+      );
     }
   }
 });
