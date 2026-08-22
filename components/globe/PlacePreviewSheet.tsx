@@ -3,6 +3,7 @@
 import { ChevronRight, Heart, MapPin, Pencil } from "lucide-react";
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
+import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
 import { formatVisitShort } from "@/lib/utils/date";
 import { countryFlag, placeSubtitle } from "@/lib/utils/geo";
@@ -31,7 +32,7 @@ export function PlacePreviewSheet({
 }) {
   const subtitle = place ? placeSubtitle(place) : "";
   const when = place ? formatVisitShort(place.visitedFrom, place.visitedTo) : null;
-  const flag = place ? countryFlag(place.countryCode) : null;
+  const hasFlag = Boolean(place && countryFlag(place.countryCode));
 
   return (
     <BottomSheet
@@ -64,7 +65,7 @@ export function PlacePreviewSheet({
               </h2>
               {subtitle ? (
                 <p className="mt-0.5 truncate text-[14px] text-ink-2">
-                  {flag ? <span className="mr-1.5">{flag}</span> : null}
+                  {hasFlag ? <FlagChip countryCode={place.countryCode} className="mr-1.5" /> : null}
                   {subtitle}
                 </p>
               ) : null}

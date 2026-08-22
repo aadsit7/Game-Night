@@ -233,7 +233,13 @@ export function PlacesView({
             </div>
           ) : !isEmpty ? (
             <div className="mt-3">
-              <TravelStats visited={stats.visited} countries={stats.countries} />
+              <TravelStats
+                visited={stats.visited}
+                countries={stats.countries}
+                collected={countries}
+                selected={country}
+                onSelect={setCountry}
+              />
             </div>
           ) : null}
         </header>

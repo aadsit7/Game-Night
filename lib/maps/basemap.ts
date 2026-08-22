@@ -35,18 +35,21 @@ export const LAYER_COUNTRY_LINE = "visited-country-line";
 export const LAYER_CLUSTER_GLOW = "visited-cluster-glow";
 export const LAYER_CLUSTER = "visited-cluster";
 export const LAYER_CLUSTER_COUNT = "visited-cluster-count";
-export const LAYER_PIN_DOT = "visited-pin-dot";
+/** The soft disc under the chip you last tapped. */
+export const LAYER_PIN_HALO = "visited-pin-halo";
+export const LAYER_PIN_MARKER = "visited-pin-marker";
 export const LAYER_PIN = "visited-pin-label";
 
 /** Layers a tap can land on, in the order the tap handler considers them. */
-export const INTERACTIVE_LAYERS = [LAYER_PIN_DOT, LAYER_CLUSTER, LAYER_CLUSTER_GLOW];
+export const INTERACTIVE_LAYERS = [LAYER_PIN_MARKER, LAYER_CLUSTER, LAYER_CLUSTER_GLOW];
 
 /** Everything belonging to the city-pin view, hidden in Countries mode. */
 export const CITY_LAYERS = [
   LAYER_CLUSTER_GLOW,
   LAYER_CLUSTER,
   LAYER_CLUSTER_COUNT,
-  LAYER_PIN_DOT,
+  LAYER_PIN_HALO,
+  LAYER_PIN_MARKER,
   LAYER_PIN,
 ];
 
@@ -84,7 +87,11 @@ export type OverlayPalette = {
   pinWishlist: string;
   cluster: string;
   clusterGlow: string;
-  /** The ring around every pin, which is what makes a 5px dot findable. */
+  /**
+   * The ring around every mark the traveller owns — the flag chip, the cluster
+   * disc. It is what lets a saturated flag sit on the ocean, on a coastline or
+   * on a city and still read as a separate object from the ground under it.
+   */
   pinStroke: string;
   label: string;
   labelHalo: string;
@@ -175,7 +182,7 @@ export const COUNTRY_BEFORE_IDS = [
 ];
 
 /* ------------------------------------------------------------------------ */
-/* Pin paint                                                                 */
+/* Chip paint                                                                */
 /*                                                                           */
 /* These live here rather than inline in the component so they can be run    */
 /* through the style validator in a test. A rejected expression is a silent  */
@@ -195,44 +202,84 @@ export const selectedFilter = (selectedId: string | null): ExpressionSpecificati
 ];
 
 /**
+ * The sprite a feature asks for by name.
+ *
+ * The id is written into the feature by the component — country and variant,
+ * resolved once per place — rather than assembled here with `concat`, because
+ * the same string has to be the key the images are registered under, and one
+ * place deciding it is one place that can get it wrong.
+ */
+export const MARKER_ICON_IMAGE: ExpressionSpecification = ["get", "icon"];
+
+/**
  * `zoom` is only legal as the input to a *top-level* `step`/`interpolate`, so
  * every selected/unselected choice below sits inside the stops rather than
  * wrapping them. Wrapping an interpolate in a `case` type-checks perfectly and
  * is rejected at runtime.
+ *
+ * The chip shrinks at globe zoom rather than staying its full size: a hundred
+ * flags at 32px is a mosaic of the world, not a map of it. It never shrinks
+ * far enough to stop being a flag, which is the whole reason it is one.
  */
-export const pinRadius = (selected: ExpressionSpecification): ExpressionSpecification => [
+export const markerIconSize = (selected: ExpressionSpecification): ExpressionSpecification => [
   "interpolate",
   ["linear"],
   ["zoom"],
+  0,
+  ["case", selected, 0.82, 0.66],
+  3,
+  ["case", selected, 0.98, 0.82],
+  8,
+  ["case", selected, 1.18, 1],
+];
+
+/** The unselected default, used when the layer is first installed. */
+export const MARKER_ICON_SIZE_DEFAULT: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  0,
+  0.66,
+  3,
+  0.82,
+  8,
   1,
-  ["case", selected, 9, 4.5],
-  4,
-  ["case", selected, 11, 6],
-  10,
-  ["case", selected, 13, 8],
 ];
 
 /**
- * Selected wins over everything, because it answers "which one did I just
- * tap"; below that, a place still to go is its own colour.
+ * Which chip is drawn on top when two overlap.
+ *
+ * Icons on this layer are placed with `icon-allow-overlap`, so there is no
+ * collision to win and the key decides draw order alone: the spec sorts
+ * ascending and lets a *higher* key overlap a lower one. The selected place
+ * therefore sorts last, which is the one that has to stay visible.
  */
-export const pinColor = (
-  selected: ExpressionSpecification,
-  overlay: OverlayPalette,
-): ExpressionSpecification => [
+export const markerSortKey = (selected: ExpressionSpecification): ExpressionSpecification => [
   "case",
   selected,
-  overlay.pinSelected,
-  ["boolean", ["get", "wantToGo"], false],
-  overlay.pinWishlist,
-  overlay.pin,
+  1,
+  0,
 ];
 
-export const pinStrokeWidth = (selected: ExpressionSpecification): ExpressionSpecification => [
-  "case",
-  selected,
+/**
+ * The halo under the selected chip.
+ *
+ * Selection is a light behind the mark rather than a different mark: the flag
+ * is what the chip is *for*, and swapping it for a highlight colour the moment
+ * you tap would take away the thing you tapped to look at. Sized to sit a few
+ * pixels proud of the chip at every zoom, so it reads as a glow rather than as
+ * a second disc.
+ */
+export const HALO_RADIUS: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  0,
+  17,
   3,
-  2,
+  21,
+  8,
+  25,
 ];
 
 /** The selected place shows its name at any zoom; the rest fade in. */
@@ -246,24 +293,18 @@ export const labelOpacity = (selected: ExpressionSpecification): ExpressionSpeci
   1,
 ];
 
+/**
+ * Which label survives when two want the same patch of screen.
+ *
+ * The opposite of `markerSortKey`, and deliberately so: labels are placed with
+ * collision on, and there the spec gives priority to the *lower* key. The
+ * selected place is the one name that must never be the one dropped.
+ */
 export const labelSortKey = (selected: ExpressionSpecification): ExpressionSpecification => [
   "case",
   selected,
-  1,
   0,
-];
-
-/** The unselected defaults, used when a layer is first installed. */
-export const PIN_RADIUS_DEFAULT: ExpressionSpecification = [
-  "interpolate",
-  ["linear"],
-  ["zoom"],
   1,
-  4.5,
-  4,
-  6,
-  10,
-  8,
 ];
 
 export const LABEL_OPACITY_DEFAULT: ExpressionSpecification = [

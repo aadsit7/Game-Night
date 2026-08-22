@@ -4,6 +4,7 @@ import { CalendarRange, MapPin, Pencil, Plus, TriangleAlert, X } from "lucide-re
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
 import {
   formatPlaceCount,
@@ -211,7 +212,7 @@ function DaySection({ day, onOpenPlace }: { day: TripDay; onOpenPlace: (id: stri
  * same flag, same wording — so a place looks like itself wherever it appears.
  */
 function PlaceRow({ place, onOpen }: { place: VisitedPlace; onOpen: () => void }) {
-  const flag = countryFlag(place.countryCode);
+  const hasFlag = Boolean(countryFlag(place.countryCode));
   const where = [place.city, place.country].filter(Boolean).join(", ");
   const span =
     place.visitedTo && place.visitedTo !== place.visitedFrom
@@ -230,7 +231,7 @@ function PlaceRow({ place, onOpen }: { place: VisitedPlace; onOpen: () => void }
           {place.name}
         </span>
         <span className="mt-0.5 block truncate text-[13px] text-ink-2">
-          {flag ? <span className="mr-1.5">{flag}</span> : null}
+          {hasFlag ? <FlagChip countryCode={place.countryCode} className="mr-1.5" /> : null}
           {where || place.country}
         </span>
         {span ? (
