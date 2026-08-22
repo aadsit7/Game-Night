@@ -2,10 +2,12 @@
 
 import { useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { MapPin, Search, Settings2, X } from "lucide-react";
+import { Search, Settings2, X } from "lucide-react";
 
+import { FlagChip } from "@/components/ui/FlagChip";
+import { flagVariant } from "@/lib/ui/flags";
 import { cn } from "@/lib/utils/cn";
-import { countryFlag, placeSubtitle } from "@/lib/utils/geo";
+import { placeSubtitle } from "@/lib/utils/geo";
 import type { VisitedPlace } from "@/types/place";
 
 /**
@@ -133,7 +135,6 @@ export function GlobeSearch({
                     <ul>
                       {results.map((place, index) => {
                         const subtitle = placeSubtitle(place);
-                        const flag = countryFlag(place.countryCode);
                         return (
                           <li key={place.id}>
                             <button
@@ -150,16 +151,17 @@ export function GlobeSearch({
                                 index > 0 && "border-t border-separator",
                               )}
                             >
-                              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-accent-soft text-accent">
-                                <MapPin size={15} aria-hidden="true" />
-                              </span>
+                              <FlagChip
+                                countryCode={place.countryCode}
+                                variant={flagVariant(place)}
+                                size="md"
+                              />
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate text-[16px] font-medium text-ink">
                                   {place.name}
                                 </span>
                                 {subtitle ? (
                                   <span className="block truncate text-[13px] text-ink-2">
-                                    {flag ? <span className="mr-1">{flag}</span> : null}
                                     {subtitle}
                                   </span>
                                 ) : null}

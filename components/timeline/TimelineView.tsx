@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, CalendarRange, Compass, Luggage, Plus } from "lucide-react";
+import { CalendarClock, CalendarRange, Luggage, Plus } from "lucide-react";
 
 import { TimelineScrubber } from "@/components/timeline/TimelineScrubber";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
 import { buildTimeline, formatDays, gapLabel, type TimelineEntry } from "@/lib/timeline/buildTimeline";
 import { formatVisitRange } from "@/lib/utils/date";
@@ -282,7 +283,7 @@ function Entry({
   onOpenTrip: () => void;
 }) {
   const { place } = entry;
-  const flag = countryFlag(place.countryCode);
+  const hasFlag = Boolean(countryFlag(place.countryCode));
   const range = formatVisitRange(entry.start, entry.end === entry.start ? undefined : entry.end);
   const where = [place.city, place.country].filter(Boolean).join(", ");
 
@@ -311,7 +312,7 @@ function Entry({
               {place.name}
             </span>
             <span className="mt-0.5 block truncate text-[14px] text-ink-2">
-              {flag ? <span className="mr-1.5">{flag}</span> : null}
+              {hasFlag ? <FlagChip countryCode={place.countryCode} className="mr-1.5" /> : null}
               {where || place.country}
             </span>
             <span className="mt-1 flex items-center gap-1.5 text-[13px] tabular-nums text-ink-3">
@@ -384,11 +385,7 @@ function Undated({
                 "text-[14px] font-medium text-ink-2",
               )}
             >
-              {countryFlag(place.countryCode) ? (
-                <span aria-hidden="true">{countryFlag(place.countryCode)}</span>
-              ) : (
-                <Compass size={13} aria-hidden="true" />
-              )}
+              <FlagChip countryCode={place.countryCode} />
               {place.name}
             </button>
           </li>

@@ -3,9 +3,9 @@
 import { Check } from "lucide-react";
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
+import { FlagChip } from "@/components/ui/FlagChip";
 import { cn } from "@/lib/utils/cn";
 import { PLACE_SORT_LABELS, type PlaceSort } from "@/types/place";
-import { countryFlag } from "@/lib/utils/geo";
 
 export type CountryOption = { key: string; label: string; code?: string; count: number };
 
@@ -100,9 +100,7 @@ export function PlacesFilters({
                 onClick={() => onCountryChange(country === option.key ? null : option.key)}
               >
                 {option.code ? (
-                  <span aria-hidden="true" className="mr-1.5">
-                    {countryFlag(option.code)}
-                  </span>
+                  <FlagChip countryCode={option.code} className="mr-1.5" />
                 ) : null}
                 {option.label}
                 <span className="ml-1.5 opacity-60">{option.count}</span>

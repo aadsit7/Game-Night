@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
+import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
 import { formatDays } from "@/lib/timeline/buildTimeline";
 import { formatVisitRange, inclusiveDayCount } from "@/lib/utils/date";
@@ -81,7 +82,7 @@ export function PlaceDetailSheet({
   const when = place ? formatVisitRange(place.visitedFrom, place.visitedTo) : null;
   const days = place ? inclusiveDayCount(place.visitedFrom, place.visitedTo) : null;
   const subtitle = place ? placeSubtitle(place) : "";
-  const flag = place ? countryFlag(place.countryCode) : null;
+  const hasFlag = Boolean(place && countryFlag(place.countryCode));
   const extraPhotos = place?.photos ?? [];
   const hasCover = Boolean(place?.coverImage);
 
@@ -160,7 +161,7 @@ export function PlaceDetailSheet({
             </h1>
             {subtitle ? (
               <p className="mt-1 text-[16px] text-ink-2">
-                {flag ? <span className="mr-1.5">{flag}</span> : null}
+                {hasFlag ? <FlagChip countryCode={place?.countryCode} className="mr-1.5" /> : null}
                 {subtitle}
               </p>
             ) : null}

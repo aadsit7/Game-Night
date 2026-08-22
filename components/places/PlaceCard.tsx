@@ -2,6 +2,7 @@
 
 import { Check, Heart, MapPin, MoreHorizontal } from "lucide-react";
 
+import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
 import { formatVisitShort } from "@/lib/utils/date";
 import { countryFlag } from "@/lib/utils/geo";
@@ -44,7 +45,7 @@ export function PlaceCard({
   onToggleSelect?: () => void;
 }) {
   const when = formatVisitShort(place.visitedFrom, place.visitedTo);
-  const flag = countryFlag(place.countryCode);
+  const hasFlag = Boolean(countryFlag(place.countryCode));
   const location = [place.city, place.country]
     .filter((part): part is string => Boolean(part && part !== place.name))
     .join(", ");
@@ -84,7 +85,7 @@ export function PlaceCard({
             </h3>
             {location ? (
               <p className="mt-1 truncate text-[14px] text-ink-2">
-                {flag ? <span className="mr-1.5">{flag}</span> : null}
+                {hasFlag ? <FlagChip countryCode={place.countryCode} className="mr-1.5" /> : null}
                 {location}
               </p>
             ) : null}
@@ -118,7 +119,7 @@ export function PlaceCard({
             </h3>
             {location ? (
               <p className="mt-1 truncate text-[14px] text-ink-2">
-                {flag ? <span className="mr-1.5">{flag}</span> : null}
+                {hasFlag ? <FlagChip countryCode={place.countryCode} className="mr-1.5" /> : null}
                 {location}
               </p>
             ) : null}

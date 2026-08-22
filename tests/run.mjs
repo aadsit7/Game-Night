@@ -21,6 +21,7 @@ const suites = [
   "place-search.test.mjs",
   "sheet-stack.test.mjs",
   "tagging.test.mjs",
+  "flag-chips.test.mjs",
 ];
 
 let failed = false;

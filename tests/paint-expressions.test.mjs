@@ -18,6 +18,7 @@ import {
 
 const paint = await import("../lib/maps/basemap.ts");
 const theme = await import("../lib/maps/theme.ts");
+const markers = await import("../lib/maps/flagMarkers.ts");
 
 let failures = 0;
 const check = (label, fn) => {
@@ -40,6 +41,8 @@ const SPEC = {
   "circle-stroke-width": styleSpec.paint_circle["circle-stroke-width"],
   "text-opacity": styleSpec.paint_symbol["text-opacity"],
   "symbol-sort-key": styleSpec.layout_symbol["symbol-sort-key"],
+  "icon-size": styleSpec.layout_symbol["icon-size"],
+  "icon-image": styleSpec.layout_symbol["icon-image"],
 };
 
 for (const [name, def] of Object.entries(SPEC)) {
@@ -57,33 +60,30 @@ function valid(property, value) {
   }
 }
 
-console.log("pin paint expressions (selected and unselected)");
+console.log("chip layout expressions (selected and unselected)");
 
 for (const selectedId of ["place-123", null]) {
   const state = selectedId ? "with a selection" : "with nothing selected";
   const selected = paint.selectedFilter(selectedId);
-  for (const dark of [false, true]) {
-    check(`circle-color ${state} (${dark ? "dark" : "light"})`, () =>
-      valid("circle-color", paint.pinColor(selected, paint.overlayFor(dark))));
-  }
 
-  check(`circle-radius ${state}`, () => valid("circle-radius", paint.pinRadius(selected)));
-  check(`circle-color ${state}`, () => valid("circle-color", paint.pinColor(selected, paint.overlayFor(false))));
-  check(`circle-stroke-width ${state}`, () =>
-    valid("circle-stroke-width", paint.pinStrokeWidth(selected)));
+  check(`icon-size ${state}`, () => valid("icon-size", paint.markerIconSize(selected)));
+  check(`symbol-sort-key on the chip ${state}`, () =>
+    valid("symbol-sort-key", paint.markerSortKey(selected)));
   check(`text-opacity ${state}`, () => valid("text-opacity", paint.labelOpacity(selected)));
-  check(`symbol-sort-key ${state}`, () =>
+  check(`symbol-sort-key on the label ${state}`, () =>
     valid("symbol-sort-key", paint.labelSortKey(selected)));
 }
 
 console.log("layer defaults");
-check("circle-radius default", () => valid("circle-radius", paint.PIN_RADIUS_DEFAULT));
+check("icon-size default", () => valid("icon-size", paint.MARKER_ICON_SIZE_DEFAULT));
+check("icon-image", () => valid("icon-image", paint.MARKER_ICON_IMAGE));
+check("halo radius", () => valid("circle-radius", paint.HALO_RADIUS));
 check("text-opacity default", () => valid("text-opacity", paint.LABEL_OPACITY_DEFAULT));
 
 console.log("the behaviour the expressions are meant to encode");
 
-check("a selected pin is bigger than an unselected one at every zoom", () => {
-  const on = compile("circle-radius", paint.pinRadius(paint.selectedFilter("x")));
+check("a selected chip is bigger than an unselected one at every zoom", () => {
+  const on = compile("icon-size", paint.markerIconSize(paint.selectedFilter("x")));
   const feature = { properties: { id: "x" } };
   const other = { properties: { id: "y" } };
   for (const zoom of [1, 2, 4, 7, 10, 14]) {
@@ -91,16 +91,60 @@ check("a selected pin is bigger than an unselected one at every zoom", () => {
     const plain = on.value.evaluate({ zoom }, other);
     assert.ok(
       selected > plain,
-      `at zoom ${zoom} the selected radius ${selected} is not larger than ${plain}`,
+      `at zoom ${zoom} the selected size ${selected} is not larger than ${plain}`,
     );
   }
 });
 
-check("pins grow with zoom rather than staying a fixed size", () => {
-  const expr = compile("circle-radius", paint.PIN_RADIUS_DEFAULT);
+check("chips grow with zoom rather than staying a fixed size", () => {
+  const expr = compile("icon-size", paint.MARKER_ICON_SIZE_DEFAULT);
   const near = expr.value.evaluate({ zoom: 1 }, {});
   const far = expr.value.evaluate({ zoom: 10 }, {});
-  assert.ok(far > near, `radius did not grow: ${near} → ${far}`);
+  assert.ok(far > near, `size did not grow: ${near} → ${far}`);
+});
+
+check("a chip never shrinks so far that the flag inside it stops being one", () => {
+  const expr = compile("icon-size", paint.MARKER_ICON_SIZE_DEFAULT);
+  for (const zoom of [0, 1, 2, 4, 8, 14]) {
+    const size = expr.value.evaluate({ zoom }, {});
+    const diameter = size * markers.MARKER_RADIUS * 2;
+    assert.ok(diameter >= 20, `at zoom ${zoom} the chip is only ${diameter.toFixed(1)}px across`);
+  }
+});
+
+check("the selection halo sits proud of the chip it is behind, at every zoom", () => {
+  // A halo the chip covers is a halo nobody can see, and the two are sized by
+  // separate expressions in different units — one a radius in pixels, one a
+  // multiplier on a 32px sprite — so nothing but this keeps them in step.
+  const halo = compile("circle-radius", paint.HALO_RADIUS);
+  const size = compile("icon-size", paint.markerIconSize(paint.selectedFilter("x")));
+  const feature = { properties: { id: "x" } };
+  for (const zoom of [0, 1, 3, 6, 8, 12]) {
+    const ring = size.value.evaluate({ zoom }, feature) * markers.MARKER_RADIUS;
+    const glow = halo.value.evaluate({ zoom }, feature);
+    assert.ok(glow > ring, `at zoom ${zoom} the halo (${glow}) is inside the chip (${ring})`);
+  }
+});
+
+check("the selected chip draws over its neighbours, and its label outranks theirs", () => {
+  /* The two sort keys point in opposite directions on purpose, and the spec is
+     the reason: with `icon-allow-overlap` on, a *higher* key draws on top; in
+     the collision grid, which is where labels live, a *lower* key is placed
+     first and wins. Getting either backwards is invisible until two places sit
+     on the same city. */
+  const chip = compile("symbol-sort-key", paint.markerSortKey(paint.selectedFilter("x")));
+  const label = compile("symbol-sort-key", paint.labelSortKey(paint.selectedFilter("x")));
+  const mine = { properties: { id: "x" } };
+  const theirs = { properties: { id: "y" } };
+
+  assert.ok(
+    chip.value.evaluate({ zoom: 4 }, mine) > chip.value.evaluate({ zoom: 4 }, theirs),
+    "the selected chip does not sort above its neighbours",
+  );
+  assert.ok(
+    label.value.evaluate({ zoom: 6 }, mine) < label.value.evaluate({ zoom: 6 }, theirs),
+    "the selected label does not win placement against its neighbours",
+  );
 });
 
 check("the selected label is visible at globe zoom, others are not", () => {
@@ -227,30 +271,18 @@ check("a place you want to go is not the same mark as one you have been to", () 
   }
 });
 
-check("the wishlist colour actually reaches a pin that wants it", () => {
-  // Validity is not the same as correctness: the expression above compiles
-  // whichever branch it takes. This runs it the way the renderer does, against
-  // a feature carrying the property the globe puts there, so a paint that is
-  // valid but wired to the wrong key still fails here.
-  const nothingSelected = ["boolean", false];
-  for (const dark of [false, true]) {
-    const overlay = paint.overlayFor(dark);
-    const compiled = compile("circle-color", paint.pinColor(nothingSelected, overlay));
-    assert.equal(compiled.result, "success", "the pin colour expression did not compile");
-
-    // A parsed colour comes back with 0–1 channels, so both sides are put in
-    // the same terms rather than compared as formatted strings.
-    const channels = (colour) => [colour.r, colour.g, colour.b].map((c) => Math.round(c * 255));
-    const fromHex = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-    const paintFor = (properties) =>
-      channels(compiled.value.evaluate({ zoom: 4 }, { properties }));
-
-    assert.deepEqual(paintFor({ wantToGo: true }), fromHex(overlay.pinWishlist));
-    assert.deepEqual(paintFor({ wantToGo: false }), fromHex(overlay.pin));
-    // A place saved before the flag existed carries no such property at all,
-    // and has to keep the colour it has always had.
-    assert.deepEqual(paintFor({}), fromHex(overlay.pin));
-  }
+check("a place you want to go asks the renderer for a different chip", () => {
+  // Validity is not the same as correctness: the sprite id is what carries
+  // wishlist-ness onto the globe now that the mark is a flag rather than a
+  // coloured dot, so this checks the id the feature actually asks for.
+  const wish = markers.markerImageId("JP", "wishlist");
+  const been = markers.markerImageId("JP", "visited");
+  const loved = markers.markerImageId("JP", "favorite");
+  assert.notEqual(wish, been);
+  assert.notEqual(loved, been);
+  assert.notEqual(wish, loved);
+  // And the same place always asks for the same picture.
+  assert.equal(markers.markerImageId("jp", "visited"), been);
 });
 
 check("the wishlist colour is outside the water's hue family too", () => {

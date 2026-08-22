@@ -22,6 +22,7 @@ import {
   COUNTRY_LINE_WIDTH,
   DEFAULT_CAMERA,
   FONT_BOLD,
+  HALO_RADIUS,
   INTERACTIVE_LAYERS,
   LABEL_OPACITY_DEFAULT,
   LAYER_CLUSTER,
@@ -30,8 +31,10 @@ import {
   LAYER_COUNTRY_FILL,
   LAYER_COUNTRY_LINE,
   LAYER_PIN,
-  LAYER_PIN_DOT,
-  PIN_RADIUS_DEFAULT,
+  LAYER_PIN_HALO,
+  LAYER_PIN_MARKER,
+  MARKER_ICON_IMAGE,
+  MARKER_ICON_SIZE_DEFAULT,
   SOURCE_COUNTRIES,
   SOURCE_ID,
   STYLE_URLS,
@@ -39,16 +42,17 @@ import {
   labelOpacity,
   labelSortKey,
   loadMapLibre,
+  markerIconSize,
+  markerSortKey,
   overlayFor,
-  pinColor,
-  pinRadius,
-  pinStrokeWidth,
   selectedFilter,
   styleFor,
   type MapView,
   type OverlayPalette,
 } from "@/lib/maps/basemap";
+import { MARKER_PIXEL_RATIO, drawMarker, markerImageId } from "@/lib/maps/flagMarkers";
 import { applyBasemapTheme, paletteFor } from "@/lib/maps/theme";
+import { flagVariant, type FlagVariant } from "@/lib/ui/flags";
 import { boundsForPlaces, hasValidCoordinates, placeSubtitle } from "@/lib/utils/geo";
 import type { VisitedPlace } from "@/types/place";
 
@@ -109,9 +113,9 @@ function toFeatureCollection(places: VisitedPlace[]): FeatureCollection {
         id: place.id,
         name: place.name,
         subtitle: placeSubtitle(place),
-        // Read by the pin's paint expression, so the wishlist is visible on
-        // the globe as its own colour rather than as more of the same.
-        wantToGo: Boolean(place.wantToGo),
+        // The sprite this place asks for. Resolved here, next to the code that
+        // registers the sprites, so the name can only ever be written once.
+        icon: markerImageId(place.countryCode, flagVariant(place)),
       },
     })),
   };
@@ -119,6 +123,42 @@ function toFeatureCollection(places: VisitedPlace[]): FeatureCollection {
 
 /** Guards against re-attaching hover handlers when a style reloads. */
 const wiredMaps = new WeakSet<MapLibreMap>();
+
+/**
+ * Puts a chip in the sprite atlas for every country on the map.
+ *
+ * One image per country-and-variant rather than per place, so a fortnight in
+ * Japan costs the renderer one texture and not fourteen. Must run *before* the
+ * layers go on, and again after every style swap — `setStyle` discards the
+ * atlas along with everything else, and a symbol layer pointing at an image
+ * that isn't there draws nothing at all.
+ */
+function registerMarkerImages(
+  map: MapLibreMap,
+  places: VisitedPlace[],
+  overlay: OverlayPalette,
+): void {
+  const drawn = new Set<string>();
+
+  const add = (countryCode: string | undefined, variant: FlagVariant) => {
+    const id = markerImageId(countryCode, variant);
+    if (drawn.has(id)) return;
+    drawn.add(id);
+    try {
+      if (map.hasImage(id)) return;
+      const image = drawMarker(countryCode, variant, overlay);
+      if (!image) return;
+      map.addImage(id, image, { pixelRatio: MARKER_PIXEL_RATIO });
+    } catch {
+      // A style reloading underneath us can add the same id first. Either
+      // copy is the same picture.
+    }
+  };
+
+  // Somewhere the geocoder could not name a country for still gets a mark.
+  add(undefined, "visited");
+  for (const place of places) add(place.countryCode, flagVariant(place));
+}
 
 /**
  * Everything the style owns: the clustered source, the country polygons, and
@@ -137,7 +177,11 @@ function installStyleLayers(
       type: "geojson",
       data,
       cluster: true,
-      clusterRadius: 46,
+      /* Tuned to the chip, not to the dot it replaced. A 46px radius was the
+         right distance to keep 9px dots from touching; against a 21–32px chip
+         it swallows most of a continent at globe zoom, and the point of a flag
+         is that you can see it from up there. */
+      clusterRadius: 36,
       clusterMaxZoom: 9,
     });
   }
@@ -240,20 +284,42 @@ function installStyleLayers(
     });
   }
 
-  if (!map.getLayer(LAYER_PIN_DOT)) {
+  // Under the chips, and only ever under one of them: the light behind the
+  // place you last tapped.
+  if (!map.getLayer(LAYER_PIN_HALO)) {
     map.addLayer({
-      id: LAYER_PIN_DOT,
+      id: LAYER_PIN_HALO,
       type: "circle",
       source: SOURCE_ID,
-      filter: ["!", ["has", "point_count"]],
+      filter: ["all", ["!", ["has", "point_count"]], selectedFilter(null)],
       paint: {
-        // Small, round and dense on purpose: a hundred places should still
-        // read as a constellation rather than a pile of overlapping markers.
-        "circle-radius": PIN_RADIUS_DEFAULT,
-        "circle-color": overlay.pin,
-        "circle-stroke-width": 2,
-        "circle-stroke-color": overlay.pinStroke,
-        "circle-radius-transition": { duration: 180 },
+        "circle-color": overlay.pinSelected,
+        "circle-opacity": 0.42,
+        "circle-radius": HALO_RADIUS,
+        "circle-blur": 0.45,
+        "circle-opacity-transition": { duration: 180 },
+      },
+    });
+  }
+
+  if (!map.getLayer(LAYER_PIN_MARKER)) {
+    map.addLayer({
+      id: LAYER_PIN_MARKER,
+      type: "symbol",
+      source: SOURCE_ID,
+      filter: ["!", ["has", "point_count"]],
+      layout: {
+        "icon-image": MARKER_ICON_IMAGE,
+        "icon-size": MARKER_ICON_SIZE_DEFAULT,
+        /* A place that has been dropped from the map is a place the traveller
+           cannot tap, and there is no second way to reach it from here. Density
+           is the cluster's job, not the collision grid's, so every chip that
+           survives clustering is drawn. */
+        "icon-allow-overlap": true,
+        // It still takes its space out of the label grid, so a basemap city
+        // name never prints through a flag.
+        "icon-ignore-placement": false,
+        "icon-padding": 1,
       },
     });
   }
@@ -269,7 +335,9 @@ function installStyleLayers(
         "text-font": FONT_BOLD,
         "text-size": 12.5,
         "text-anchor": "top",
-        "text-offset": [0, 0.7],
+        // Clear of the chip rather than of a 5px dot: in ems of the text size,
+        // which is what this property is measured in.
+        "text-offset": [0, 1.75],
         "text-max-width": 9,
         "text-padding": 6,
         "text-allow-overlap": false,
@@ -487,11 +555,11 @@ export function TravelGlobe({
         // the pins are always drawn against the ground they were designed for.
         applyBasemapTheme(map, paletteFor(prefersDarkRef.current));
 
-        installStyleLayers(
-          map,
-          toFeatureCollection(placesRef.current),
-          overlayFor(prefersDarkRef.current),
-        );
+        // Before the layers, always: a chip layer whose sprites are missing
+        // draws an empty planet.
+        const overlay = overlayFor(prefersDarkRef.current);
+        registerMarkerImages(map, placesRef.current, overlay);
+        installStyleLayers(map, toFeatureCollection(placesRef.current), overlay);
         setStyleReady(true);
         setStyleEpoch((epoch) => epoch + 1);
       });
@@ -593,7 +661,7 @@ export function TravelGlobe({
         const layers = INTERACTIVE_LAYERS.filter((id) => map?.getLayer(id));
         const features = layers.length > 0 ? map.queryRenderedFeatures(box, { layers }) : [];
 
-        const pin = features.find((feature) => feature.layer?.id === LAYER_PIN_DOT);
+        const pin = features.find((feature) => feature.layer?.id === LAYER_PIN_MARKER);
         if (pin?.properties?.id) {
           onSelectRef.current(String(pin.properties.id));
           return;
@@ -667,8 +735,8 @@ export function TravelGlobe({
         map.setPaintProperty(LAYER_PIN, "text-color", overlay.label);
         map.setPaintProperty(LAYER_PIN, "text-halo-color", overlay.labelHalo);
       }
-      if (map.getLayer(LAYER_PIN_DOT)) {
-        map.setPaintProperty(LAYER_PIN_DOT, "circle-stroke-color", overlay.pinStroke);
+      if (map.getLayer(LAYER_PIN_HALO)) {
+        map.setPaintProperty(LAYER_PIN_HALO, "circle-color", overlay.pinSelected);
       }
       if (map.getLayer(LAYER_CLUSTER)) {
         map.setPaintProperty(LAYER_CLUSTER, "circle-color", overlay.cluster);
@@ -696,6 +764,10 @@ export function TravelGlobe({
     const map = mapRef.current;
     if (!map || !styleReady) return;
 
+    // A place saved in a country the map has never drawn needs its chip in the
+    // atlas before the feature that names it arrives.
+    registerMarkerImages(map, places, overlayFor(prefersDark));
+
     const source = map.getSource(SOURCE_ID) as GeoJSONSource | undefined;
     source?.setData(toFeatureCollection(places));
 
@@ -717,7 +789,7 @@ export function TravelGlobe({
     } catch {
       // Highlighting is optional.
     }
-  }, [places, styleReady, styleEpoch]);
+  }, [places, prefersDark, styleReady, styleEpoch]);
 
   /* Frame the traveller's world once the data has arrived, with a gentle
      arrival rather than a jump-cut. */
@@ -753,14 +825,24 @@ export function TravelGlobe({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !styleReady || !map.getLayer(LAYER_PIN_DOT)) return;
+    if (!map || !styleReady || !map.getLayer(LAYER_PIN_MARKER)) return;
 
     const selected = selectedFilter(selectedId);
 
     try {
-      map.setPaintProperty(LAYER_PIN_DOT, "circle-color", pinColor(selected, overlayFor(prefersDark)));
-      map.setPaintProperty(LAYER_PIN_DOT, "circle-radius", pinRadius(selected));
-      map.setPaintProperty(LAYER_PIN_DOT, "circle-stroke-width", pinStrokeWidth(selected));
+      /* `icon-size` and `symbol-sort-key` are *layout* properties, not paint:
+         written through `setPaintProperty` they are accepted, ignored, and the
+         chip never grows. */
+      map.setLayoutProperty(LAYER_PIN_MARKER, "icon-size", markerIconSize(selected));
+      map.setLayoutProperty(LAYER_PIN_MARKER, "symbol-sort-key", markerSortKey(selected));
+
+      if (map.getLayer(LAYER_PIN_HALO)) {
+        map.setFilter(LAYER_PIN_HALO, [
+          "all",
+          ["!", ["has", "point_count"]],
+          selected,
+        ] as FilterSpecification);
+      }
 
       if (map.getLayer(LAYER_PIN)) {
         // The selected place always shows its name, whatever the zoom.
@@ -770,7 +852,7 @@ export function TravelGlobe({
     } catch {
       // Style may be mid-reload.
     }
-  }, [selectedId, styleReady, prefersDark, styleEpoch]);
+  }, [selectedId, styleReady, styleEpoch]);
 
   /* ---------------------------------------------------------------------- */
   /* Countries vs Cities                                                      */
