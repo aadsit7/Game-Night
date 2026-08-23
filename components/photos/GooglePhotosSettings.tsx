@@ -163,25 +163,31 @@ export function GooglePhotosSettings({
                   : status === null
                     ? (statusError ?? "Checking Google Photos…")
                     : status.connected
-                      ? "Connected — photos can be imported from any device"
-                      : status.configured
+                      ? status.mode === "script"
+                        ? "Ready — the script imports with its own Google authorisation"
+                        : "Connected — photos can be imported from any device"
+                      : status.configured && status.mode === "oauth"
                         ? "Not connected yet"
-                        : "Not configured — see the setup guide"}
+                        : "Needs a one-time authorisation in the Apps Script editor — see the setup guide"}
             </p>
             <p className="mt-0.5 text-[12.5px] leading-snug text-ink-3">
               Connecting is only for importing. Viewing photos already added never asks for this.
             </p>
           </div>
           {!scriptCurrent || !pickerReady ? null : status?.connected ? (
-            <button
-              type="button"
-              onClick={() => setConfirmDisconnect(true)}
-              disabled={busy}
-              className="pressable shrink-0 rounded-pill bg-fill px-3 py-1.5 text-[13.5px] font-medium text-danger disabled:opacity-50"
-            >
-              <Unplug size={13} aria-hidden="true" className="mr-1 inline-block align-[-2px]" />
-              Disconnect
-            </button>
+            // Script mode has nothing to disconnect in-app: the grant lives
+            // on the deployment itself. The row is simply ready.
+            status.mode === "oauth" ? (
+              <button
+                type="button"
+                onClick={() => setConfirmDisconnect(true)}
+                disabled={busy}
+                className="pressable shrink-0 rounded-pill bg-fill px-3 py-1.5 text-[13.5px] font-medium text-danger disabled:opacity-50"
+              >
+                <Unplug size={13} aria-hidden="true" className="mr-1 inline-block align-[-2px]" />
+                Disconnect
+              </button>
+            ) : null
           ) : status === null && statusError ? (
             <button
               type="button"
@@ -189,6 +195,16 @@ export function GooglePhotosSettings({
               className="pressable shrink-0 rounded-pill bg-accent px-3 py-1.5 text-[13.5px] font-semibold text-on-accent"
             >
               Retry
+            </button>
+          ) : status && !(status.configured && status.mode === "oauth") ? (
+            // Nothing in-app can connect script mode — the fix happens in
+            // the Apps Script editor; this just asks the script again after.
+            <button
+              type="button"
+              onClick={refresh}
+              className="pressable shrink-0 rounded-pill bg-accent px-3 py-1.5 text-[13.5px] font-semibold text-on-accent"
+            >
+              Re-check
             </button>
           ) : (
             <button
@@ -222,9 +238,13 @@ export function GooglePhotosSettings({
       </div>
 
       {note ? <p className="px-1 pt-2 text-[12.5px] leading-relaxed text-ink-3">{note}</p> : null}
+      {status && !status.connected && status.advice ? (
+        <p className="px-1 pt-2 text-[12.5px] leading-relaxed text-ink-3">{status.advice}</p>
+      ) : null}
       {status && !status.connected && status.redirectUri ? (
         <p className="wrap-anywhere px-1 pt-2 text-[12px] leading-relaxed text-ink-3">
-          OAuth redirect URI for Google Cloud: {status.redirectUri}
+          Connecting a different Google account instead? OAuth redirect URI for Google Cloud:{" "}
+          {status.redirectUri}
         </p>
       ) : null}
 

@@ -52,8 +52,10 @@ export type ImportTally = {
 export type PickerFlowState =
   /** Nothing running. */
   | { step: "idle" }
-  /** Google Photos has never been connected (or the connection lapsed). */
-  | { step: "connect"; busy: boolean; message: string | null }
+  /** Imports can't run yet. `canConnect` says whether the in-app Connect
+   * button can fix that (the OAuth-client mode) — when it can't, the fix
+   * is a one-time step in the Apps Script editor and `message` says so. */
+  | { step: "connect"; busy: boolean; canConnect: boolean; message: string | null }
   /** Creating the session with the script. */
   | { step: "starting" }
   /** The picker is open (or openable) in another window. */
@@ -240,12 +242,19 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
         if (cancelled.current || runId.current !== run) return;
         if (!status.connected) {
           closePickerWindow();
+          // Connect can only help in OAuth-client mode; in script mode the
+          // fix lives in the Apps Script editor, and the script's own
+          // advice — which knows the mode — says exactly what to do.
+          const canConnect = status.configured && status.mode === "oauth";
           setState({
             step: "connect",
             busy: false,
-            message: status.configured
-              ? null
-              : "The Apps Script has no Google Photos credentials yet — see the setup guide.",
+            canConnect,
+            message:
+              status.advice ||
+              (canConnect
+                ? null
+                : "The script needs its one-time Google Photos authorisation — see the setup guide."),
           });
           return;
         }
@@ -386,11 +395,12 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
     void runImport(failedGroupsRef.current, { imported, duplicates, videos });
   }, [state, runImport]);
 
-  /** Connect Google Photos: hand the consent URL to the (blank) popup. */
+  /** Connect Google Photos (OAuth-client mode only): hand the consent URL
+   * to the (blank) popup. */
   const connect = useCallback(async () => {
     const connection = sheetPlaceRepository.getConnection();
     if (!connection) return;
-    setState({ step: "connect", busy: true, message: null });
+    setState({ step: "connect", busy: true, canConnect: true, message: null });
     try {
       const { authUrl } = await photosAuthStart(connection);
       if (!navigatePickerWindow(authUrl)) {
@@ -399,11 +409,17 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
       setState({
         step: "connect",
         busy: false,
+        canConnect: true,
         message: "Finish connecting in the Google window, then come back and continue.",
       });
     } catch (error) {
       closePickerWindow();
-      setState({ step: "connect", busy: false, message: messageOf(error, "The connection couldn’t start.") });
+      setState({
+        step: "connect",
+        busy: false,
+        canConnect: true,
+        message: messageOf(error, "The connection couldn’t start."),
+      });
     }
   }, []);
 

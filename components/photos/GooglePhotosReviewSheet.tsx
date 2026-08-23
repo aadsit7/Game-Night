@@ -176,33 +176,46 @@ function FlowBody({
       return (
         <div className="space-y-4 pb-4">
           <p className="text-[15px] leading-relaxed text-ink-2">
-            Connect Google Photos once, and the app can open the picker from any of your devices
-            without asking again. Viewing photos you’ve already imported never needs this.
+            {state.canConnect
+              ? "Connect Google Photos once, and the app can open the picker from any of your devices without asking again. Viewing photos you’ve already imported never needs this."
+              : "The script signs into Google Photos with its own authorisation — nothing to connect here, and no credentials to set. One approval in the Apps Script editor, once, and adding photos works from every device."}
           </p>
           {state.message ? (
             <p className="rounded-sm bg-fill px-3.5 py-2.5 text-[14px] text-ink-2">{state.message}</p>
           ) : null}
-          <Button
-            block
-            size="lg"
-            loading={state.busy}
-            onClick={() => {
-              // The window must exist before the first await, or iOS Safari
-              // refuses to open it — same rule the settings screen follows.
-              // `connect()` fills it with the consent URL once it has one.
-              openPickerWindow();
-              void flow.connect();
-            }}
-          >
-            Connect Google Photos
-          </Button>
-          <Button
-            block
-            variant="secondary"
-            onClick={() => void flow.continueAfterConnect()}
-          >
-            I’ve connected — continue
-          </Button>
+          {state.canConnect ? (
+            <>
+              <Button
+                block
+                size="lg"
+                loading={state.busy}
+                onClick={() => {
+                  // The window must exist before the first await, or iOS Safari
+                  // refuses to open it — same rule the settings screen follows.
+                  // `connect()` fills it with the consent URL once it has one.
+                  openPickerWindow();
+                  void flow.connect();
+                }}
+              >
+                Connect Google Photos
+              </Button>
+              <Button
+                block
+                variant="secondary"
+                onClick={() => void flow.continueAfterConnect()}
+              >
+                I’ve connected — continue
+              </Button>
+            </>
+          ) : (
+            <Button
+              block
+              variant="secondary"
+              onClick={() => void flow.continueAfterConnect()}
+            >
+              I’ve authorised the script — check again
+            </Button>
+          )}
         </div>
       );
 

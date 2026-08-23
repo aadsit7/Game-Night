@@ -492,12 +492,15 @@ function capabilities_() {
     // getAll from this version on.
     visits: true,
     travelPhotos: true,
-    // The Picker needs OAuth client credentials in Script Properties before
-    // the app should offer "Connect Google Photos" at all.
-    googlePhotosPicker: Boolean(photosClientId_()),
-    // Whether a Photos connection is currently live, so the app can say
-    // "connect" vs "add photos" without a second round trip.
-    googlePhotosConnected: photosHasRefreshToken_(),
+    // The Picker no longer needs anything configured: the script's own
+    // authorisation is the default way in, and the flow itself walks
+    // through the one-time re-authorisation if the scope is still missing.
+    googlePhotosPicker: true,
+    // Whether an import could run right now — a live OAuth-client
+    // connection, or the script's own token carrying the Picker scope —
+    // so the app can say "connect" vs "add photos" without a second round
+    // trip.
+    googlePhotosConnected: photosOauthClientLive_() || scriptPhotosScopeGranted_(),
     // Photos and videos picked straight from a device or Drive folder can be
     // stored in Travel_Photos from this version on.
     deviceMediaUpload: true
@@ -773,18 +776,27 @@ function uploadPhoto_(body) {
 }
 
 /* ------------------------------------------------------------------ *
- * Google Photos — server-side OAuth
+ * Google Photos — authorisation
  *
- * This script is the OAuth holder. The browser never sees the client
- * secret, the refresh token, or an access token: it asks this script to
- * start a connection once, Google redirects back here, and from then on
- * this script mints short-lived access tokens on its own whenever the
- * Picker or an import needs one. Nothing OAuth-shaped is ever written to
- * the spreadsheet or to Drive — Script Properties only.
+ * Two ways in, and the browser never sees a token under either:
  *
- * Reauthorisation can still happen — a revoked grant, an expired refresh
- * token, Google requiring it — and the status action says so honestly
- * rather than pretending the connection is eternal.
+ * 1. The script's own authorisation (the default). The web app already
+ *    runs as the sheet owner, and when the appsscript.json manifest lists
+ *    the Photos Picker scope, the token the script runs with can call the
+ *    Picker API directly. No Cloud project, no OAuth client, nothing in
+ *    Script Properties, no connect ceremony: authorising the deployment
+ *    IS the connection, and it reaches the sheet owner's library.
+ *
+ * 2. An OAuth client (optional). Kept for the one thing the script token
+ *    cannot do — import from a DIFFERENT Google account's library. The
+ *    script holds the client id/secret and refresh token in Script
+ *    Properties, starts the consent dance once, and mints access tokens
+ *    itself from then on. When this connection is live it wins, because
+ *    someone went out of their way to set it up.
+ *
+ * Reauthorisation can still happen under either mode — a revoked grant,
+ * an expired refresh token, Google requiring it — and the status action
+ * says so honestly rather than pretending the connection is eternal.
  * ------------------------------------------------------------------ */
 
 var PHOTOS_CLIENT_ID_PROPERTY = 'PHOTOS_OAUTH_CLIENT_ID';
@@ -798,6 +810,7 @@ var PHOTOS_PICKER_SCOPE = 'https://www.googleapis.com/auth/photospicker.mediaite
 var PHOTOS_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 var PHOTOS_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 var PHOTOS_REVOKE_ENDPOINT = 'https://oauth2.googleapis.com/revoke';
+var PHOTOS_TOKENINFO_ENDPOINT = 'https://oauth2.googleapis.com/tokeninfo';
 var PICKER_API = 'https://photospicker.googleapis.com/v1';
 
 function photosClientId_() {
@@ -834,6 +847,75 @@ function photosHasRefreshToken_() {
 }
 
 /**
+ * True when the optional OAuth-client connection is actually usable: a
+ * refresh token alone is dead weight without the client id and secret to
+ * redeem it with.
+ */
+function photosOauthClientLive_() {
+  return Boolean(photosClientId_() && photosClientSecret_() && photosHasRefreshToken_());
+}
+
+var PHOTOS_SCOPE_CACHE_KEY = 'script-photos-scope';
+
+/**
+ * Whether the token this script itself runs with can call the Picker API —
+ * true once the manifest lists the Photos Picker scope and the owner has
+ * re-authorised the deployment. Google's tokeninfo endpoint is the
+ * authority; the answer is cached briefly because it only ever changes
+ * when the owner re-authorises, and asking on every getAll would tax
+ * startup. Pass `fresh` to skip the cache — the status action does, so a
+ * just-fixed authorisation is never reported five minutes stale.
+ */
+function scriptPhotosScopeGranted_(fresh) {
+  var cache = CacheService.getScriptCache();
+  if (!fresh) {
+    var cached = cache.get(PHOTOS_SCOPE_CACHE_KEY);
+    if (cached) return cached === 'yes';
+  }
+
+  var granted = false;
+  var answered = false;
+  try {
+    var response = UrlFetchApp.fetch(
+      PHOTOS_TOKENINFO_ENDPOINT + '?access_token=' + encodeURIComponent(ScriptApp.getOAuthToken()),
+      { muteHttpExceptions: true }
+    );
+    if (response.getResponseCode() === 200) {
+      var scopes = String(JSON.parse(response.getContentText() || '{}').scope || '');
+      granted = (' ' + scopes + ' ').indexOf(' ' + PHOTOS_PICKER_SCOPE + ' ') !== -1;
+      answered = true;
+    }
+  } catch (error) {
+    // Indeterminate — a network hiccup must not get remembered as "no".
+  }
+  try {
+    cache.put(PHOTOS_SCOPE_CACHE_KEY, granted ? 'yes' : 'no', answered ? 300 : 30);
+  } catch (cacheError) {
+    // Without the cache the check simply runs again next time.
+  }
+  return granted;
+}
+
+/**
+ * The bearer token every Photos call rides on. A live OAuth-client
+ * connection wins — it exists precisely to reach a different account's
+ * library — and the script's own token is the zero-configuration default.
+ * The errors name the fix for the mode the deployment is actually in.
+ */
+function photosBearerToken_() {
+  if (photosOauthClientLive_()) return photosAccessToken_();
+  if (scriptPhotosScopeGranted_()) return ScriptApp.getOAuthToken();
+  if (photosClientId_() && photosClientSecret_()) {
+    throw new Error('Google Photos is not connected. Open settings and connect it first.');
+  }
+  throw new Error(
+    'This script’s Google authorisation does not include Google Photos yet. ' +
+    'Add the Photos Picker scope to the appsscript.json manifest and re-authorise ' +
+    'the deployment — see docs/SHEET-SETUP.md → Google Photos.'
+  );
+}
+
+/**
  * The exact URL Google must be told to redirect back to — this deployment's
  * own /exec address. Exposed by photosAuthStatus so it can be copied into
  * the OAuth client's "Authorized redirect URIs" rather than guessed.
@@ -853,8 +935,11 @@ function photosAuthStart_() {
   var secret = photosClientSecret_();
   if (!clientId || !secret) {
     throw new Error(
-      'Google Photos is not configured yet. Set the ' + PHOTOS_CLIENT_ID_PROPERTY + ' and ' +
-      PHOTOS_CLIENT_SECRET_PROPERTY + ' script properties first — see docs/SHEET-SETUP.md.'
+      'No OAuth client is set up — and none is needed for the sheet owner’s own library: ' +
+      'the script’s own authorisation covers it once the manifest carries the Photos Picker ' +
+      'scope (docs/SHEET-SETUP.md → Google Photos). Connecting a different Google account is ' +
+      'the only reason to set the ' + PHOTOS_CLIENT_ID_PROPERTY + ' and ' +
+      PHOTOS_CLIENT_SECRET_PROPERTY + ' script properties.'
     );
   }
   var redirect = photosRedirectUri_();
@@ -963,10 +1048,31 @@ function photosAuthCallback_(params) {
 
 function photosAuthStatus_() {
   var tokens = photosTokens_();
+  var oauthConfigured = Boolean(photosClientId_() && photosClientSecret_());
+  var oauthLive = photosOauthClientLive_();
+  // Fresh, not cached: this is the call the app makes while someone is
+  // actively wondering why the picker won't open, and a five-minute-old
+  // "no" would send them chasing a problem they already fixed.
+  var scopeGranted = scriptPhotosScopeGranted_(true);
+  var connected = oauthLive || scopeGranted;
   return {
-    configured: Boolean(photosClientId_() && photosClientSecret_()),
-    connected: Boolean(tokens && tokens.refreshToken),
-    connectedAt: tokens && tokens.connectedAt ? tokens.connectedAt : '',
+    // Imports can run right now, or there is at least a connect path the
+    // app can offer. Older apps read this as "worth showing the flow".
+    configured: scopeGranted || oauthConfigured,
+    connected: connected,
+    // Which authorisation the next Photos call will ride on — or, when
+    // neither works yet, the one there is a path to fixing.
+    mode: oauthLive ? 'oauth' : scopeGranted ? 'script' : oauthConfigured ? 'oauth' : 'script',
+    // Script mode's ground truth, separated out so the app can tell "the
+    // default just works" from "the manifest step is still missing".
+    scopeGranted: scopeGranted,
+    // What to do about a not-connected script mode, worded here because
+    // only the script knows which mode it is in. Empty when the app's own
+    // connect button is the answer, or when nothing is wrong.
+    advice: connected || oauthConfigured ? '' :
+      'One-time step: add the Google Photos Picker scope to the script’s appsscript.json ' +
+      'manifest and re-authorise the deployment — see docs/SHEET-SETUP.md → Google Photos.',
+    connectedAt: oauthLive && tokens && tokens.connectedAt ? tokens.connectedAt : '',
     accountHint: PropertiesService.getScriptProperties().getProperty(PHOTOS_ACCOUNT_HINT_PROPERTY) || '',
     // Copied into the Google Cloud OAuth client, character for character.
     redirectUri: photosRedirectUri_()
@@ -1046,7 +1152,7 @@ function photosAccessToken_() {
 var PICKER_MAX_ITEMS = 50;
 
 function pickerFetch_(method, path, body) {
-  var token = photosAccessToken_();
+  var token = photosBearerToken_();
   var options = {
     method: method,
     headers: { Authorization: 'Bearer ' + token },
@@ -1061,7 +1167,15 @@ function pickerFetch_(method, path, body) {
   var text = response.getContentText() || '';
 
   if (code === 401 || code === 403) {
-    throw new Error('Google Photos refused the request (' + code + '). The authorisation may have been revoked — reconnect from settings.');
+    // Google's own reason rides along — a refusal that is not about the
+    // scope at all (a policy, a suspended API) should say so, not hide
+    // behind the likeliest guess.
+    var refusal = '';
+    try { refusal = (JSON.parse(text).error || {}).message || ''; } catch (e) { refusal = ''; }
+    throw new Error((photosOauthClientLive_()
+      ? 'Google Photos refused the request (' + code + '). The authorisation may have been revoked — reconnect from settings.'
+      : 'Google Photos refused the request (' + code + '). The script’s own authorisation may be missing the Photos Picker scope — re-authorise the deployment (docs/SHEET-SETUP.md → Google Photos).') +
+      (refusal ? ' Google said: ' + refusal : ''));
   }
   if (code === 404) {
     throw new Error('That Google Photos picking session no longer exists. Start the picker again.');
@@ -1191,7 +1305,7 @@ function getPickedPhotoPreview_(params) {
   if (!baseUrl) throw new Error('That item is not part of this selection.');
 
   var response = UrlFetchApp.fetch(baseUrl + '=w256-h256', {
-    headers: { Authorization: 'Bearer ' + photosAccessToken_() },
+    headers: { Authorization: 'Bearer ' + photosBearerToken_() },
     muteHttpExceptions: true
   });
   if (response.getResponseCode() !== 200) {
@@ -1321,7 +1435,7 @@ function importPickedPhotos_(body) {
   }
 
   var association = resolveAssociation_(body);
-  var token = photosAccessToken_();
+  var token = photosBearerToken_();
   var folder = travelPhotosFolder_();
 
   // What is already imported, by Google Photos item id — the durable identity

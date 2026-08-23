@@ -190,6 +190,14 @@ function storeMockFile(seed, label) {
  * because a sheet with no API key is the default case and the one most worth
  * developing against.
  */
+/**
+ * The real script's default is its own authorisation ("script" mode) with the
+ * Picker scope granted. `MOCK_PHOTOS_UNAUTHORISED=1 npm run mock-sheet`
+ * simulates the one state that needs anything of the user — the manifest
+ * scope not yet authorised — so the guidance screen can be developed against.
+ */
+const PHOTOS_AUTHORISED = process.env.MOCK_PHOTOS_UNAUTHORISED !== "1";
+
 const CAPABILITIES = {
   placesSearch: process.env.MOCK_PLACES === "1",
   // The mock can always "upload": bytes are held in memory and served back
@@ -198,7 +206,7 @@ const CAPABILITIES = {
   visits: true,
   travelPhotos: true,
   googlePhotosPicker: true,
-  googlePhotosConnected: true,
+  googlePhotosConnected: PHOTOS_AUTHORISED,
   deviceMediaUpload: true,
 };
 
@@ -372,8 +380,15 @@ function handle(action, body) {
   /* ---- Google Photos, mocked end to end ---- */
 
   if (action === "photosAuthStatus") {
+    // Script mode, like a freshly deployed real script: nothing configured,
+    // nothing to connect — the deployment's own authorisation carries it.
     return {
-      configured: true, connected: true, connectedAt: "2026-01-01T00:00:00",
+      configured: PHOTOS_AUTHORISED, connected: PHOTOS_AUTHORISED,
+      mode: "script", scopeGranted: PHOTOS_AUTHORISED,
+      advice: PHOTOS_AUTHORISED
+        ? ""
+        : "One-time step: add the Google Photos Picker scope to the script’s appsscript.json manifest and re-authorise the deployment — see docs/SHEET-SETUP.md → Google Photos.",
+      connectedAt: "",
       accountHint: "mock@example.com",
       redirectUri: `http://localhost:${PORT}/`,
     };
@@ -384,6 +399,14 @@ function handle(action, body) {
   if (action === "photosAuthDisconnect") return { disconnected: true };
 
   if (action === "createPhotoPickerSession") {
+    if (!PHOTOS_AUTHORISED) {
+      // Word for word what photosBearerToken_ throws in the real script.
+      throw new Error(
+        "This script’s Google authorisation does not include Google Photos yet. " +
+        "Add the Photos Picker scope to the appsscript.json manifest and re-authorise " +
+        "the deployment — see docs/SHEET-SETUP.md → Google Photos.",
+      );
+    }
     const id = `mocksession-${nextSessionNumber++}`;
     pickerSessions.set(id, { picked: false, createdAt: Date.now() });
     return {
