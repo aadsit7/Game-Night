@@ -110,8 +110,9 @@ const LIGHT: Palette = {
   reliefOpacity: 0,
   /* The atmosphere, which is now the only thing between the planet and the
      black. A white rim read as a cut-out against space; a blue one reads as
-     air. */
-  sky: { sky: "#7FB2E8", horizon: "#BEDCF7", fog: "#DCEBFA" },
+     air. Deepened at the outer edge and brightened at the limb so the rim
+     glows the way the photographs from orbit say it should. */
+  sky: { sky: "#5FA8F0", horizon: "#CDE7FF", fog: "#E2F0FD" },
 };
 
 /**
@@ -150,7 +151,10 @@ const DARK: Palette = {
   labelWater: "#6E8398",
   labelMinor: "#7F8792",
   reliefOpacity: 0,
-  sky: { sky: "#04070E", horizon: "#4B7BBE", fog: "#0A121C" },
+  /* Night keeps its rim too — brighter than before, the moonlit-blue limb of
+     every night-side photograph, so the dark planet is ringed with light
+     rather than dissolving into the star field behind it. */
+  sky: { sky: "#081226", horizon: "#6FA0E8", fog: "#0C1624" },
 };
 
 export const paletteFor = (dark: boolean): Palette => (dark ? DARK : LIGHT);

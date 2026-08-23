@@ -535,12 +535,18 @@ function applySky(map: MapLibreMap, dark: boolean): void {
   try {
     map.setSky({
       "sky-color": sky.sky,
-      "sky-horizon-blend": 0.6,
+      /* Deeper than the default: the rim is the only thing saying "air" now
+         that the planet hangs among stars, so the blue is given room to
+         graduate instead of stopping at a thin line. */
+      "sky-horizon-blend": 0.8,
       "horizon-color": sky.horizon,
-      "horizon-fog-blend": 0.6,
+      "horizon-fog-blend": 0.55,
       "fog-color": sky.fog,
       "fog-ground-blend": 0.02,
-      "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 0.9, 5, 0.5, 8, 0],
+      /* Full atmosphere while the Earth is a planet, holding on longer as it
+         becomes a map, and gone before street level — a city block in fog is
+         weather, not wonder. */
+      "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 1, 4, 0.72, 6, 0.35, 8, 0],
     });
   } catch {
     // Older renderers simply don't draw one.
@@ -1327,6 +1333,18 @@ export function TravelGlobe({
        not, so this is what a globe view is seen against, and it stops being
        visible the moment the map fills the screen. */
     <div className="globe-space absolute inset-0">
+      {/* The rest of the solar system, behind the transparent canvas: the
+          Earth eclipses each body as you zoom in, and zooming out is what
+          reveals them — no thresholds, just occlusion doing its job. */}
+      <div aria-hidden="true" className="globe-space__scene">
+        <span className="globe-space__star globe-space__star--a" />
+        <span className="globe-space__star globe-space__star--b" />
+        <span className="globe-space__star globe-space__star--c" />
+        <span className="globe-space__star globe-space__star--d" />
+        <span className="planet planet--saturn" />
+        <span className="planet planet--moon" />
+        <span className="planet planet--mars" />
+      </div>
       <div
         ref={containerRef}
         className="size-full"

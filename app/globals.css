@@ -438,10 +438,201 @@ select {
     radial-gradient(0.9px 0.9px at 26.9% 23.0%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
     radial-gradient(0.9px 0.9px at 38.5% 3.0%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
     radial-gradient(0.9px 0.9px at 49.7% 39.6%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(1.6px 1.6px at 30.4% 6.2%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%);
+    radial-gradient(1.6px 1.6px at 30.4% 6.2%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%),
+    /* A few stars are allowed a colour. A real sky is not monochrome — Antares
+       burns orange, Rigel blue — and two warm and two cool points among the
+       white ones stop the scatter reading as printed dots. */
+    radial-gradient(1.4px 1.4px at 18.6% 12.9%, rgba(255, 214, 170, 0.85) 0%, rgba(255, 214, 170, 0) 100%),
+    radial-gradient(1.4px 1.4px at 84.2% 61.3%, rgba(255, 206, 158, 0.8) 0%, rgba(255, 206, 158, 0) 100%),
+    radial-gradient(1.5px 1.5px at 63.9% 22.4%, rgba(170, 200, 255, 0.9) 0%, rgba(170, 200, 255, 0) 100%),
+    radial-gradient(1.5px 1.5px at 9.4% 64.8%, rgba(178, 206, 255, 0.85) 0%, rgba(178, 206, 255, 0) 100%),
+    /* The Milky Way: a soft diagonal band of faint light, felt more than seen,
+       so the black reads as a sky with a structure rather than a backdrop. */
+    linear-gradient(
+      115deg,
+      rgba(0, 0, 0, 0) 30%,
+      rgba(158, 186, 234, 0.05) 42%,
+      rgba(215, 227, 248, 0.09) 50%,
+      rgba(158, 186, 234, 0.05) 58%,
+      rgba(0, 0, 0, 0) 70%
+    ),
+    /* Two whispers of nebula colour in opposite corners — violet and teal, the
+       hues deep-sky photographs are made of — give the void depth without ever
+       competing with the traveller's marks. */
+    radial-gradient(36% 28% at 84% 12%, rgba(122, 92, 204, 0.12) 0%, rgba(122, 92, 204, 0) 100%),
+    radial-gradient(32% 26% at 10% 82%, rgba(44, 138, 160, 0.11) 0%, rgba(44, 138, 160, 0) 100%);
   /* One scatter across the element, not a tile: a repeating starfield is a
      pattern, and a pattern is the one thing a night sky must not look like. */
   background-repeat: no-repeat;
+}
+
+/*
+ * The rest of the solar system.
+ *
+ * Everything in here sits in the same layer the starfield does — behind the
+ * transparent canvas — so the Earth eclipses each body naturally as it turns
+ * and grows: zoom in and the planets slide behind the world, zoom out and
+ * they are waiting where they were. Positions are chosen for a portrait
+ * phone: the Moon and Saturn in the bands of sky above the framed Earth, Mars
+ * in the band below it, and all of them clear of the stat pill, the search,
+ * the view toggle and the attribution mark.
+ *
+ * Like the starfield, the arrangement is fixed. The same sky every time is a
+ * place; a sky that reshuffles is a screensaver.
+ */
+.globe-space__scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/*
+ * The four brightest stars are elements rather than background dots, because
+ * they carry what a background cannot: a four-point diffraction glint, and a
+ * slow twinkle. The glint is two hairlines faded out by a radial mask; the
+ * twinkle is opacity-only, years away from anything that could distract from
+ * a pin. The app-wide reduced-motion rule freezes the animation at its first
+ * keyframe, which is deliberately the star at full brightness.
+ */
+.globe-space__star {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.98) 0%, rgba(224, 236, 255, 0.4) 16%, rgba(224, 236, 255, 0) 30%),
+    linear-gradient(0deg, rgba(0, 0, 0, 0) calc(50% - 0.6px), rgba(255, 255, 255, 0.85) 50%, rgba(0, 0, 0, 0) calc(50% + 0.6px)),
+    linear-gradient(90deg, rgba(0, 0, 0, 0) calc(50% - 0.6px), rgba(255, 255, 255, 0.85) 50%, rgba(0, 0, 0, 0) calc(50% + 0.6px));
+  -webkit-mask-image: radial-gradient(circle, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0) 66%);
+  mask-image: radial-gradient(circle, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0) 66%);
+  animation: star-twinkle 7s ease-in-out infinite;
+}
+
+/* Staggered phases and periods, so the sky never pulses in unison. */
+.globe-space__star--a {
+  top: 12%;
+  left: 57%;
+}
+.globe-space__star--b {
+  top: 15%;
+  left: 88%;
+  animation-duration: 9s;
+  animation-delay: -3.2s;
+  transform: scale(0.8);
+}
+.globe-space__star--c {
+  top: 78%;
+  left: 16%;
+  animation-duration: 8s;
+  animation-delay: -5.5s;
+  transform: scale(0.9);
+}
+.globe-space__star--d {
+  top: 86%;
+  left: 68%;
+  animation-duration: 11s;
+  animation-delay: -1.8s;
+  transform: scale(0.72);
+}
+
+@keyframes star-twinkle {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* Distant worlds: small enough to read as far away, so the Earth stays the
+   hero of the view. Each is lit from the upper left — the same key light the
+   Moon's craters and Saturn's shadowed limb answer to — because bodies lit
+   from three directions read as stickers, not as a sky. */
+.planet {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* Saturn, the showpiece, in the top-left field of sky. The ring is drawn
+   twice: the far arc behind the disc and dimmed by shadow, the near arc
+   clipped to its lower half and drawn in front — which is all a ring is. */
+.planet--saturn {
+  /* Below the search pill, above the framed Earth: the one band of sky that
+     is dependably open on a portrait phone. Far enough in that the ring's
+     tip is never cropped by the edge of the window. */
+  top: 11.5%;
+  left: 6.5%;
+  width: 52px;
+  height: 52px;
+  background:
+    repeating-linear-gradient(
+      168deg,
+      rgba(120, 88, 44, 0) 0,
+      rgba(120, 88, 44, 0) 5px,
+      rgba(120, 88, 44, 0.14) 5px,
+      rgba(120, 88, 44, 0.14) 8px
+    ),
+    radial-gradient(circle at 32% 28%, #f5e4c0 0%, #e4c58e 42%, #b38c55 74%, #6f5330 100%);
+  box-shadow:
+    inset -7px -8px 14px rgba(26, 17, 6, 0.55),
+    0 0 20px rgba(238, 214, 164, 0.22);
+}
+
+.planet--saturn::before,
+.planet--saturn::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 94px;
+  height: 26px;
+  margin: -13px 0 0 -47px;
+  border-radius: 50%;
+  border: 3px solid rgba(233, 208, 158, 0.85);
+  box-shadow: inset 0 0 0 1.5px rgba(122, 96, 56, 0.55);
+  transform: rotate(-16deg);
+}
+
+.planet--saturn::before {
+  z-index: -1;
+  opacity: 0.55;
+}
+
+.planet--saturn::after {
+  clip-path: inset(50% 0 0 0);
+}
+
+/* The Moon, in the sky to the Earth's upper right — close enough to home to
+   be the biggest thing out there after Saturn's ring. */
+.planet--moon {
+  top: 18%;
+  right: 7%;
+  width: 40px;
+  height: 40px;
+  background:
+    radial-gradient(circle at 62% 32%, rgba(94, 100, 122, 0.38) 0%, rgba(94, 100, 122, 0.38) 8%, rgba(94, 100, 122, 0) 13%),
+    radial-gradient(circle at 38% 58%, rgba(94, 100, 122, 0.34) 0%, rgba(94, 100, 122, 0.34) 11%, rgba(94, 100, 122, 0) 17%),
+    radial-gradient(circle at 70% 62%, rgba(94, 100, 122, 0.3) 0%, rgba(94, 100, 122, 0.3) 6%, rgba(94, 100, 122, 0) 10%),
+    radial-gradient(circle at 26% 32%, rgba(94, 100, 122, 0.26) 0%, rgba(94, 100, 122, 0.26) 5%, rgba(94, 100, 122, 0) 9%),
+    radial-gradient(circle at 34% 30%, #eef0f5 0%, #cacfdb 42%, #959baf 70%, #606680 100%);
+  box-shadow:
+    inset -6px -7px 12px rgba(9, 12, 26, 0.55),
+    0 0 16px rgba(196, 210, 240, 0.25);
+}
+
+/* Mars: a small ember low in the sky, under the Earth's southern limb. */
+.planet--mars {
+  bottom: 20%;
+  right: 13%;
+  width: 14px;
+  height: 14px;
+  background: radial-gradient(circle at 36% 32%, #f2a574 0%, #d4693e 48%, #93401f 82%, #5c2712 100%);
+  box-shadow:
+    inset -2px -3px 5px rgba(28, 8, 2, 0.5),
+    0 0 10px rgba(224, 118, 74, 0.28);
 }
 
 /* ==========================================================================

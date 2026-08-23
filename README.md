@@ -342,6 +342,13 @@ a parent re-render can never restart the map.
   Countries view and a whisper in Cities so pins always win.
 - Bearing and pitch are locked. Free rotation on a sphere is disorienting and
   easy to trigger by accident; this globe spins and zooms.
+- Zoom out far enough and the map becomes a place in space: the planet hangs
+  against a fixed starfield with a faint Milky Way, four slowly twinkling
+  stars, a cratered Moon, a ringed Saturn and a small Mars. All of it is CSS
+  behind the transparent canvas, so the Earth eclipses each body naturally as
+  you zoom — no thresholds, just occlusion — and none of it costs the map a
+  frame. The atmosphere is the renderer's own: a full blue limb at globe zoom
+  that thins as the planet becomes a map and is gone before street level.
 
 ### Finding real places
 
