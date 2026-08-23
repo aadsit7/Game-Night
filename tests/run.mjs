@@ -28,6 +28,7 @@ const suites = [
   "tagging.test.mjs",
   "flag-chips.test.mjs",
   "globe-frame.test.mjs",
+  "celestial-sky.test.mjs",
   "swipe.test.mjs",
   "country-marks.test.mjs",
 ];

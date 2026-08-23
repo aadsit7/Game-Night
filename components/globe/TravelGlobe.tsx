@@ -12,6 +12,7 @@ import type {
 } from "maplibre-gl";
 
 import { GlobeFallback } from "@/components/globe/GlobeFallback";
+import { SpaceScene, type SpaceSceneHandle } from "@/components/globe/SpaceScene";
 import { usePrefersDark, usePrefersReducedMotion } from "@/lib/hooks/useMediaQuery";
 import {
   CITY_LAYERS,
@@ -81,6 +82,7 @@ import {
   horizonRing,
   largestZoomThatFits,
   placeSubtitle,
+  pointAtBearing,
   sphericalCentre,
 } from "@/lib/utils/geo";
 import type { VisitedPlace } from "@/types/place";
@@ -575,6 +577,7 @@ export function TravelGlobe({
   const mapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
   const locationMarkerRef = useRef<Marker | null>(null);
+  const skyRef = useRef<SpaceSceneHandle | null>(null);
 
   const [styleReady, setStyleReady] = useState(false);
   /**
@@ -641,6 +644,43 @@ export function TravelGlobe({
     };
   }, []);
 
+  /**
+   * Points the sky where the camera points.
+   *
+   * The celestial scene lives behind the map's transparent canvas, and all it
+   * needs per frame is the view direction, where the Earth's centre landed on
+   * screen, and how large the planet is drawn — the last so the atmosphere
+   * can hug the limb and bodies wholly behind the world can be skipped. The
+   * radius is measured rather than derived: project a point on the horizon
+   * and see where the renderer puts it, the same trick framing uses, so the
+   * sky can never disagree with the sphere it surrounds.
+   */
+  const syncSky = useCallback(() => {
+    const map = mapRef.current;
+    const sky = skyRef.current;
+    if (!map || !sky) return;
+    try {
+      const centre = map.getCenter();
+      const origin = map.project([centre.lng, centre.lat]);
+      const horizon = pointAtBearing(
+        { longitude: centre.lng, latitude: centre.lat },
+        90,
+        HORIZON_DEGREES,
+      );
+      const edge = map.project([horizon.longitude, horizon.latitude]);
+      const radius = Math.hypot(edge.x - origin.x, edge.y - origin.y);
+      sky.setView({
+        longitude: centre.lng,
+        latitude: centre.lat,
+        originX: origin.x,
+        originY: origin.y,
+        earthRadius: Number.isFinite(radius) && radius > 0 ? radius : null,
+      });
+    } catch {
+      // A style mid-swap can't project; the sky keeps its last frame.
+    }
+  }, []);
+
   /* ---------------------------------------------------------------------- */
   /* Create the map — once                                                    */
   /* ---------------------------------------------------------------------- */
@@ -685,6 +725,11 @@ export function TravelGlobe({
       mapRef.current = map;
       map.touchZoomRotate.disableRotation();
       map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+
+      // The sky follows every camera move — that is what makes it a sky
+      // rather than a backdrop: turn the globe and the heavens turn with you.
+      map.on("move", syncSky);
+      map.on("resize", syncSky);
 
       // The backstop, for a style request that neither answers nor fails.
       loadTimer = window.setTimeout(() => {
@@ -736,6 +781,8 @@ export function TravelGlobe({
         );
         setStyleReady(true);
         setStyleEpoch((epoch) => epoch + 1);
+        // First light: the sky takes the camera the style loaded with.
+        syncSky();
       });
 
       /* Long-press to drop a pin. `contextmenu` covers desktop right-click;
@@ -898,7 +945,7 @@ export function TravelGlobe({
       map?.remove();
     };
     // `attempt` exists so the error state can offer a genuine retry.
-  }, [attempt, cameraPadding]);
+  }, [attempt, cameraPadding, syncSky]);
 
   /* ---------------------------------------------------------------------- */
   /* Theme — a whole style swap, which discards and re-adds our layers        */
@@ -1333,18 +1380,11 @@ export function TravelGlobe({
        not, so this is what a globe view is seen against, and it stops being
        visible the moment the map fills the screen. */
     <div className="globe-space absolute inset-0">
-      {/* The rest of the solar system, behind the transparent canvas: the
-          Earth eclipses each body as you zoom in, and zooming out is what
-          reveals them — no thresholds, just occlusion doing its job. */}
-      <div aria-hidden="true" className="globe-space__scene">
-        <span className="globe-space__star globe-space__star--a" />
-        <span className="globe-space__star globe-space__star--b" />
-        <span className="globe-space__star globe-space__star--c" />
-        <span className="globe-space__star globe-space__star--d" />
-        <span className="planet planet--saturn" />
-        <span className="planet planet--moon" />
-        <span className="planet planet--mars" />
-      </div>
+      {/* The rest of the universe, behind the transparent canvas: a celestial
+          sphere the camera looks out from, so turning the globe swings other
+          worlds into view and the Earth eclipses each of them naturally — no
+          thresholds, just occlusion and projection doing their jobs. */}
+      <SpaceScene handleRef={skyRef} />
       <div
         ref={containerRef}
         className="size-full"
