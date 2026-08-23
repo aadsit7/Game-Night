@@ -218,6 +218,7 @@ function doPost(e) {
       case 'listPickedPhotos':         return listPickedPhotos_(body);
       case 'deletePhotoPickerSession': return deletePhotoPickerSession_(body);
       case 'importPickedPhotos':       return importPickedPhotos_(body);
+      case 'uploadTravelMedia':        return uploadTravelMedia_(body);
       case 'deleteTravelPhoto':        return deleteTravelPhoto_(body);
     }
 
@@ -496,7 +497,10 @@ function capabilities_() {
     googlePhotosPicker: Boolean(photosClientId_()),
     // Whether a Photos connection is currently live, so the app can say
     // "connect" vs "add photos" without a second round trip.
-    googlePhotosConnected: photosHasRefreshToken_()
+    googlePhotosConnected: photosHasRefreshToken_(),
+    // Photos and videos picked straight from a device or Drive folder can be
+    // stored in Travel_Photos from this version on.
+    deviceMediaUpload: true
   };
 }
 
@@ -1438,6 +1442,141 @@ function sameAssociation_(twin, association) {
   if (association.visitId) return twin.visitId === association.visitId;
   if (association.tripId) return twin.tripId === association.tripId && !twin.visitId;
   return twin.placeId === association.placeId && !twin.visitId && !twin.tripId;
+}
+
+/**
+ * The largest clip accepted whole from a device. The app keeps its own,
+ * slightly smaller limit and sends bigger videos as poster frames only;
+ * this bound is the server refusing to be talked past that.
+ */
+var MAX_DEVICE_CLIP_BYTES = 40 * 1024 * 1024;
+
+/** Base64 out of an upload field, with the failure named after the field. */
+function decodeMediaData_(data, label) {
+  var text = String(data || '');
+  if (!text) throw new Error('The upload carried no ' + label + ' data.');
+  try {
+    return Utilities.base64Decode(text);
+  } catch (error) {
+    throw new Error('The ' + label + ' data was not readable.');
+  }
+}
+
+/**
+ * One photo or video from a device, into Travel_Photos — the same tab, the
+ * same private folder, the same association rules as a picker import. The
+ * browser sends JPEG renditions it drew itself (this script cannot decode
+ * an arbitrary video), plus the clip's own bytes when the video is small
+ * enough to travel; a larger clip keeps its poster frames, exactly the deal
+ * the picker import offers when a download is beyond this script's limits.
+ */
+function uploadTravelMedia_(body) {
+  var association = resolveAssociation_(body);
+
+  var mimeType = String(body.mimeType || '').trim();
+  var isVideo = mimeType.indexOf('video/') === 0;
+  if (!isVideo && mimeType.indexOf('image/') !== 0) {
+    throw new Error('Only photos and videos can be added.');
+  }
+
+  // `device-<hash>` from the app — the same duplicate-and-reuse rules the
+  // picker import keys on its Google Photos item id.
+  var itemId = String(body.itemId || '').trim();
+  var thumbId = '', displayId = '', videoId = '';
+
+  if (itemId) {
+    var existing = tableFor_(TRAVEL_PHOTOS_TAB);
+    var twins = [];
+    for (var i = 0; i < existing.rows.length; i++) {
+      var row = existing.rows[i];
+      if (cellOf_(row, existing.map, 'Google Photos Item ID') !== itemId) continue;
+      if (cellOf_(row, existing.map, 'Deleted?').toLowerCase() === 'yes') continue;
+      twins.push({
+        visitId: cellOf_(row, existing.map, 'Visit ID'),
+        tripId: cellOf_(row, existing.map, 'Trip ID'),
+        placeId: cellOf_(row, existing.map, 'Place ID'),
+        thumbId: cellOf_(row, existing.map, 'Thumb Drive File ID'),
+        displayId: cellOf_(row, existing.map, 'Display Drive File ID'),
+        videoId: cellOf_(row, existing.map, 'Video Drive File ID')
+      });
+    }
+    for (var t = 0; t < twins.length; t++) {
+      if (sameAssociation_(twins[t], association)) {
+        return {
+          status: 'duplicate',
+          clipStored: Boolean(twins[t].videoId),
+          photos: { headers: [], rows: [] }
+        };
+      }
+    }
+    // The same file already lives elsewhere in the library: point a new
+    // metadata row at the same Drive files rather than storing a second copy.
+    for (var r = 0; r < twins.length; r++) {
+      if (twins[r].thumbId && twins[r].displayId) {
+        thumbId = twins[r].thumbId;
+        displayId = twins[r].displayId;
+        videoId = twins[r].videoId || '';
+        break;
+      }
+    }
+  }
+
+  if (!thumbId || !displayId) {
+    var thumbBytes = decodeMediaData_(body.thumbData, 'thumbnail');
+    var displayBytes = decodeMediaData_(body.displayData, 'preview');
+    if (thumbBytes.length > MAX_PHOTO_BYTES || displayBytes.length > MAX_PHOTO_BYTES) {
+      throw new Error('The preview images for that file came out too large to store.');
+    }
+
+    var clipBytes = null;
+    if (isVideo && body.videoData) {
+      clipBytes = decodeMediaData_(body.videoData, 'video');
+      if (clipBytes.length > MAX_DEVICE_CLIP_BYTES) {
+        throw new Error('That video is too large to store whole. Retry and it will be added as its preview frame.');
+      }
+    }
+
+    var folder = travelPhotosFolder_();
+    var safeName = String(body.filename || 'media')
+      .replace(/[\\\/:*?"<>|]/g, ' ').slice(0, 80).trim() || 'media';
+    // Files stay private, like every picker import — no setSharing on
+    // purpose. getTravelPhoto is the only door, and it checks the media
+    // access code every time.
+    thumbId = folder.createFile(
+      Utilities.newBlob(thumbBytes, 'image/jpeg', safeName + ' (thumb)')).getId();
+    displayId = folder.createFile(
+      Utilities.newBlob(displayBytes, 'image/jpeg', safeName)).getId();
+    if (clipBytes) {
+      videoId = folder.createFile(
+        Utilities.newBlob(clipBytes, mimeType, safeName + ' (video)')).getId();
+    }
+  }
+
+  var saved = saveTravelPhotoRow_({
+    'Google Photos Item ID': itemId,
+    'Place ID': association.placeId,
+    'Visit ID': association.visitId,
+    'Trip ID': association.tripId,
+    'Taken At': String(body.takenAt || ''),
+    'Filename': String(body.filename || ''),
+    'MIME Type': mimeType,
+    'Width': body.width ? String(body.width) : '',
+    'Height': body.height ? String(body.height) : '',
+    'Thumb Drive File ID': thumbId,
+    'Display Drive File ID': displayId,
+    'Video Drive File ID': videoId,
+    'Source': 'manual',
+    'Sort Order': '',
+    'Archived?': 'No',
+    'Deleted?': 'No'
+  });
+
+  return {
+    status: 'imported',
+    photoId: saved.id,
+    clipStored: Boolean(videoId),
+    photos: { headers: saved.headers, rows: [saved.row] }
+  };
 }
 
 /** One rendition, from the temporary base URL into the private folder. */

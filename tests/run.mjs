@@ -16,6 +16,7 @@ const suites = [
   "sheet-queue.test.mjs",
   "visits.test.mjs",
   "travel-photos.test.mjs",
+  "device-media.test.mjs",
   "media-player.test.mjs",
   "trip-membership.test.mjs",
   "sheet-connection.test.mjs",

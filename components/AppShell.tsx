@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Globe2, Heart, MapPin, Pencil, Trash2 } from "lucide-react";
+import { FolderOpen, Globe2, Heart, Images, MapPin, Pencil, Trash2 } from "lucide-react";
 
 import { AppTabBar, type AppMode } from "@/components/AppTabBar";
 import { GlobeEmptyState, PickModeBanner } from "@/components/globe/GlobeOverlay";
@@ -15,6 +15,11 @@ import {
   type GlobePoint,
   type TravelGlobeHandle,
 } from "@/components/globe/TravelGlobe";
+import {
+  DeviceMediaIntake,
+  type DeviceMediaIntakeHandle,
+  type DeviceMediaTarget,
+} from "@/components/photos/DeviceMediaIntake";
 import { GooglePhotosFlowSheet } from "@/components/photos/GooglePhotosReviewSheet";
 import { MediaCodeSheet } from "@/components/photos/MediaCodeSheet";
 import { TravelMediaPlayer } from "@/components/photos/TravelMediaPlayer";
@@ -543,6 +548,54 @@ export function AppShell() {
   );
 
   /**
+   * Videos picked inside the place form. A saved place takes them straight
+   * into its memories; a place still being typed holds them until Save, when
+   * the new record exists to attach to. Cancelling the form lets them go —
+   * the note under the picker says as much as it counts them.
+   */
+  const pendingFormVideos = useRef<File[]>([]);
+  const [pendingFormVideoCount, setPendingFormVideoCount] = useState(0);
+
+  const flushFormVideos = useCallback((placeId: string, title: string) => {
+    const files = pendingFormVideos.current;
+    pendingFormVideos.current = [];
+    setPendingFormVideoCount(0);
+    if (files.length === 0) return;
+    deviceIntake.current?.addFiles(
+      { title, resolve: async () => ({ placeId }) },
+      files,
+    );
+  }, []);
+
+  const handleFormVideos = useCallback(
+    (files: File[]) => {
+      const id = resolvedDraft.id;
+      if (id) {
+        deviceIntake.current?.addFiles(
+          {
+            title: resolvedDraft.name.trim() || "This place",
+            resolve: async () => ({ placeId: id }),
+          },
+          files,
+        );
+        return;
+      }
+      pendingFormVideos.current = [...pendingFormVideos.current, ...files];
+      setPendingFormVideoCount(pendingFormVideos.current.length);
+    },
+    [resolvedDraft.id, resolvedDraft.name],
+  );
+
+  /* Videos held for a save that never came go with the closed form. */
+  const formIsOpen = overlays.some((overlay) => overlay.kind === "form");
+  useEffect(() => {
+    if (!formIsOpen && pendingFormVideos.current.length > 0) {
+      pendingFormVideos.current = [];
+      setPendingFormVideoCount(0);
+    }
+  }, [formIsOpen]);
+
+  /**
    * The already-been-here save: no second pin, the existing record grows.
    *
    * The dates become another visit, anything the form carried that the record
@@ -599,6 +652,9 @@ export function AppShell() {
         message = `${existing.name} is already on your globe`;
       }
 
+      // Videos the form was holding belong to this existing place now.
+      flushFormVideos(existing.id, existing.name);
+
       setDraft(resolvedDraft);
       setDraftBaseline(resolvedDraft);
       // The card is the proof: open it where the visit just appeared.
@@ -608,7 +664,7 @@ export function AppShell() {
       ]);
       showToast(whenOffline(message, `${message} — it’ll sync when you’re back`));
     },
-    [updatePlace, addVisit, showToast, resolvedDraft],
+    [updatePlace, addVisit, showToast, resolvedDraft, flushFormVideos],
   );
 
   const saveForm = useCallback(async () => {
@@ -632,6 +688,8 @@ export function AppShell() {
         }
 
         const created = await createPlace(input);
+        // The place exists now; videos the form was holding go to it.
+        flushFormVideos(created.id, created.name);
         setDraft(resolvedDraft);
         setDraftBaseline(resolvedDraft);
 
@@ -677,6 +735,7 @@ export function AppShell() {
     selectedId,
     flyTo,
     reduceMotion,
+    flushFormVideos,
   ]);
 
   /* ---------------------------------------------------------------------- */
@@ -818,8 +877,23 @@ export function AppShell() {
   /* ---------------------------------------------------------------------- */
 
   const photosEnabled = capabilities.travelPhotos;
+  /** Whether this deployment stores photos and videos picked from a device. */
+  const deviceMediaEnabled = photosEnabled && capabilities.deviceMediaUpload;
 
-  const startAddPhotosForVisit = useCallback(
+  /** The "from this device" intake — one hidden input, one progress sheet. */
+  const deviceIntake = useRef<DeviceMediaIntakeHandle | null>(null);
+  /**
+   * "Where from?" for one Add tap. Both answers must run inside the option's
+   * own tap — the picker window and the file dialog are each gesture-gated —
+   * which the ActionSheet honours by calling onSelect synchronously.
+   */
+  const [addMediaChoice, setAddMediaChoice] = useState<{
+    title: string;
+    googlePhotos: () => void;
+    device: () => void;
+  } | null>(null);
+
+  const beginGooglePhotosForVisit = useCallback(
     (place: VisitedPlace, visit: PlaceVisit) => {
       // The blank window must open inside this tap — Safari's rule — and is
       // pointed at Google Photos once the session exists.
@@ -852,7 +926,33 @@ export function AppShell() {
     [ensureRealVisit, pushOverlay, showToast],
   );
 
-  const startAddPhotosForTrip = useCallback(
+  const deviceTargetForVisit = useCallback(
+    (place: VisitedPlace, visit: PlaceVisit): DeviceMediaTarget => ({
+      title: place.name,
+      resolve: async () => {
+        const visitId = await ensureRealVisit(place.id, visit);
+        return { placeId: place.id, visitId, tripId: visit.tripId };
+      },
+    }),
+    [ensureRealVisit],
+  );
+
+  const startAddPhotosForVisit = useCallback(
+    (place: VisitedPlace, visit: PlaceVisit) => {
+      if (!deviceMediaEnabled) {
+        beginGooglePhotosForVisit(place, visit);
+        return;
+      }
+      setAddMediaChoice({
+        title: place.name,
+        googlePhotos: () => beginGooglePhotosForVisit(place, visit),
+        device: () => deviceIntake.current?.open(deviceTargetForVisit(place, visit)),
+      });
+    },
+    [deviceMediaEnabled, beginGooglePhotosForVisit, deviceTargetForVisit],
+  );
+
+  const beginGooglePhotosForTrip = useCallback(
     (trip: Trip) => {
       openPickerWindow();
       setPhotoContext({
@@ -866,6 +966,25 @@ export function AppShell() {
       pushOverlay({ kind: "photoFlow" });
     },
     [pushOverlay],
+  );
+
+  const startAddPhotosForTrip = useCallback(
+    (trip: Trip) => {
+      if (!deviceMediaEnabled) {
+        beginGooglePhotosForTrip(trip);
+        return;
+      }
+      setAddMediaChoice({
+        title: trip.name,
+        googlePhotos: () => beginGooglePhotosForTrip(trip),
+        device: () =>
+          deviceIntake.current?.open({
+            title: trip.name,
+            resolve: async () => ({ tripId: trip.id }),
+          }),
+      });
+    },
+    [deviceMediaEnabled, beginGooglePhotosForTrip],
   );
 
   const closePhotoFlow = useCallback(() => {
@@ -1847,6 +1966,8 @@ export function AppShell() {
         trips={trips}
         onCreateTrip={startCreateTrip}
         visitCount={draft.id ? getVisits(draft.id).length : 0}
+        onVideos={deviceMediaEnabled ? handleFormVideos : undefined}
+        pendingVideoCount={pendingFormVideoCount}
       />
 
       <TripDetailSheet
@@ -2070,6 +2191,30 @@ export function AppShell() {
           showToast("Media code saved on this device");
         }}
       />
+
+      {/* "Where from?" for one Add tap. Both options must act inside their
+          own tap — the picker window and the file dialog are gesture-gated —
+          and the ActionSheet calls onSelect synchronously for exactly this. */}
+      <ActionSheet
+        open={Boolean(addMediaChoice)}
+        onClose={() => setAddMediaChoice(null)}
+        title={addMediaChoice ? `Add to ${addMediaChoice.title}` : undefined}
+        description="Photos and videos both play in Memories."
+        actions={[
+          {
+            label: "Choose from Google Photos",
+            icon: <Images size={18} />,
+            onSelect: () => addMediaChoice?.googlePhotos(),
+          },
+          {
+            label: "Choose files on this device",
+            icon: <FolderOpen size={18} />,
+            onSelect: () => addMediaChoice?.device(),
+          },
+        ]}
+      />
+
+      <DeviceMediaIntake handleRef={deviceIntake} onToast={showToast} />
 
       <TravelMediaPlayer
         open={Boolean(playerSession)}

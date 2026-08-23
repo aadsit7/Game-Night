@@ -303,6 +303,13 @@ function CloudVideo({
   const setElement = useCallback((element: HTMLVideoElement | null) => {
     if (element === null) elementRef.current?.pause();
     elementRef.current = element;
+    // React's dev-mode ref cycle detaches and re-attaches the same element,
+    // and the pause above aborts the start its autoplay attribute already
+    // made — with nothing retrying it. Re-attach is the retry; a viewer's
+    // own pause has controls on screen and is never second-guessed here.
+    if (element && element.autoplay && element.paused && !element.ended) {
+      void element.play().catch(() => undefined);
+    }
   }, []);
 
   // As in CloudImage: the row and its version, never the object, whose

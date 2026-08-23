@@ -43,6 +43,12 @@ export type SheetCapabilities = {
   googlePhotosPicker: boolean;
   /** A Google Photos refresh token is currently stored server-side. */
   googlePhotosConnected: boolean;
+  /**
+   * The deployment accepts photos and videos uploaded straight from a
+   * device or a Drive folder into Travel_Photos. Older scripts omit this
+   * and the app simply doesn't offer the source.
+   */
+  deviceMediaUpload: boolean;
 };
 
 export type UpsertResult = { id: string; row: unknown[]; headers: string[] };
@@ -259,6 +265,7 @@ export async function getAll(
       travelPhotos: capabilities.travelPhotos === true,
       googlePhotosPicker: capabilities.googlePhotosPicker === true,
       googlePhotosConnected: capabilities.googlePhotosConnected === true,
+      deviceMediaUpload: capabilities.deviceMediaUpload === true,
     },
     serverTime: String(data?.serverTime ?? new Date().toISOString()),
   };
@@ -591,6 +598,81 @@ export async function importPickedPhotos(
 
   return {
     results: Array.isArray(data?.results) ? data.results : [],
+    photos: asTable(data?.photos),
+  };
+}
+
+export type DeviceMediaUploadRequest = {
+  placeId?: string;
+  visitId?: string;
+  tripId?: string;
+  /** `device-<hash>` — the durable identity deduplication keys on. Optional. */
+  itemId?: string;
+  filename: string;
+  mimeType: string;
+  takenAt?: string;
+  width?: number;
+  height?: number;
+  /** Base64, no data-URL prefix — same wire shape as every other upload. */
+  thumbData: string;
+  displayData: string;
+  /** The clip's own bytes, when the video is small enough to send whole. */
+  videoData?: string;
+};
+
+export type DeviceMediaUploadResult = {
+  status: "imported" | "duplicate";
+  photoId?: string;
+  /** Whether the clip's bytes were stored, or only its poster frames. */
+  clipStored: boolean;
+  /** The Travel_Photos row created, for merging without a full reload. */
+  photos: SheetTable;
+};
+
+/**
+ * One photo or video from the device, straight into Travel_Photos. The
+ * renditions are made in the browser — the script can resize a Google
+ * Photos download but cannot decode an arbitrary upload — so every row is
+ * still guaranteed its thumb and display frames.
+ */
+export async function uploadTravelMedia(
+  connection: SheetConnection,
+  request: DeviceMediaUploadRequest,
+  signal?: AbortSignal,
+): Promise<DeviceMediaUploadResult> {
+  const deadline =
+    signal ??
+    (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+      ? // A clip is tens of megabytes riding a phone's uplink.
+        AbortSignal.timeout(300_000)
+      : undefined);
+
+  const data = (await postToSheet(
+    connection,
+    {
+      action: "uploadTravelMedia",
+      placeId: request.placeId ?? "",
+      visitId: request.visitId ?? "",
+      tripId: request.tripId ?? "",
+      itemId: request.itemId ?? "",
+      filename: request.filename,
+      mimeType: request.mimeType,
+      takenAt: request.takenAt ?? "",
+      width: request.width ?? "",
+      height: request.height ?? "",
+      thumbData: request.thumbData,
+      displayData: request.displayData,
+      videoData: request.videoData ?? "",
+    },
+    deadline,
+  )) as
+    | { status?: string; photoId?: string; clipStored?: boolean; photos?: Partial<SheetTable> }
+    | undefined;
+
+  return {
+    status: data?.status === "duplicate" ? "duplicate" : "imported",
+    photoId: typeof data?.photoId === "string" ? data.photoId : undefined,
+    clipStored: data?.clipStored === true,
     photos: asTable(data?.photos),
   };
 }

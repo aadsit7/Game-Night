@@ -187,7 +187,7 @@ export function TripDetailSheet({
                   className="pressable mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md bg-fill text-[15px] font-medium text-accent"
                 >
                   <ImagePlus size={16} aria-hidden="true" />
-                  Add from Google Photos
+                  Add photos & videos
                 </button>
               ) : null}
             </section>

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ImagePlus, Loader2 } from "lucide-react";
 
 import { ActionSheet } from "@/components/ui/ActionSheet";
+import { classifyPickedFile } from "@/lib/photos/deviceMedia";
 import {
   PhotoStoreError,
   isLocalPhotoRef,
@@ -16,15 +17,26 @@ import { cn } from "@/lib/utils/cn";
  * Optional photography for a place. The first photo is the cover; the rest sit
  * behind it on the detail screen. Files are downscaled and stored as blobs in
  * IndexedDB rather than inflating the place record.
+ *
+ * With `onVideos` present the same picker takes videos too — the system
+ * dialog stops greying them out — and hands them up whole: a video is not a
+ * cover image, it is a memory, and the caller files it into the place's own
+ * gallery where the player can reach it.
  */
 export function PhotoPicker({
   photos,
   onChange,
   onError,
+  onVideos,
+  pendingVideoCount = 0,
 }: {
   photos: string[];
   onChange: (photos: string[]) => void;
   onError: (message: string) => void;
+  /** Present when the deployment can store device videos in Travel_Photos. */
+  onVideos?: (files: File[]) => void;
+  /** Videos waiting for this place to be saved, shown as a note. */
+  pendingVideoCount?: number;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -34,8 +46,25 @@ export function PhotoPicker({
     if (!files || files.length === 0) return;
     setBusy(true);
     try {
+      const images: File[] = [];
+      const videos: File[] = [];
+      let unsupported = 0;
+      for (const file of Array.from(files)) {
+        const kind = classifyPickedFile(file.name, file.type);
+        if (kind === "video" && onVideos) videos.push(file);
+        else if (kind === "photo" || kind === "video") images.push(file);
+        else unsupported += 1;
+      }
+      if (unsupported > 0) {
+        onError(
+          unsupported === 1
+            ? "One file wasn’t a photo or a video, so it was left out."
+            : `${unsupported} files weren’t photos or videos, so they were left out.`,
+        );
+      }
+
       const saved: string[] = [];
-      for (const file of Array.from(files).slice(0, 8)) {
+      for (const file of images.slice(0, 8)) {
         try {
           saved.push(await savePhoto(file));
         } catch (error) {
@@ -47,6 +76,7 @@ export function PhotoPicker({
         }
       }
       if (saved.length > 0) onChange([...photos, ...saved]);
+      if (videos.length > 0) onVideos?.(videos);
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -96,10 +126,20 @@ export function PhotoPicker({
         </button>
       </div>
 
+      {pendingVideoCount > 0 ? (
+        <p className="mt-2 text-[12.5px] leading-snug text-ink-3">
+          {pendingVideoCount === 1
+            ? "1 video will join this place’s memories when you save."
+            : `${pendingVideoCount} videos will join this place’s memories when you save.`}
+        </p>
+      ) : null}
+
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        // Videos are only offered when someone is there to catch them —
+        // otherwise the system picker greys them out, honestly.
+        accept={onVideos ? "image/*,video/*" : "image/*"}
         multiple
         className="sr-only"
         tabIndex={-1}
