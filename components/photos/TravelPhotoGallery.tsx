@@ -5,6 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ImagePlus, KeyRound, Play, RefreshCw, Trash2, X } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useNearViewport } from "@/lib/hooks/useNearViewport";
 import { PhotoSourceError, loadTravelPhotoBlob } from "@/lib/photos/photoSource";
 import { isVideoTravelPhoto } from "@/lib/photos/travelPhotos";
 import { cn } from "@/lib/utils/cn";
@@ -219,19 +220,25 @@ function PhotoViewer({
                 key={photo.id}
                 className="grid h-full w-screen shrink-0 snap-center place-items-center p-4"
               >
-                <div className="relative max-h-[82dvh] w-full max-w-[720px]">
-                  {isVideoTravelPhoto(photo) ? (
-                    // Only the slide on screen mounts its <video>: a strip of
-                    // players would fetch every clip at once.
-                    at === index ? (
-                      <CloudVideo photo={photo} onFailure={onFailure} />
+                {/* Only the slide on screen and its two neighbours hold real
+                    media. The neighbours are what make a swipe land on a
+                    picture instead of a wait; the rest of a fifty-photo
+                    gallery stays unfetched until the swiping gets there. */}
+                {at !== null && Math.abs(index - at) <= 1 ? (
+                  <div className="relative max-h-[82dvh] w-full max-w-[720px]">
+                    {isVideoTravelPhoto(photo) ? (
+                      // Only the slide on screen mounts its <video>: a strip
+                      // of players would fetch every clip at once.
+                      at === index ? (
+                        <CloudVideo photo={photo} onFailure={onFailure} />
+                      ) : (
+                        <CloudImage photo={photo} size="display" contain onFailure={onFailure} />
+                      )
                     ) : (
                       <CloudImage photo={photo} size="display" contain onFailure={onFailure} />
-                    )
-                  ) : (
-                    <CloudImage photo={photo} size="display" contain onFailure={onFailure} />
-                  )}
-                </div>
+                    )}
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -289,12 +296,26 @@ function CloudVideo({
   // the metadata alone.
   const missingClip = !photo.videoDriveFileId;
 
+  // Detach is the off switch: a media element removed from the DOM otherwise
+  // plays its audio on until it is collected. Swiping off a clip mid-play
+  // unmounts it, and the swipe must take the sound with it.
+  const elementRef = useRef<HTMLVideoElement | null>(null);
+  const setElement = useCallback((element: HTMLVideoElement | null) => {
+    if (element === null) elementRef.current?.pause();
+    elementRef.current = element;
+  }, []);
+
+  // As in CloudImage: the row and its version, never the object, whose
+  // identity a background sync replaces — re-running this on that would
+  // re-download the clip and revoke the URL out from under a playing video.
+  const { id, updatedAt } = photo;
+
   useEffect(() => {
     if (missingClip) return;
     let disposed = false;
     let objectUrl: string | null = null;
 
-    void loadTravelPhotoBlob(photo, "video")
+    void loadTravelPhotoBlob({ id, updatedAt }, "video")
       .then((blob) => {
         if (disposed) return;
         objectUrl = URL.createObjectURL(blob);
@@ -315,11 +336,12 @@ function CloudVideo({
       disposed = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [photo, onFailure, missingClip]);
+  }, [id, updatedAt, onFailure, missingClip]);
 
   if (videoUrl) {
     return (
       <video
+        ref={setElement}
         src={videoUrl}
         controls
         playsInline
@@ -344,7 +366,9 @@ function CloudVideo({
 
 /**
  * One cloud image: cache → script → object URL, with a skeleton while it
- * loads and an honest retry tile when it cannot.
+ * loads and an honest retry tile when it cannot. Bytes are only asked for
+ * once the tile is on screen or about to be — a strip of eighty thumbnails
+ * fetches the handful that show, not the eighty.
  */
 function CloudImage({
   photo,
@@ -358,15 +382,21 @@ function CloudImage({
   contain?: boolean;
   onFailure?: (reason: PhotoSourceError["reason"]) => void;
 }) {
+  const placeholderRef = useRef<HTMLSpanElement>(null);
+  const near = useNearViewport(placeholderRef);
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState<PhotoSourceError["reason"] | null>(null);
   const [attempt, setAttempt] = useState(0);
+  // The load's identity is the row and its version — never the object, which
+  // a background sync replaces wholesale without the pixels having changed.
+  const { id, updatedAt } = photo;
 
   useEffect(() => {
+    if (!near) return;
     let disposed = false;
     let objectUrl: string | null = null;
 
-    void loadTravelPhotoBlob(photo, size)
+    void loadTravelPhotoBlob({ id, updatedAt }, size)
       .then((blob) => {
         if (disposed) return;
         objectUrl = URL.createObjectURL(blob);
@@ -384,8 +414,8 @@ function CloudImage({
       disposed = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-    // `attempt` re-runs the load on retry; the photo's version covers edits.
-  }, [photo.id, photo.updatedAt, size, attempt, onFailure, photo]);
+    // `attempt` re-runs the load on retry; `updatedAt` covers edits.
+  }, [near, id, updatedAt, size, attempt, onFailure]);
 
   if (failed) {
     return (
@@ -398,7 +428,14 @@ function CloudImage({
           setAttempt((n) => n + 1);
         }}
         aria-label="Photo failed to load — retry"
-        className="absolute inset-0 grid place-items-center bg-fill text-ink-3"
+        className={
+          // The viewer's wrapper takes its height from its content, so the
+          // absolute tile that fills a thumbnail square would here be a
+          // zero-height nothing — give the retry a body of its own.
+          contain
+            ? "grid min-h-[38dvh] w-full place-items-center text-white/70"
+            : "absolute inset-0 grid place-items-center bg-fill text-ink-3"
+        }
       >
         <RefreshCw size={16} aria-hidden="true" />
       </button>
@@ -406,7 +443,15 @@ function CloudImage({
   }
 
   if (!url) {
-    return <span aria-hidden="true" className="skeleton absolute inset-0" />;
+    return (
+      <span
+        ref={placeholderRef}
+        aria-hidden="true"
+        className={
+          contain ? "skeleton block h-[38dvh] w-full rounded-[8px]" : "skeleton absolute inset-0"
+        }
+      />
+    );
   }
 
   return contain ? (

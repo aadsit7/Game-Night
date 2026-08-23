@@ -962,12 +962,17 @@ class SheetPlaceRepository implements PlaceRepository {
     this.commit(next);
     this.persist();
 
+    // The local-photos side table forgets the record whatever kind of id it
+    // has — undo is unharmed, because restore() writes the entry back from
+    // its snapshot. Only inside the isLocalId branch, a synced place's entry
+    // would outlive the place forever and keep re-attaching refs on load.
+    forgetLocalPhotos(id);
+
     // A record the sheet has never seen has nothing to soft-delete; the queue
-    // drops its create instead, and the local photo record goes with it. So
-    // do the visit and photo rows queued against it — flushed, they would
-    // land in the sheet pointing at a place id that never existed there.
+    // drops its create instead. So do the visit and photo rows queued against
+    // it — flushed, they would land in the sheet pointing at a place id that
+    // never existed there.
     if (isLocalId(id)) {
-      forgetLocalPhotos(id);
       this.queue = this.queue.filter(
         (write) => !(write.kind === "upsert" && write.fields[VISIT_COLUMNS.placeId] === id),
       );

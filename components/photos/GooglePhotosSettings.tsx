@@ -32,9 +32,14 @@ export function GooglePhotosSettings({ connection }: { connection: SheetConnecti
   // opened settings sheet, so localStorage is readable here.
   const [hasMediaCode, setHasMediaCode] = useState(() => Boolean(loadMediaCode()));
 
+  /** The check itself failed — say so, or the row reads "Checking…" forever. */
+  const [statusFailed, setStatusFailed] = useState(false);
   /** Bumped to re-run the status fetch — the one external system here. */
   const [statusEpoch, setStatusEpoch] = useState(0);
-  const refresh = useCallback(() => setStatusEpoch((epoch) => epoch + 1), []);
+  const refresh = useCallback(() => {
+    setStatusFailed(false);
+    setStatusEpoch((epoch) => epoch + 1);
+  }, []);
 
   useEffect(() => {
     if (!connection) return;
@@ -44,7 +49,9 @@ export function GooglePhotosSettings({ connection }: { connection: SheetConnecti
         if (!disposed) setStatus(next);
       })
       .catch(() => {
-        // Settings still render; the connect button reports its own errors.
+        // Settings still render; the row reports the failed check and the
+        // button becomes Retry rather than a Connect that can never enable.
+        if (!disposed) setStatusFailed(true);
       });
     return () => {
       disposed = true;
@@ -88,6 +95,9 @@ export function GooglePhotosSettings({ connection }: { connection: SheetConnecti
     void photosAuthDisconnect(connection)
       .then(() => {
         setNote("Google Photos disconnected.");
+        // Drop the stale "Connected" while the re-check answers — if that
+        // check fails, the row must not keep claiming a revoked connection.
+        setStatus(null);
         return refresh();
       })
       .catch((error: unknown) => {
@@ -117,7 +127,9 @@ export function GooglePhotosSettings({ connection }: { connection: SheetConnecti
           <div className="min-w-0 flex-1">
             <p className="text-[15px] leading-snug text-ink">
               {status === null
-                ? "Checking Google Photos…"
+                ? statusFailed
+                  ? "Google Photos couldn’t be checked — you may be offline"
+                  : "Checking Google Photos…"
                 : status.connected
                   ? "Connected — photos can be imported from any device"
                   : status.configured
@@ -137,6 +149,14 @@ export function GooglePhotosSettings({ connection }: { connection: SheetConnecti
             >
               <Unplug size={13} aria-hidden="true" className="mr-1 inline-block align-[-2px]" />
               Disconnect
+            </button>
+          ) : status === null && statusFailed ? (
+            <button
+              type="button"
+              onClick={refresh}
+              className="pressable shrink-0 rounded-pill bg-accent px-3 py-1.5 text-[13.5px] font-semibold text-on-accent"
+            >
+              Retry
             </button>
           ) : (
             <button

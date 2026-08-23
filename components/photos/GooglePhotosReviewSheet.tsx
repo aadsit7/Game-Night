@@ -21,6 +21,7 @@ import {
   takenOnDate,
   type ReviewedMedia,
 } from "@/lib/photos/travelPhotos";
+import { openPickerWindow, pickerNavigationUrl } from "@/lib/photos/pickerWindow";
 import {
   useGooglePhotosPicker,
   type ImportGroup,
@@ -181,7 +182,18 @@ function FlowBody({
           {state.message ? (
             <p className="rounded-sm bg-fill px-3.5 py-2.5 text-[14px] text-ink-2">{state.message}</p>
           ) : null}
-          <Button block size="lg" loading={state.busy} onClick={() => void flow.connect()}>
+          <Button
+            block
+            size="lg"
+            loading={state.busy}
+            onClick={() => {
+              // The window must exist before the first await, or iOS Safari
+              // refuses to open it — same rule the settings screen follows.
+              // `connect()` fills it with the consent URL once it has one.
+              openPickerWindow();
+              void flow.connect();
+            }}
+          >
             Connect Google Photos
           </Button>
           <Button
@@ -204,7 +216,9 @@ function FlowBody({
           </p>
           {!state.windowOpen ? (
             <a
-              href={state.pickerUri}
+              // Through the same autoclose-decorated address the popup gets,
+              // so the fallback path comes back to the app by itself too.
+              href={pickerNavigationUrl(state.pickerUri)}
               target="_blank"
               rel="noreferrer"
               onClick={flow.markWindowOpened}
@@ -469,6 +483,22 @@ const previewCache = new Map<string, string>();
 let previewActive = 0;
 const previewQueue: Array<() => void> = [];
 
+/**
+ * Caches a preview's object URL, and keeps the cache a cache: far past what
+ * one review shows, the oldest entry is revoked and dropped. The cap is well
+ * above a session's 50-item ceiling, so nothing on screen can be evicted —
+ * only thumbnails from reviews long since closed.
+ */
+function rememberPreview(itemId: string, objectUrl: string): void {
+  previewCache.set(itemId, objectUrl);
+  if (previewCache.size <= 150) return;
+  const oldest = previewCache.keys().next().value;
+  if (oldest === undefined) return;
+  const url = previewCache.get(oldest);
+  previewCache.delete(oldest);
+  if (url) URL.revokeObjectURL(url);
+}
+
 async function previewSlot<T>(work: () => Promise<T>): Promise<T> {
   if (previewActive >= 4) await new Promise<void>((resolve) => previewQueue.push(resolve));
   previewActive += 1;
@@ -497,6 +527,9 @@ function PreviewThumb({
     let disposed = false;
 
     void previewSlot(async () => {
+      // Closing the review leaves queued slots behind; a disposed thumb's
+      // turn must cost nothing, or forty dead fetches stall the next flow.
+      if (disposed) return;
       const connection = sheetPlaceRepository.getConnection();
       if (!connection) throw new Error("no connection");
       const preview = await getPickedPhotoPreview(connection, { sessionId, itemId });
@@ -505,7 +538,7 @@ function PreviewThumb({
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
       const objectUrl = URL.createObjectURL(new Blob([bytes], { type: preview.mimeType }));
-      previewCache.set(itemId, objectUrl);
+      rememberPreview(itemId, objectUrl);
       if (!disposed) setUrl(objectUrl);
     }).catch(() => {
       if (!disposed) setFailed(true);

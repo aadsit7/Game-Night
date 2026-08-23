@@ -96,6 +96,19 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollDeadline = useRef(0);
   const cancelled = useRef(false);
+  /**
+   * Which run of the flow is the live one. Every async chain — a start, a
+   * poll, an import — snapshots this when it begins and compares before each
+   * step. `cancelled` alone cannot do that job: the next `start` resets it to
+   * false, which would let a chain from the *previous* flow wake back up and
+   * write its session, its polls or its import progress over the new one.
+   */
+  const runId = useRef(0);
+  /** True only between "picker opened" and "selection collected" — the only
+   * span in which a poll result is welcome. */
+  const watching = useRef(false);
+  /** One poll at a time; the visibility handler and the timer both call in. */
+  const pollInFlight = useRef(false);
   const contextRef = useRef<PhotoContext | null>(null);
   /** What retry re-sends, association intact. */
   const failedGroupsRef = useRef<ImportGroup[]>([]);
@@ -125,13 +138,16 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
     const current = sessionRef.current;
     if (!connection || !current) return;
 
+    // Out of the picking phase: any poll still airborne lands in the bin.
+    watching.current = false;
     clearPollTimer();
     closePickerWindow();
     setState({ step: "loading" });
 
+    const run = runId.current;
     try {
       const items = await listPickedPhotos(connection, current);
-      if (cancelled.current) return;
+      if (cancelled.current || runId.current !== run) return;
       if (items.length === 0) {
         setState({
           step: "error",
@@ -141,7 +157,7 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
       }
       setState({ step: "review", items });
     } catch (error) {
-      if (cancelled.current) return;
+      if (cancelled.current || runId.current !== run) return;
       setState({ step: "error", message: messageOf(error, "The selection couldn’t be read back.") });
     }
   }, [clearPollTimer]);
@@ -150,20 +166,33 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
     const connection = sheetPlaceRepository.getConnection();
     const current = sessionRef.current;
     if (!connection || !current || cancelled.current) return;
+    // Only the picking phase polls, and only one poll flies at a time — the
+    // timer and the visibility handler otherwise each grow a chain of their
+    // own, multiplying requests against a script that runs them one by one.
+    if (!watching.current || pollInFlight.current) return;
+    clearPollTimer();
 
+    const run = runId.current;
+    const stale = () =>
+      cancelled.current ||
+      runId.current !== run ||
+      sessionRef.current !== current ||
+      !watching.current;
     const schedule = (delay: number) => {
       pollTimer.current = setTimeout(() => pollAgain.current(), delay);
     };
 
+    pollInFlight.current = true;
     try {
       const session = await getPickerSession(connection, current);
-      if (cancelled.current || sessionRef.current !== current) return;
+      if (stale()) return;
 
       if (session.mediaItemsSet) {
         await collectItems();
         return;
       }
       if (Date.now() > pollDeadline.current) {
+        watching.current = false;
         setState({
           step: "error",
           message: "Google Photos didn’t report a selection in time. Open the picker again to continue.",
@@ -173,11 +202,13 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
       }
       schedule(parseDuration(session.pollingConfig.pollInterval, DEFAULT_POLL_MS));
     } catch {
-      if (cancelled.current) return;
+      if (stale()) return;
       // A single failed poll is a hiccup, not a verdict; try again slower.
       schedule(DEFAULT_POLL_MS * 2);
+    } finally {
+      pollInFlight.current = false;
     }
-  }, [collectItems, discardSession]);
+  }, [clearPollTimer, collectItems, discardSession]);
 
   useEffect(() => {
     pollAgain.current = () => void pollSession();
@@ -189,7 +220,12 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
    */
   const start = useCallback(
     async (context: PhotoContext) => {
+      // This run is the flow now; any earlier start, poll or import that is
+      // still mid-await sees the changed id and stands down.
+      const run = ++runId.current;
       cancelled.current = false;
+      watching.current = false;
+      clearPollTimer();
       contextRef.current = context;
       const connection = sheetPlaceRepository.getConnection();
       if (!connection) {
@@ -201,7 +237,7 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
       setState({ step: "starting" });
       try {
         const status = await photosAuthStatus(connection);
-        if (cancelled.current) return;
+        if (cancelled.current || runId.current !== run) return;
         if (!status.connected) {
           closePickerWindow();
           setState({
@@ -215,9 +251,10 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
         }
 
         const session = await createPickerSession(connection, { maxItems: 50 });
-        if (cancelled.current) {
-          sessionRef.current = session.sessionId;
-          discardSession();
+        if (cancelled.current || runId.current !== run) {
+          // Delete the session this run created — without touching
+          // `sessionRef`, which may already belong to a newer run.
+          void deletePickerSession(connection, session.sessionId).catch(() => undefined);
           return;
         }
         sessionRef.current = session.sessionId;
@@ -228,15 +265,16 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
         const windowOpen = navigatePickerWindow(pickerNavigationUrl(session.pickerUri));
         setState({ step: "picking", pickerUri: session.pickerUri, windowOpen });
 
+        watching.current = true;
         const delay = parseDuration(session.pollingConfig.pollInterval, DEFAULT_POLL_MS);
         pollTimer.current = setTimeout(() => pollAgain.current(), delay);
       } catch (error) {
-        if (cancelled.current) return;
+        if (cancelled.current || runId.current !== run) return;
         closePickerWindow();
         setState({ step: "error", message: messageOf(error, "Google Photos couldn’t be opened.") });
       }
     },
-    [discardSession],
+    [clearPollTimer],
   );
 
   /** The person opened the picker through the fallback link themselves. */
@@ -268,6 +306,7 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
       const total = groups.reduce((sum, group) => sum + group.items.length, 0);
       if (total === 0) return;
 
+      const run = runId.current;
       const tally: ImportTally = {
         total,
         done: 0,
@@ -285,7 +324,7 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
         const failedHere: GooglePickedMedia[] = [];
 
         for (let at = 0; at < group.items.length; at += IMPORT_BATCH_SIZE) {
-          if (cancelled.current) return;
+          if (cancelled.current || runId.current !== run) return;
           const batch = group.items.slice(at, at + IMPORT_BATCH_SIZE);
           try {
             const results: ImportItemResult[] = await sheetPlaceRepository.importGooglePhotos({
@@ -322,7 +361,7 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
         if (failedHere.length > 0) failedGroups.push({ ...group, items: failedHere });
       }
 
-      if (cancelled.current) return;
+      if (cancelled.current || runId.current !== run) return;
       failedGroupsRef.current = failedGroups;
       if (tally.imported > 0) onImported?.();
       if (failedGroups.length === 0) discardSession();
@@ -340,13 +379,12 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
 
   /** Sends only what failed, keeping everything already imported counted. */
   const retryFailed = useCallback(() => {
-    setState((current) => {
-      if (current.step !== "done" || current.tally.failed.length === 0) return current;
-      const { imported, duplicates, videos } = current.tally;
-      void runImport(failedGroupsRef.current, { imported, duplicates, videos });
-      return current;
-    });
-  }, [runImport]);
+    // Read the tally from the rendered state, not from inside a setState
+    // updater — updaters must stay pure, and React is free to run them twice.
+    if (state.step !== "done" || state.tally.failed.length === 0) return;
+    const { imported, duplicates, videos } = state.tally;
+    void runImport(failedGroupsRef.current, { imported, duplicates, videos });
+  }, [state, runImport]);
 
   /** Connect Google Photos: hand the consent URL to the (blank) popup. */
   const connect = useCallback(async () => {
@@ -377,6 +415,10 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
 
   const cancel = useCallback(() => {
     cancelled.current = true;
+    // Advance the run too: the next start() resets `cancelled`, and that
+    // must not wake anything from this flow back up.
+    runId.current += 1;
+    watching.current = false;
     clearPollTimer();
     discardSession();
     closePickerWindow();
@@ -397,6 +439,8 @@ export function useGooglePhotosPicker({ onImported }: { onImported?: () => void 
 
   useEffect(() => () => {
     cancelled.current = true;
+    runId.current += 1;
+    watching.current = false;
     clearPollTimer();
   }, [clearPollTimer]);
 

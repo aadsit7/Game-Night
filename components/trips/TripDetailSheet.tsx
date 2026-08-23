@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { ImagePlus, MapPin, Pencil, Play, Plus, TriangleAlert, X } from "lucide-react";
 
 import { TravelPhotoGallery } from "@/components/photos/TravelPhotoGallery";
@@ -71,12 +72,24 @@ export function TripDetailSheet({
   onPlayMemories: () => void;
   galleryEpoch: number;
 }) {
-  const grouping = trip ? groupTripDays(trip, places, visits) : null;
-  const summary = trip ? tripSummary(trip, places, visits) : null;
+  /* Derived once per data change rather than once per render — this sheet
+     re-renders with every state change in the shell above it, and the day
+     grouping and playlist both walk the whole collection. */
+  const grouping = useMemo(
+    () => (trip ? groupTripDays(trip, places, visits) : null),
+    [trip, places, visits],
+  );
+  const summary = useMemo(
+    () => (trip ? tripSummary(trip, places, visits) : null),
+    [trip, places, visits],
+  );
   const when = trip ? formatVisitRange(trip.startDate, trip.endDate) : null;
   /* The trip's whole gallery: its own journey-level media plus every member
      place's, one entry per record however many ways it is reachable. */
-  const tripPhotos = trip ? playlistForTrip(travelPhotos, trip, places, visits) : [];
+  const tripPhotos = useMemo(
+    () => (trip ? playlistForTrip(travelPhotos, trip, places, visits) : []),
+    [travelPhotos, trip, places, visits],
+  );
   const tripCounts = mediaCounts(tripPhotos);
   const isEmpty = Boolean(
     grouping &&

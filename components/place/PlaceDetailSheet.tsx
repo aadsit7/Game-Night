@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Bookmark,
@@ -26,7 +26,7 @@ import { PlaceImage } from "@/components/ui/PlaceImage";
 import { formatDays } from "@/lib/timeline/buildTimeline";
 import { isResidenceVisit, isUpcomingVisit, visitStats } from "@/lib/places/visits";
 import { formatMediaCounts, mediaCounts } from "@/lib/photos/mediaPlaylist";
-import { photosForPlace, photosForVisit } from "@/lib/photos/travelPhotos";
+import { photosForPlace, sortTravelPhotos } from "@/lib/photos/travelPhotos";
 import { formatVisitRange, inclusiveDayCount } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
 import { countryFlag, formatCoordinates, placeSubtitle } from "@/lib/utils/geo";
@@ -44,6 +44,10 @@ import type { TravelPhoto } from "@/types/travelPhoto";
  * facts move into a grouped card instead, so an entry with no photo opens
  * complete on one screen rather than opening on a placeholder.
  */
+
+/** One stable empty list, so a photo-less gallery's props never churn. */
+const NO_PHOTOS: TravelPhoto[] = [];
+
 export function PlaceDetailSheet({
   place,
   open,
@@ -132,7 +136,26 @@ export function PlaceDetailSheet({
     (visit) => !isUpcomingVisit(visit) && !isResidenceVisit(visit),
   ).length;
   const photoCount = extraPhotos.length + (hasCover ? 1 : 0);
-  const placePhotos = place ? photosForPlace(travelPhotos, place.id) : [];
+  /* Sliced once per photo-library change, not once per render: this sheet
+     re-renders with every toast and overlay above it, and a place with many
+     visits was filtering and sorting the whole library once per visit each
+     time. The map answers every visit row from one pass. */
+  const placeId = place?.id;
+  const placePhotos = useMemo(
+    () => (placeId ? photosForPlace(travelPhotos, placeId) : NO_PHOTOS),
+    [travelPhotos, placeId],
+  );
+  const photosByVisit = useMemo(() => {
+    const map = new Map<string, TravelPhoto[]>();
+    for (const photo of travelPhotos) {
+      if (photo.deletedAt || !photo.visitId) continue;
+      const list = map.get(photo.visitId);
+      if (list) list.push(photo);
+      else map.set(photo.visitId, [photo]);
+    }
+    for (const [visitId, list] of map) map.set(visitId, sortTravelPhotos(list));
+    return map;
+  }, [travelPhotos]);
   /** More than one gallery worth combining — the "All photos" strip. */
   const galleriesWithPhotos = new Set(
     placePhotos.map((photo) => photo.visitId ?? "").filter(Boolean),
@@ -270,7 +293,7 @@ export function PlaceDetailSheet({
                 <div className="overflow-hidden rounded-[18px] bg-fill/60">
                   <div className="divide-y divide-separator">
                     {visits.map((visit, index) => {
-                      const visitPhotos = photosForVisit(travelPhotos, visit.id);
+                      const visitPhotos = photosByVisit.get(visit.id) ?? NO_PHOTOS;
                       return (
                         <div key={visit.id}>
                           <VisitRow
