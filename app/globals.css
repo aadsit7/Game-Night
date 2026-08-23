@@ -549,6 +549,29 @@ select {
   }
 }
 
+/*
+ * The timeline scrubber's slider.
+ *
+ * The input itself is invisible: it is there for the behaviour — touch
+ * tracking, keyboard, VoiceOver — while the handle drawn over it is a real
+ * element positioned from the value. A native thumb of any width insets the
+ * usable track by half of itself at each end, so the drawn handle and the
+ * value would disagree by that much near the ends. A hairline thumb makes them
+ * agree everywhere.
+ */
+.scrub-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1px;
+  height: 100%;
+}
+
+.scrub-range::-moz-range-thumb {
+  width: 1px;
+  height: 100%;
+  border: 0;
+}
+
 /* Skeleton shimmer for loading media. */
 @keyframes shimmer {
   0% {

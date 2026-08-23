@@ -152,3 +152,104 @@ export function gapLabel(previousEnd: string, nextStart: string): string | null 
   if (remainder === 0) return years === 1 ? "a year later" : `${years} years later`;
   return years === 1 ? "over a year later" : `over ${years} years later`;
 }
+
+/* ==========================================================================
+   The scrubber's track
+
+   The control under the timeline used to have one position per year, which
+   made a busy year a dead end: the histogram advertised "fourteen places in
+   2024" and then dropped you at the top of it to scroll for the rest. These
+   turn the chronology into a list of *stops* — one per place — while still
+   giving every year an equal slice of the track, so the bar you are under
+   always matches the year you are in.
+   ========================================================================== */
+
+/** Parsed off the `YYYY-MM-DD` string rather than a Date, so no zone can shift it. */
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** One reachable position on the scrubber. */
+export type ScrubStop = {
+  placeId: string;
+  name: string;
+  year: number;
+  /** Index into `years`, so the histogram can light the bar this stop sits in. */
+  yearIndex: number;
+  /** Where the stop sits inside its own year; `0` is the year's first place. */
+  indexInYear: number;
+  /** "Mar" — the month the visit began. */
+  month: string;
+};
+
+export type ScrubTrack = {
+  /** Chronological, matching the order the timeline is drawn in. */
+  stops: ScrubStop[];
+  /** Slider positions each year is given. Equal for every year, by design. */
+  perYear: number;
+  /** Index of each year's first stop, index-aligned with `years`. */
+  firstStop: number[];
+  /** How many stops each year holds, index-aligned with `years`. */
+  counts: number[];
+  /** The highest slider value; the lowest is always 0. */
+  max: number;
+};
+
+export function buildScrubTrack(years: TimelineYear[]): ScrubTrack {
+  const stops: ScrubStop[] = [];
+  const firstStop: number[] = [];
+  const counts: number[] = [];
+  let busiest = 0;
+
+  years.forEach((year, yearIndex) => {
+    firstStop.push(stops.length);
+    counts.push(year.entries.length);
+    busiest = Math.max(busiest, year.entries.length);
+
+    year.entries.forEach((entry, indexInYear) => {
+      stops.push({
+        placeId: entry.place.id,
+        name: entry.place.name,
+        year: year.year,
+        yearIndex,
+        indexInYear,
+        month: MONTHS[Number(entry.start.slice(5, 7)) - 1] ?? "",
+      });
+    });
+  });
+
+  /*
+   * Every year owns the same width of track, because the histogram above it is
+   * drawn that way and a handle that disagreed with the bar under it would be
+   * lying. That slice then has to be fine enough that each stop in the busiest
+   * year gets several positions inside it — at one position each, rounding
+   * would put two stops on the same value and the second would be unreachable.
+   */
+  const perYear = Math.max(24, busiest * 4);
+
+  return { stops, firstStop, counts, perYear, max: Math.max(0, years.length * perYear - 1) };
+}
+
+function clamp(value: number, low: number, high: number): number {
+  return value < low ? low : value > high ? high : value;
+}
+
+/** Which stop a slider position lands on. `-1` when there is nothing to land on. */
+export function stopAt(track: ScrubTrack, value: number): number {
+  if (track.stops.length === 0) return -1;
+
+  const position = clamp(Math.round(value), 0, track.max);
+  const yearIndex = Math.min(Math.floor(position / track.perYear), track.counts.length - 1);
+  const within = (position - yearIndex * track.perYear) / track.perYear;
+  const count = track.counts[yearIndex];
+
+  return track.firstStop[yearIndex] + clamp(Math.floor(within * count), 0, count - 1);
+}
+
+/** Where a stop sits on the slider: the middle of the span it owns. */
+export function valueAt(track: ScrubTrack, stopIndex: number): number {
+  const stop = track.stops[clamp(stopIndex, 0, track.stops.length - 1)];
+  if (!stop) return 0;
+
+  const count = track.counts[stop.yearIndex];
+  const within = (stop.indexInYear + 0.5) / count;
+  return clamp(Math.round((stop.yearIndex + within) * track.perYear), 0, track.max);
+}

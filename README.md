@@ -10,7 +10,12 @@ Four ways to look at the same travel history:
 - **Timeline** — the same history as a chronology, oldest first, with a
   scrubber whose bars are the years themselves: as tall as that year was busy,
   so the shape of the control shows where the travelling happened before you
-  touch it. Drag it to move through the years; scrolling drags it back.
+  touch it. Each year is one bar wide however much happened in it, and dragging
+  inside a bar walks that year's places one at a time — a nine-stop year is
+  somewhere you can move around in, not just somewhere to be dropped at the top
+  of. The list keeps up with your thumb rather than gliding after it, the
+  readout above the track names the place under it, and scrolling by hand drags
+  the handle back.
 - **Places** — a searchable, sortable collection of the same records, as a
   travel journal rather than a table.
 - **Trips** — the same places grouped into the journeys they belonged to, laid
@@ -196,7 +201,8 @@ timeline and the list all read from it; none keeps its own. That is what makes
 "rename it in the list and the pin's label changes" true by construction rather
 than by remembering to sync. The timeline's chronology is derived in
 `lib/timeline/buildTimeline.ts` — a pure function over that same array, so the
-date reasoning is testable without a browser.
+date reasoning is testable without a browser. The scrubber's track is built
+there too: which places it can land on, and where each of them sits on it.
 
 ```
 lib/store/PlacesProvider.tsx   ← the single source of truth
@@ -343,7 +349,7 @@ components/
   AppShell.tsx           the one place that knows what is on screen
   AppTabBar.tsx          Globe | Timeline | Places | Trips + the add button
   globe/                 TravelGlobe, overlays, preview sheet, fallback
-  timeline/              chronology view and the year scrubber
+  timeline/              chronology view and its scrubber
   places/                list, cards, search, filters, stats
   trips/                 trip list, trip detail by day, trip form
   sync/                  setup screen, connection form, settings sheet
