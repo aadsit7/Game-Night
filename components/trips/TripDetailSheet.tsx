@@ -1,11 +1,13 @@
 "use client";
 
-import { MapPin, Pencil, Plus, TriangleAlert, X } from "lucide-react";
+import { ImagePlus, MapPin, Pencil, Plus, TriangleAlert, X } from "lucide-react";
 
+import { TravelPhotoGallery } from "@/components/photos/TravelPhotoGallery";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
+import { photosForTrip } from "@/lib/photos/travelPhotos";
 import {
   formatPlaceCount,
   formatTripLength,
@@ -16,8 +18,9 @@ import {
 import { formatVisitRange } from "@/lib/utils/date";
 import { flagVariant } from "@/lib/ui/flags";
 import { countryFlag, placeSubtitle } from "@/lib/utils/geo";
-import type { VisitedPlace } from "@/types/place";
+import type { PlaceVisit, VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
+import type { TravelPhoto } from "@/types/travelPhoto";
 
 /**
  * One trip, day by day.
@@ -31,15 +34,24 @@ import type { Trip } from "@/types/trip";
 export function TripDetailSheet({
   trip,
   places,
+  visits,
   open,
   depth,
   onClose,
   onEdit,
   onOpenPlace,
   onAddPlace,
+  travelPhotos,
+  photosEnabled,
+  onAddPhotos,
+  onRemovePhoto,
+  onNeedMediaCode,
+  galleryEpoch,
 }: {
   trip: Trip | null;
   places: VisitedPlace[];
+  /** Every logged stay — visit-level Trip IDs are what fill this sheet. */
+  visits: PlaceVisit[];
   open: boolean;
   /** Position in the sheet stack; see BottomSheet. */
   depth?: number;
@@ -47,10 +59,19 @@ export function TripDetailSheet({
   onEdit: () => void;
   onOpenPlace: (id: string) => void;
   onAddPlace: () => void;
+  /** Every cloud photo; this sheet slices out the trip's own. */
+  travelPhotos: TravelPhoto[];
+  photosEnabled: boolean;
+  /** Launches Google Photos with this trip's dates as the context. */
+  onAddPhotos: () => void;
+  onRemovePhoto: (photo: TravelPhoto) => Promise<void>;
+  onNeedMediaCode: () => void;
+  galleryEpoch: number;
 }) {
-  const grouping = trip ? groupTripDays(trip, places) : null;
-  const summary = trip ? tripSummary(trip, places) : null;
+  const grouping = trip ? groupTripDays(trip, places, visits) : null;
+  const summary = trip ? tripSummary(trip, places, visits) : null;
   const when = trip ? formatVisitRange(trip.startDate, trip.endDate) : null;
+  const tripPhotos = trip ? photosForTrip(travelPhotos, trip.id) : [];
   const isEmpty = Boolean(
     grouping &&
       grouping.days.length === 0 &&
@@ -105,6 +126,40 @@ export function TripDetailSheet({
             <p className="mt-3 whitespace-pre-wrap text-[16px] leading-relaxed text-ink">
               {trip.description}
             </p>
+          ) : null}
+
+          {/* The trip's own gallery: its journey-level photos and every
+              member visit's, chronological. Adding here opens Google Photos
+              with the trip's dates as context. */}
+          {photosEnabled || tripPhotos.length > 0 ? (
+            <section className="mt-5">
+              <div className="flex items-baseline justify-between gap-3 pb-2">
+                <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">Photos</h3>
+                {tripPhotos.length > 0 ? (
+                  <span className="text-[14px] text-ink-3">
+                    {tripPhotos.length === 1 ? "1 photo" : `${tripPhotos.length} photos`}
+                  </span>
+                ) : null}
+              </div>
+              <TravelPhotoGallery
+                key={galleryEpoch}
+                photos={tripPhotos}
+                size="lg"
+                onAddPhotos={photosEnabled && tripPhotos.length > 0 ? onAddPhotos : undefined}
+                onRemovePhoto={onRemovePhoto}
+                onNeedMediaCode={onNeedMediaCode}
+              />
+              {photosEnabled && tripPhotos.length === 0 ? (
+                <button
+                  type="button"
+                  onClick={onAddPhotos}
+                  className="pressable mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md bg-fill text-[15px] font-medium text-accent"
+                >
+                  <ImagePlus size={16} aria-hidden="true" />
+                  Add from Google Photos
+                </button>
+              ) : null}
+            </section>
           ) : null}
 
           {isEmpty ? (

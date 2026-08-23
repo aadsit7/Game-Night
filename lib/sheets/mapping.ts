@@ -9,6 +9,7 @@ import type {
   VisitedPlace,
 } from "@/types/place";
 import type { NewTripInput, Trip, TripChanges } from "@/types/trip";
+import type { TravelPhoto } from "@/types/travelPhoto";
 
 /**
  * Translation between the app's travel record and a row of the Places tab.
@@ -24,6 +25,7 @@ export const PLACES_TAB = "Places";
 export const VISITS_TAB = "Dates_Visits";
 export const TRIPS_TAB = "Trips";
 export const MEDIA_TAB = "Media_Links";
+export const TRAVEL_PHOTOS_TAB = "Travel_Photos";
 
 /** The columns the app reads and writes. Every other column is left alone. */
 export const COLUMNS = {
@@ -88,6 +90,8 @@ export const VISIT_COLUMNS = {
   status: "Visit Status",
   tripType: "Trip Type",
   notes: "Highlights",
+  companions: "Companions",
+  accommodationName: "Accommodation Name",
   // Derived from the dates on the way out, so the spreadsheet's own columns
   // stay filled in for anyone reading it as a spreadsheet.
   days: "Days",
@@ -120,6 +124,37 @@ export const MEDIA_COLUMNS = {
 
 /** The Media Type word this app writes and looks for. */
 export const MEDIA_TYPE_PHOTO = "Photo";
+
+/**
+ * Travel_Photos columns. One row per cloud photo: the Google Photos identity
+ * it came from, the visit/trip/place it belongs to, and the two Drive file
+ * ids the script serves renditions from. Deliberately its own tab rather than
+ * new columns on Media_Links, whose rows mean other things already.
+ *
+ * There is intentionally no column for a Google Photos `baseUrl`: that link
+ * is temporary and persisting one would be persisting a broken image.
+ */
+export const TRAVEL_PHOTO_COLUMNS = {
+  id: "Photo ID",
+  googlePhotosItemId: "Google Photos Item ID",
+  placeId: "Place ID",
+  visitId: "Visit ID",
+  tripId: "Trip ID",
+  takenAt: "Taken At",
+  filename: "Filename",
+  mimeType: "MIME Type",
+  width: "Width",
+  height: "Height",
+  thumbDriveFileId: "Thumb Drive File ID",
+  displayDriveFileId: "Display Drive File ID",
+  videoDriveFileId: "Video Drive File ID",
+  source: "Source",
+  sortOrder: "Sort Order",
+  createdAt: "Created At",
+  updatedAt: "Updated At",
+  deleted: "Deleted?",
+  archived: "Archived?",
+} as const;
 
 /**
  * Exact spellings from the Lookups tab. "Been" and "Want to go" are the
@@ -358,6 +393,8 @@ export function visitFromRow(
     status: text(cell(row, index, VISIT_COLUMNS.status)),
     tripType: text(cell(row, index, VISIT_COLUMNS.tripType)),
     notes: text(cell(row, index, VISIT_COLUMNS.notes)),
+    companions: text(cell(row, index, VISIT_COLUMNS.companions)),
+    accommodationName: text(cell(row, index, VISIT_COLUMNS.accommodationName)),
     createdAt: timestamp(cell(row, index, VISIT_COLUMNS.createdAt), fallbackTime),
     updatedAt,
     deletedAt: deleted ? updatedAt : undefined,
@@ -413,6 +450,10 @@ export function fieldsFromVisitChanges(
   if (has("tripType")) put(VISIT_COLUMNS.tripType, (changes as VisitChanges).tripType?.trim());
   if (has("status")) put(VISIT_COLUMNS.status, (changes as VisitChanges).status?.trim());
   if (has("notes")) put(VISIT_COLUMNS.notes, (changes as VisitChanges).notes?.trim());
+  if (has("companions")) put(VISIT_COLUMNS.companions, (changes as VisitChanges).companions?.trim());
+  if (has("accommodationName")) {
+    put(VISIT_COLUMNS.accommodationName, (changes as VisitChanges).accommodationName?.trim());
+  }
 
   if (has("startDate") || has("endDate")) {
     const derived = derivedVisitCells(
@@ -452,6 +493,79 @@ export function restrictToHeaders(
     if (allowed.has(column)) kept[column] = value;
   }
   return kept;
+}
+
+/* ------------------------------------------------------------------ *
+ * Travel photos — the cloud gallery
+ * ------------------------------------------------------------------ */
+
+/**
+ * One Travel_Photos row as the app understands it.
+ *
+ * A row with no Photo ID is skipped; a row with no Drive file ids is kept —
+ * its import may still be completing on another device, and the metadata is
+ * already true.
+ */
+export function travelPhotoFromRow(
+  row: unknown[],
+  index: Map<string, number>,
+  fallbackTime: string,
+): TravelPhoto | null {
+  const id = text(cell(row, index, TRAVEL_PHOTO_COLUMNS.id));
+  if (!id) return null;
+
+  const deleted = isYes(cell(row, index, TRAVEL_PHOTO_COLUMNS.deleted));
+  const updatedAt = timestamp(cell(row, index, TRAVEL_PHOTO_COLUMNS.updatedAt), fallbackTime);
+  const width = numeric(cell(row, index, TRAVEL_PHOTO_COLUMNS.width));
+  const height = numeric(cell(row, index, TRAVEL_PHOTO_COLUMNS.height));
+  const sortOrder = numeric(cell(row, index, TRAVEL_PHOTO_COLUMNS.sortOrder));
+  const source = text(cell(row, index, TRAVEL_PHOTO_COLUMNS.source));
+
+  return {
+    id,
+    googlePhotosItemId: text(cell(row, index, TRAVEL_PHOTO_COLUMNS.googlePhotosItemId)),
+    placeId: text(cell(row, index, TRAVEL_PHOTO_COLUMNS.placeId)),
+    visitId: text(cell(row, index, TRAVEL_PHOTO_COLUMNS.visitId)),
+    tripId: text(cell(row, index, TRAVEL_PHOTO_COLUMNS.tripId)),
+    takenAt: text(cell(row, index, TRAVEL_PHOTO_COLUMNS.takenAt)),
+    filename: text(cell(row, index, TRAVEL_PHOTO_COLUMNS.filename)),
+    mimeType: text(cell(row, index, TRAVEL_PHOTO_COLUMNS.mimeType)),
+    width: Number.isFinite(width) && width > 0 ? width : undefined,
+    height: Number.isFinite(height) && height > 0 ? height : undefined,
+    thumbDriveFileId: text(cell(row, index, TRAVEL_PHOTO_COLUMNS.thumbDriveFileId)),
+    displayDriveFileId: text(cell(row, index, TRAVEL_PHOTO_COLUMNS.displayDriveFileId)),
+    videoDriveFileId: text(cell(row, index, TRAVEL_PHOTO_COLUMNS.videoDriveFileId)),
+    source: source === "manual" ? "manual" : "google-photos",
+    sortOrder: Number.isFinite(sortOrder) ? sortOrder : undefined,
+    createdAt: timestamp(cell(row, index, TRAVEL_PHOTO_COLUMNS.createdAt), fallbackTime),
+    updatedAt,
+    deletedAt: deleted ? updatedAt : undefined,
+  };
+}
+
+/**
+ * Every photo on the Travel_Photos tab. An absent tab — a script not yet
+ * re-deployed — is simply a sheet with no cloud photos, never an error.
+ */
+export function travelPhotosFromTable(
+  table: SheetTable | undefined,
+  fallbackTime: string,
+): TravelPhoto[] {
+  if (!table) return [];
+  const index = indexHeaders(table.headers);
+  if (!index.has(TRAVEL_PHOTO_COLUMNS.id)) return [];
+
+  const photos: TravelPhoto[] = [];
+  const seen = new Set<string>();
+
+  for (const row of table.rows) {
+    const photo = travelPhotoFromRow(row, index, fallbackTime);
+    if (photo && !seen.has(photo.id)) {
+      seen.add(photo.id);
+      photos.push(photo);
+    }
+  }
+  return photos;
 }
 
 /* ------------------------------------------------------------------ *

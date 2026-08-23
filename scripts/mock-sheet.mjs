@@ -67,6 +67,15 @@ const TRIP_HEADERS = [
   "Created At", "Updated At", "Last Synced At", "Sync Version", "Archived?", "Deleted?",
 ];
 
+/** Travel_Photos, exactly as `ensureTravelPhotosTab_` in Code.gs creates it. */
+const TRAVEL_PHOTO_HEADERS = [
+  "Photo ID", "Google Photos Item ID", "Place ID", "Visit ID", "Trip ID",
+  "Taken At", "Filename", "MIME Type", "Width", "Height",
+  "Thumb Drive File ID", "Display Drive File ID", "Video Drive File ID",
+  "Source", "Sort Order",
+  "Created At", "Updated At", "Last Synced At", "Sync Version", "Archived?", "Deleted?",
+];
+
 const LOOKUPS = {
   Status: ["Been", "Want to go", "Planned", "Considering", "Booked", "Lived there", "Passed through", "Avoid", "Not interested"],
   Favorite: ["Yes", "No"],
@@ -142,9 +151,37 @@ const media = [];
 /** Trips start empty, the way a sheet that has never had one does. */
 const trips = [];
 
+/** Travel_Photos rows start empty; picker imports land here. */
+const travelPhotos = [];
+const TPI = index(TRAVEL_PHOTO_HEADERS);
+
 /** Uploaded photo bytes, served back at /photo/<id> so <img> tags work. */
 const photos = new Map();
 let nextPhotoNumber = 1;
+
+/**
+ * The mock Google Photos side: a picking session flips to "picked" when its
+ * mock picker page is opened, and hands back a handful of generated images.
+ * The media access code below matches what you enter in the app to view.
+ */
+const MOCK_MEDIA_CODE = "mock-media-code";
+const pickerSessions = new Map();
+let nextSessionNumber = 1;
+
+/** A recognisable placeholder image, unique per seed. */
+function svgBytes(seed, label) {
+  const hue = (seed * 67) % 360;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512">` +
+    `<rect width="512" height="512" fill="hsl(${hue},60%,70%)"/>` +
+    `<text x="256" y="276" font-size="64" text-anchor="middle" fill="#fff" font-family="sans-serif">${label}</text></svg>`;
+  return { bytes: Buffer.from(svg), mimeType: "image/svg+xml" };
+}
+
+function storeMockFile(seed, label) {
+  const id = `mockdrive-${nextPhotoNumber++}`;
+  photos.set(id, svgBytes(seed, label));
+  return id;
+}
 
 /**
  * Google Places is off unless asked for — `MOCK_PLACES=1 npm run mock-sheet` —
@@ -156,6 +193,10 @@ const CAPABILITIES = {
   // The mock can always "upload": bytes are held in memory and served back
   // from /photo/<id>, standing in for the Drive link the real script returns.
   photoUpload: true,
+  visits: true,
+  travelPhotos: true,
+  googlePhotosPicker: true,
+  googlePhotosConnected: true,
 };
 
 /** A few results shaped exactly like the script's, for the on case. */
@@ -290,6 +331,7 @@ const WRITABLE_TABS = {
   Trips: { headers: TRIP_HEADERS, map: TI, rows: trips, idColumn: "Trip ID", prefix: "TRIP", derive: applyTripDerived },
   Dates_Visits: { headers: VISIT_HEADERS, map: VI, rows: visits, idColumn: "Visit ID", prefix: "VIS", derive: (row, isNew) => stampCommon(row, VI, isNew) },
   Media_Links: { headers: MEDIA_HEADERS, map: MI, rows: media, idColumn: "Media ID", prefix: "MEDIA", derive: (row, isNew) => stampCommon(row, MI, isNew) },
+  Travel_Photos: { headers: TRAVEL_PHOTO_HEADERS, map: TPI, rows: travelPhotos, idColumn: "Photo ID", prefix: "TPHOTO", derive: (row, isNew) => stampCommon(row, TPI, isNew) },
 };
 
 function handle(action, body) {
@@ -317,10 +359,156 @@ function handle(action, body) {
         Lists_Tags: { headers: [], rows: [] },
         Trips_Itinerary: { headers: [], rows: [] },
         Trips: { headers: TRIP_HEADERS, rows: trips },
+        Travel_Photos: { headers: TRAVEL_PHOTO_HEADERS, rows: travelPhotos },
       },
-      lookups: LOOKUPS, settings, schemaVersion: "3",
+      lookups: LOOKUPS, settings, schemaVersion: "4",
       capabilities: CAPABILITIES, serverTime: new Date().toISOString(),
     };
+  }
+
+  /* ---- Google Photos, mocked end to end ---- */
+
+  if (action === "photosAuthStatus") {
+    return {
+      configured: true, connected: true, connectedAt: "2026-01-01T00:00:00",
+      accountHint: "mock@example.com",
+      redirectUri: `http://localhost:${PORT}/`,
+    };
+  }
+  if (action === "photosAuthStart") {
+    return { authUrl: `http://localhost:${PORT}/mock-consent`, redirectUri: `http://localhost:${PORT}/` };
+  }
+  if (action === "photosAuthDisconnect") return { disconnected: true };
+
+  if (action === "createPhotoPickerSession") {
+    const id = `mocksession-${nextSessionNumber++}`;
+    pickerSessions.set(id, { picked: false, createdAt: Date.now() });
+    return {
+      sessionId: id,
+      pickerUri: `http://localhost:${PORT}/mock-picker/${id}`,
+      expireTime: new Date(Date.now() + 30 * 60000).toISOString(),
+      pollingConfig: { pollInterval: "2s", timeoutIn: "300s" },
+    };
+  }
+  if (action === "getPhotoPickerSession") {
+    const session = pickerSessions.get(String(body.sessionId || ""));
+    if (!session) throw new Error("That Google Photos picking session no longer exists. Start the picker again.");
+    return { sessionId: body.sessionId, mediaItemsSet: session.picked, pollingConfig: { pollInterval: "2s" } };
+  }
+  if (action === "deletePhotoPickerSession") {
+    pickerSessions.delete(String(body.sessionId || ""));
+    return { deleted: true };
+  }
+  if (action === "listPickedPhotos") {
+    const session = pickerSessions.get(String(body.sessionId || ""));
+    if (!session) throw new Error("That Google Photos picking session no longer exists. Start the picker again.");
+    // A recognisable spread: two in-range-ish photos, one old one, one video.
+    return {
+      items: [
+        { id: "mockitem-1", createTime: "2024-02-08T14:00:00Z", type: "PHOTO", baseUrl: `http://localhost:${PORT}/mock-base/1`, mimeType: "image/svg+xml", filename: "ski-lift.jpg", width: 512, height: 512 },
+        { id: "mockitem-2", createTime: "2024-02-09T09:30:00Z", type: "PHOTO", baseUrl: `http://localhost:${PORT}/mock-base/2`, mimeType: "image/svg+xml", filename: "summit.jpg", width: 512, height: 512 },
+        { id: "mockitem-3", createTime: "2019-06-20T18:00:00Z", type: "PHOTO", baseUrl: `http://localhost:${PORT}/mock-base/3`, mimeType: "image/svg+xml", filename: "old-trip.jpg", width: 512, height: 512 },
+        { id: "mockitem-4", createTime: "2024-02-08T16:45:00Z", type: "VIDEO", baseUrl: `http://localhost:${PORT}/mock-base/4`, mimeType: "video/mp4", filename: "run.mp4", width: 512, height: 512 },
+      ],
+    };
+  }
+  if (action === "getPickedPhotoPreview") {
+    const itemId = String(body.itemId || "");
+    const seed = parseInt(itemId.replace(/\D/g, ""), 10) || 1;
+    const file = svgBytes(seed, itemId.slice(-1));
+    return { itemId, mimeType: file.mimeType, data: file.bytes.toString("base64") };
+  }
+  if (action === "importPickedPhotos") {
+    const items = Array.isArray(body.items) ? body.items : [];
+    if (items.length === 0) throw new Error("The import carried no photos.");
+    if (items.length > 10) throw new Error("Import at most 10 photos per request; the app sends batches.");
+
+    // The same association validation the real script performs.
+    let placeId = String(body.placeId || "").trim();
+    let tripId = String(body.tripId || "").trim();
+    const visitId = String(body.visitId || "").trim();
+    if (!placeId && !tripId && !visitId) {
+      throw new Error("These photos have nothing to attach to — no visit, trip or place was named.");
+    }
+    if (visitId) {
+      const row = visits.find((r) => String(r[VI["Visit ID"]]).trim() === visitId);
+      if (!row) throw new Error(`The visit "${visitId}" is not in the sheet. If it was just added, let it sync first.`);
+      if (String(row[VI["Deleted?"]]).toLowerCase() === "yes") throw new Error("That visit has been deleted, so photos can no longer be added to it.");
+      const visitPlace = String(row[VI["Place ID"]]).trim();
+      if (placeId && visitPlace && placeId !== visitPlace) throw new Error("That visit belongs to a different place than the one named.");
+      const visitTrip = String(row[VI["Trip ID"]]).trim();
+      if (tripId && visitTrip && tripId !== visitTrip) throw new Error("That visit belongs to a different trip than the one named.");
+      placeId = visitPlace || placeId;
+      tripId = visitTrip || tripId;
+    }
+
+    const results = [];
+    const savedRows = [];
+    for (const item of items) {
+      const googleId = String(item.id || "");
+      const live = travelPhotos.filter((r) =>
+        String(r[TPI["Google Photos Item ID"]]) === googleId &&
+        String(r[TPI["Deleted?"]]).toLowerCase() !== "yes");
+      const dupe = live.some((r) => {
+        if (visitId) return String(r[TPI["Visit ID"]]) === visitId;
+        if (tripId) return String(r[TPI["Trip ID"]]) === tripId && !String(r[TPI["Visit ID"]]);
+        return String(r[TPI["Place ID"]]) === placeId && !String(r[TPI["Visit ID"]]) && !String(r[TPI["Trip ID"]]);
+      });
+      if (dupe) { results.push({ id: googleId, status: "duplicate" }); continue; }
+
+      const reuse = live.find((r) => r[TPI["Thumb Drive File ID"]] && r[TPI["Display Drive File ID"]]);
+      const seed = parseInt(googleId.replace(/\D/g, ""), 10) || 1;
+      const isVideo = String(item.type || "").toUpperCase() === "VIDEO";
+      const thumbId = reuse ? reuse[TPI["Thumb Drive File ID"]] : storeMockFile(seed, "T");
+      const displayId = reuse ? reuse[TPI["Display Drive File ID"]] : storeMockFile(seed, "D");
+      const videoId = reuse ? reuse[TPI["Video Drive File ID"]] : (isVideo ? storeMockFile(seed, "V") : "");
+
+      const row = blank(TRAVEL_PHOTO_HEADERS);
+      const id = nextIdFor(travelPhotos, TPI, "Photo ID", "TPHOTO");
+      row[TPI["Photo ID"]] = id;
+      row[TPI["Google Photos Item ID"]] = googleId;
+      row[TPI["Place ID"]] = placeId;
+      row[TPI["Visit ID"]] = visitId;
+      row[TPI["Trip ID"]] = tripId;
+      row[TPI["Taken At"]] = String(item.createTime || "");
+      row[TPI["Filename"]] = String(item.filename || "");
+      row[TPI["MIME Type"]] = String(item.mimeType || "");
+      row[TPI["Width"]] = item.width ? String(item.width) : "";
+      row[TPI["Height"]] = item.height ? String(item.height) : "";
+      row[TPI["Thumb Drive File ID"]] = thumbId;
+      row[TPI["Display Drive File ID"]] = displayId;
+      row[TPI["Video Drive File ID"]] = videoId;
+      row[TPI["Source"]] = "google-photos";
+      stampCommon(row, TPI, true);
+      travelPhotos.push(row);
+      savedRows.push(row);
+      results.push({ id: googleId, status: "imported", photoId: id });
+    }
+    return { results, photos: { headers: TRAVEL_PHOTO_HEADERS, rows: savedRows } };
+  }
+  if (action === "getTravelPhoto") {
+    if (String(body.media || "") !== MOCK_MEDIA_CODE) {
+      throw new Error(`Wrong or missing media access code. (The mock's code is "${MOCK_MEDIA_CODE}".)`);
+    }
+    const photoId = String(body.photoId || "").trim();
+    const row = travelPhotos.find((r) => String(r[TPI["Photo ID"]]).trim() === photoId);
+    if (!row) throw new Error(`No photo with the id "${photoId}" exists.`);
+    if (String(row[TPI["Deleted?"]]).toLowerCase() === "yes") throw new Error("That photo has been deleted.");
+    const requested = String(body.size || "thumb");
+    const column = requested === "video" ? "Video Drive File ID" : requested === "display" ? "Display Drive File ID" : "Thumb Drive File ID";
+    const fileId = String(row[TPI[column]] || "");
+    if (!fileId) throw new Error(requested === "video" ? "This video's full clip wasn't stored." : "That photo has no stored image yet.");
+    const stored = photos.get(fileId);
+    if (!stored) throw new Error("The photo's file is missing from Drive.");
+    return { photoId, size: requested, mimeType: stored.mimeType, data: stored.bytes.toString("base64"), version: String(row[TPI["Updated At"]] || "") };
+  }
+  if (action === "deleteTravelPhoto") {
+    const photoId = String(body.id || "").trim();
+    const row = travelPhotos.find((r) => String(r[TPI["Photo ID"]]).trim() === photoId);
+    if (!row) return { id: photoId, deleted: true, missing: true };
+    row[TPI["Deleted?"]] = "Yes";
+    stampCommon(row, TPI, false);
+    return { id: photoId, deleted: true };
   }
 
   if (action === "getLookups") return { lookups: LOOKUPS };
@@ -407,6 +595,39 @@ createServer((req, res) => {
 
   // Uploaded photos are served straight back, the way a Drive link would be.
   // No access code on purpose: the real link is an unauthenticated image URL.
+  // The mock picker: opening it counts as picking, the way tapping Done in
+  // the real Google Photos window does. /autoclose variants land here too.
+  if (req.method === "GET" && url.pathname.startsWith("/mock-picker/")) {
+    const sessionId = url.pathname.slice("/mock-picker/".length).replace(/\/autoclose$/, "");
+    const session = pickerSessions.get(sessionId);
+    if (session) session.picked = true;
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(
+      "<!doctype html><body style=\"font-family:sans-serif;display:grid;place-items:center;height:100vh\">" +
+      "<div><h2>Mock Google Photos</h2><p>Selection made — you can close this window.</p>" +
+      "<script>setTimeout(function(){ try { window.close(); } catch (e) {} }, 800);</script></div></body>",
+    );
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/mock-consent") {
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(
+      "<!doctype html><body style=\"font-family:sans-serif;display:grid;place-items:center;height:100vh\">" +
+      "<div><h2>Mock consent</h2><p>Pretend this was Google. Close this window and continue in the app.</p></div></body>",
+    );
+    return;
+  }
+
+  // Picker base URLs, standing in for lh3.googleusercontent.com.
+  if (req.method === "GET" && url.pathname.startsWith("/mock-base/")) {
+    const seed = parseInt(url.pathname.slice("/mock-base/".length), 10) || 1;
+    const file = svgBytes(seed, String(seed));
+    res.writeHead(200, { "Content-Type": file.mimeType, "Access-Control-Allow-Origin": "*" });
+    res.end(file.bytes);
+    return;
+  }
+
   if (req.method === "GET" && url.pathname.startsWith("/photo/")) {
     const stored = photos.get(url.pathname.slice("/photo/".length));
     if (!stored) {

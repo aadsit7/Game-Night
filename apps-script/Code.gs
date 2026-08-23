@@ -31,7 +31,11 @@ var TABS = {
   Trips_Itinerary: { header: 3, idColumn: 'Itinerary Item ID', prefix: 'ITEM',  pad: 4 },
   // One row per trip: the name and dates that a Place's "Trip ID / Collection"
   // cell points at. Created by this script if the tab is not there yet.
-  Trips:           { header: 3, idColumn: 'Trip ID',           prefix: 'TRIP',  pad: 4 }
+  Trips:           { header: 3, idColumn: 'Trip ID',           prefix: 'TRIP',  pad: 4 },
+  // One row per cloud photo: the Google Photos identity it came from, the
+  // visit/trip it belongs to, and the Drive files its renditions live in.
+  // Created by this script if the tab is not there yet.
+  Travel_Photos:   { header: 3, idColumn: 'Photo ID',          prefix: 'TPHOTO', pad: 4 }
 };
 
 /** Read at startup so the app's dropdowns come from the sheet, not from code. */
@@ -52,12 +56,21 @@ var TRIPS_HEADERS = [
   'Created At', 'Updated At', 'Last Synced At', 'Sync Version', 'Archived?', 'Deleted?'
 ];
 
+var TRAVEL_PHOTOS_TAB = 'Travel_Photos';
+var TRAVEL_PHOTOS_HEADERS = [
+  'Photo ID', 'Google Photos Item ID', 'Place ID', 'Visit ID', 'Trip ID',
+  'Taken At', 'Filename', 'MIME Type', 'Width', 'Height',
+  'Thumb Drive File ID', 'Display Drive File ID', 'Video Drive File ID',
+  'Source', 'Sort Order',
+  'Created At', 'Updated At', 'Last Synced At', 'Sync Version', 'Archived?', 'Deleted?'
+];
+
 var SETTINGS_TAB = 'App_Settings';
 var LOG_TAB = 'Sync_Log';
 var LOG_MAX_ROWS = 1000;
 var LOG_TRIM_TO = 900;
 
-var SCHEMA_VERSION = '3';
+var SCHEMA_VERSION = '4';
 
 /* ------------------------------------------------------------------ *
  * Google Places search
@@ -142,20 +155,35 @@ var SEARCH_TEXT_SOURCES = {
  * ------------------------------------------------------------------ */
 
 function doGet(e) {
+  var params = (e && e.parameter) || {};
+
+  // Google's OAuth redirect lands here with ?code=&state= and no action of
+  // ours. It cannot carry the access code — Google is the caller — so the
+  // state token, minted by photosAuthStart and single-use, is what proves the
+  // request belongs to a connection this script started. Answered as HTML,
+  // because a person is looking at it.
+  if (!params.action && params.state) {
+    return photosAuthCallback_(params);
+  }
+
   return handle_(function () {
-    var params = (e && e.parameter) || {};
     authorize_(params.code);
 
     switch (params.action) {
       case 'getAll':        return getAll_();
       case 'getLookups':    return { lookups: readLookups_() };
       case 'searchPlaces':  return searchPlaces_(params);
+      case 'photosAuthStatus':      return photosAuthStatus_();
+      case 'getPhotoPickerSession': return getPhotoPickerSession_(params);
+      case 'getPickedPhotoPreview': return getPickedPhotoPreview_(params);
+      case 'getTravelPhoto':        return getTravelPhoto_(params);
       case 'ping':
         return { ok: true, schemaVersion: SCHEMA_VERSION, capabilities: capabilities_() };
       default:
         throw new Error(
           'Unknown action "' + (params.action || '') +
-          '". Expected getAll, getLookups, searchPlaces or ping.'
+          '". Expected getAll, getLookups, searchPlaces, photosAuthStatus, ' +
+          'getPhotoPickerSession, getTravelPhoto or ping.'
         );
     }
   });
@@ -179,6 +207,19 @@ function doPost(e) {
     // a slow uplink, touches Drive rather than the spreadsheet, and holding
     // the lock for it would starve every row save queued behind it.
     if (body.action === 'uploadPhoto') return uploadPhoto_(body);
+
+    // The Google Photos actions also run outside the lock: OAuth and Picker
+    // calls talk to Google rather than the spreadsheet, and the import takes
+    // it internally only for the seconds it spends writing rows.
+    switch (body.action) {
+      case 'photosAuthStart':          return photosAuthStart_();
+      case 'photosAuthDisconnect':     return photosAuthDisconnect_();
+      case 'createPhotoPickerSession': return createPhotoPickerSession_(body);
+      case 'listPickedPhotos':         return listPickedPhotos_(body);
+      case 'deletePhotoPickerSession': return deletePhotoPickerSession_(body);
+      case 'importPickedPhotos':       return importPickedPhotos_(body);
+      case 'deleteTravelPhoto':        return deleteTravelPhoto_(body);
+    }
 
     // One lock around every write. Two saves racing would otherwise both read
     // the same last row and one would overwrite the other.
@@ -259,13 +300,40 @@ function book_() {
 }
 
 function sheetNamed_(name) {
-  // Trips is the app's own tab rather than one of the original spreadsheet's,
-  // so a sheet that has never had a trip saved to it simply doesn't have it
-  // yet. Creating it here means the first trip works with nothing to set up.
+  // Trips and Travel_Photos are the app's own tabs rather than the original
+  // spreadsheet's, so a sheet that has never needed one simply doesn't have
+  // it yet. Creating them here means the first use works with nothing to set
+  // up.
   if (name === TRIPS_TAB) return ensureTripsTab_();
+  if (name === TRAVEL_PHOTOS_TAB) return ensureTravelPhotosTab_();
 
   var sheet = book_().getSheetByName(name);
   if (!sheet) throw new Error('The tab "' + name + '" is missing from this spreadsheet.');
+  return sheet;
+}
+
+/**
+ * The Travel_Photos tab, made if it isn't there — same shape as every tab
+ * here: title, description, headers on row 3. An existing tab is returned
+ * untouched, custom columns and all; only the columns this script actually
+ * writes are ever required of it.
+ */
+function ensureTravelPhotosTab_() {
+  var book = book_();
+  var sheet = book.getSheetByName(TRAVEL_PHOTOS_TAB);
+  if (sheet) return sheet;
+
+  sheet = book.insertSheet(TRAVEL_PHOTOS_TAB);
+  sheet.getRange(1, 1).setValue('Travel Photos');
+  sheet.getRange(2, 1).setValue(
+    'One row per photo imported from Google Photos. The image files live in the private ' +
+    'Drive folder; these rows are the metadata the app reads. Do not paste Drive links here.'
+  );
+  sheet.getRange(3, 1, 1, TRAVEL_PHOTOS_HEADERS.length)
+    .setValues([TRAVEL_PHOTOS_HEADERS]).setFontWeight('bold');
+  sheet.setFrozenRows(3);
+  sheet.setColumnWidth(2, 220);
+  sheet.setColumnWidth(7, 200);
   return sheet;
 }
 
@@ -388,6 +456,7 @@ function ensureBookkeepingColumns_() {
 function getAll_() {
   // Before the loop, because the loop reads Trips and a missing tab throws.
   ensureTripsTab_();
+  ensureTravelPhotosTab_();
   ensureBookkeepingColumns_();
 
   var tabs = {};
@@ -415,7 +484,20 @@ function getAll_() {
  * an older deployment simply never says it, and photos stay in the browser.
  */
 function capabilities_() {
-  return { placesSearch: Boolean(placesKey_()), photoUpload: true };
+  return {
+    placesSearch: Boolean(placesKey_()),
+    photoUpload: true,
+    // Individual Dates_Visits rows and the Travel_Photos tab both ride in
+    // getAll from this version on.
+    visits: true,
+    travelPhotos: true,
+    // The Picker needs OAuth client credentials in Script Properties before
+    // the app should offer "Connect Google Photos" at all.
+    googlePhotosPicker: Boolean(photosClientId_()),
+    // Whether a Photos connection is currently live, so the app can say
+    // "connect" vs "add photos" without a second round trip.
+    googlePhotosConnected: photosHasRefreshToken_()
+  };
 }
 
 /**
@@ -642,6 +724,885 @@ function uploadPhoto_(body) {
     url: 'https://lh3.googleusercontent.com/d/' + file.getId(),
     fileId: file.getId()
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * Google Photos — server-side OAuth
+ *
+ * This script is the OAuth holder. The browser never sees the client
+ * secret, the refresh token, or an access token: it asks this script to
+ * start a connection once, Google redirects back here, and from then on
+ * this script mints short-lived access tokens on its own whenever the
+ * Picker or an import needs one. Nothing OAuth-shaped is ever written to
+ * the spreadsheet or to Drive — Script Properties only.
+ *
+ * Reauthorisation can still happen — a revoked grant, an expired refresh
+ * token, Google requiring it — and the status action says so honestly
+ * rather than pretending the connection is eternal.
+ * ------------------------------------------------------------------ */
+
+var PHOTOS_CLIENT_ID_PROPERTY = 'PHOTOS_OAUTH_CLIENT_ID';
+var PHOTOS_CLIENT_SECRET_PROPERTY = 'PHOTOS_OAUTH_CLIENT_SECRET';
+var PHOTOS_TOKENS_PROPERTY = 'PHOTOS_OAUTH_TOKENS';
+var PHOTOS_ACCOUNT_HINT_PROPERTY = 'PHOTOS_ACCOUNT_HINT';
+
+/** The one scope this app asks for: read what the user picks, nothing else. */
+var PHOTOS_PICKER_SCOPE = 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly';
+
+var PHOTOS_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
+var PHOTOS_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
+var PHOTOS_REVOKE_ENDPOINT = 'https://oauth2.googleapis.com/revoke';
+var PICKER_API = 'https://photospicker.googleapis.com/v1';
+
+function photosClientId_() {
+  return PropertiesService.getScriptProperties().getProperty(PHOTOS_CLIENT_ID_PROPERTY) || '';
+}
+
+function photosClientSecret_() {
+  return PropertiesService.getScriptProperties().getProperty(PHOTOS_CLIENT_SECRET_PROPERTY) || '';
+}
+
+/** The stored token bundle: { refreshToken, accessToken, expiresAt, connectedAt }. */
+function photosTokens_() {
+  var raw = PropertiesService.getScriptProperties().getProperty(PHOTOS_TOKENS_PROPERTY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    return null;
+  }
+}
+
+function savePhotosTokens_(tokens) {
+  PropertiesService.getScriptProperties()
+    .setProperty(PHOTOS_TOKENS_PROPERTY, JSON.stringify(tokens));
+}
+
+function clearPhotosTokens_() {
+  PropertiesService.getScriptProperties().deleteProperty(PHOTOS_TOKENS_PROPERTY);
+}
+
+function photosHasRefreshToken_() {
+  var tokens = photosTokens_();
+  return Boolean(tokens && tokens.refreshToken);
+}
+
+/**
+ * The exact URL Google must be told to redirect back to — this deployment's
+ * own /exec address. Exposed by photosAuthStatus so it can be copied into
+ * the OAuth client's "Authorized redirect URIs" rather than guessed.
+ */
+function photosRedirectUri_() {
+  return ScriptApp.getService().getUrl() || '';
+}
+
+/**
+ * Starts a connection: answers with the Google consent URL for the browser
+ * to open. `prompt=consent` is sent only when no refresh token is stored —
+ * that is the one case Google must be made to issue a new one; forcing it
+ * every time would make every reconnect a full consent ceremony.
+ */
+function photosAuthStart_() {
+  var clientId = photosClientId_();
+  var secret = photosClientSecret_();
+  if (!clientId || !secret) {
+    throw new Error(
+      'Google Photos is not configured yet. Set the ' + PHOTOS_CLIENT_ID_PROPERTY + ' and ' +
+      PHOTOS_CLIENT_SECRET_PROPERTY + ' script properties first — see docs/SHEET-SETUP.md.'
+    );
+  }
+  var redirect = photosRedirectUri_();
+  if (!redirect) {
+    throw new Error('This script has no web app URL yet. Deploy it as a web app first.');
+  }
+
+  // One-time state token, held server-side for ten minutes. The callback
+  // must present it, which is what stops a forged redirect from planting a
+  // stranger's authorisation here.
+  var state = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  CacheService.getScriptCache().put('photos-oauth-state:' + state, '1', 600);
+
+  var params = {
+    client_id: clientId,
+    redirect_uri: redirect,
+    response_type: 'code',
+    scope: PHOTOS_PICKER_SCOPE,
+    access_type: 'offline',
+    state: state
+  };
+  if (!photosHasRefreshToken_()) params.prompt = 'consent';
+
+  var hint = PropertiesService.getScriptProperties().getProperty(PHOTOS_ACCOUNT_HINT_PROPERTY);
+  if (hint) params.login_hint = hint;
+
+  var query = [];
+  for (var key in params) {
+    if (params.hasOwnProperty(key)) {
+      query.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
+    }
+  }
+  return { authUrl: PHOTOS_AUTH_ENDPOINT + '?' + query.join('&'), redirectUri: redirect };
+}
+
+/**
+ * Where Google sends the person after consent. Returns HTML — someone is
+ * looking at this page — and never the JSON envelope. The state token is the
+ * authorisation here; the shared access code cannot be, because Google is
+ * the caller.
+ */
+function photosAuthCallback_(params) {
+  var page;
+  try {
+    var state = String(params.state || '');
+    var cache = CacheService.getScriptCache();
+    var known = state && cache.get('photos-oauth-state:' + state);
+    if (!known) {
+      throw new Error('This authorisation link has expired or was already used. Start again from the app.');
+    }
+    cache.remove('photos-oauth-state:' + state);
+
+    if (params.error) {
+      throw new Error('Google reported: ' + params.error);
+    }
+    var code = String(params.code || '');
+    if (!code) throw new Error('Google sent no authorisation code.');
+
+    var response = UrlFetchApp.fetch(PHOTOS_TOKEN_ENDPOINT, {
+      method: 'post',
+      payload: {
+        code: code,
+        client_id: photosClientId_(),
+        client_secret: photosClientSecret_(),
+        redirect_uri: photosRedirectUri_(),
+        grant_type: 'authorization_code'
+      },
+      muteHttpExceptions: true
+    });
+    var payload = JSON.parse(response.getContentText() || '{}');
+    if (response.getResponseCode() !== 200 || !payload.access_token) {
+      throw new Error('Google refused the token exchange: ' + (payload.error_description || payload.error || response.getResponseCode()));
+    }
+
+    var existing = photosTokens_() || {};
+    savePhotosTokens_({
+      // A repeat consent may omit the refresh token; keep the one we have.
+      refreshToken: payload.refresh_token || existing.refreshToken || '',
+      accessToken: payload.access_token,
+      expiresAt: Date.now() + Math.max(0, (payload.expires_in || 0) - 60) * 1000,
+      connectedAt: new Date().toISOString()
+    });
+
+    if (!photosHasRefreshToken_()) {
+      throw new Error(
+        'Google answered without a refresh token, so the connection would not survive the hour. ' +
+        'Disconnect the app at myaccount.google.com/permissions, then connect again.'
+      );
+    }
+
+    page = '<h2>Google Photos connected</h2>' +
+      '<p>You can close this window and return to the travel app.</p>';
+  } catch (error) {
+    page = '<h2>Connection failed</h2><p>' +
+      String(error && error.message ? error.message : error).replace(/</g, '&lt;') + '</p>';
+  }
+
+  return HtmlService.createHtmlOutput(
+    '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<style>body{font-family:-apple-system,system-ui,sans-serif;padding:32px;text-align:center;color:#222}</style>' +
+    '</head><body>' + page +
+    '<script>setTimeout(function(){ try { window.close(); } catch (e) {} }, 1500);</script>' +
+    '</body></html>'
+  ).setTitle('Google Photos');
+}
+
+function photosAuthStatus_() {
+  var tokens = photosTokens_();
+  return {
+    configured: Boolean(photosClientId_() && photosClientSecret_()),
+    connected: Boolean(tokens && tokens.refreshToken),
+    connectedAt: tokens && tokens.connectedAt ? tokens.connectedAt : '',
+    accountHint: PropertiesService.getScriptProperties().getProperty(PHOTOS_ACCOUNT_HINT_PROPERTY) || '',
+    // Copied into the Google Cloud OAuth client, character for character.
+    redirectUri: photosRedirectUri_()
+  };
+}
+
+/** Revokes the grant at Google and forgets everything stored here. */
+function photosAuthDisconnect_() {
+  var tokens = photosTokens_();
+  if (tokens) {
+    var token = tokens.refreshToken || tokens.accessToken;
+    if (token) {
+      try {
+        UrlFetchApp.fetch(PHOTOS_REVOKE_ENDPOINT + '?token=' + encodeURIComponent(token), {
+          method: 'post',
+          muteHttpExceptions: true
+        });
+      } catch (error) {
+        // Revocation is best effort; the tokens are deleted either way.
+      }
+    }
+  }
+  clearPhotosTokens_();
+  return { disconnected: true };
+}
+
+/**
+ * A currently-valid access token, refreshed from the stored refresh token
+ * when the cached one has aged out. The refresh token never leaves here.
+ */
+function photosAccessToken_() {
+  var tokens = photosTokens_();
+  if (!tokens || !tokens.refreshToken) {
+    throw new Error('Google Photos is not connected. Open settings and connect it first.');
+  }
+  if (tokens.accessToken && tokens.expiresAt && Date.now() < tokens.expiresAt - 30000) {
+    return tokens.accessToken;
+  }
+
+  var response = UrlFetchApp.fetch(PHOTOS_TOKEN_ENDPOINT, {
+    method: 'post',
+    payload: {
+      refresh_token: tokens.refreshToken,
+      client_id: photosClientId_(),
+      client_secret: photosClientSecret_(),
+      grant_type: 'refresh_token'
+    },
+    muteHttpExceptions: true
+  });
+  var payload = JSON.parse(response.getContentText() || '{}');
+
+  if (response.getResponseCode() !== 200 || !payload.access_token) {
+    // A dead refresh token stays dead; keeping it would make every later
+    // call fail the slow way. Forget it so status honestly says "connect".
+    if (payload.error === 'invalid_grant') {
+      clearPhotosTokens_();
+      throw new Error('Google Photos authorisation has expired or was revoked. Connect it again from settings.');
+    }
+    throw new Error('Google Photos token refresh failed: ' + (payload.error_description || payload.error || response.getResponseCode()));
+  }
+
+  tokens.accessToken = payload.access_token;
+  tokens.expiresAt = Date.now() + Math.max(0, (payload.expires_in || 0) - 60) * 1000;
+  savePhotosTokens_(tokens);
+  return tokens.accessToken;
+}
+
+/* ------------------------------------------------------------------ *
+ * Google Photos — Picker sessions
+ *
+ * The documented flow, verbatim: create a session, hand the browser its
+ * pickerUri, poll until mediaItemsSet, list what was picked, and delete
+ * the session when done. Sessions are never stored as application data.
+ * ------------------------------------------------------------------ */
+
+/** How many items one selection may carry. Import happens in small batches. */
+var PICKER_MAX_ITEMS = 50;
+
+function pickerFetch_(method, path, body) {
+  var token = photosAccessToken_();
+  var options = {
+    method: method,
+    headers: { Authorization: 'Bearer ' + token },
+    muteHttpExceptions: true
+  };
+  if (body) {
+    options.contentType = 'application/json';
+    options.payload = JSON.stringify(body);
+  }
+  var response = UrlFetchApp.fetch(PICKER_API + path, options);
+  var code = response.getResponseCode();
+  var text = response.getContentText() || '';
+
+  if (code === 401 || code === 403) {
+    throw new Error('Google Photos refused the request (' + code + '). The authorisation may have been revoked — reconnect from settings.');
+  }
+  if (code === 404) {
+    throw new Error('That Google Photos picking session no longer exists. Start the picker again.');
+  }
+  if (code < 200 || code >= 300) {
+    var detail = '';
+    try { detail = (JSON.parse(text).error || {}).message || ''; } catch (e) { detail = ''; }
+    throw new Error('Google Photos answered ' + code + (detail ? ': ' + detail : '.'));
+  }
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error('Google Photos sent back something unreadable.');
+  }
+}
+
+function createPhotoPickerSession_(body) {
+  var max = Math.max(1, Math.min(PICKER_MAX_ITEMS, parseInt(body.maxItems, 10) || PICKER_MAX_ITEMS));
+  var session = pickerFetch_('post', '/sessions', {
+    pickingConfig: { maxItemCount: String(max) }
+  });
+  return {
+    sessionId: session.id,
+    pickerUri: session.pickerUri,
+    expireTime: session.expireTime || '',
+    pollingConfig: session.pollingConfig || {}
+  };
+}
+
+function getPhotoPickerSession_(params) {
+  var id = String(params.sessionId || '');
+  if (!id) throw new Error('Which picking session? None was named.');
+  var session = pickerFetch_('get', '/sessions/' + encodeURIComponent(id));
+  return {
+    sessionId: session.id,
+    mediaItemsSet: session.mediaItemsSet === true,
+    pollingConfig: session.pollingConfig || {},
+    expireTime: session.expireTime || ''
+  };
+}
+
+function deletePhotoPickerSession_(body) {
+  var id = String(body.sessionId || '');
+  if (!id) return { deleted: false };
+  try {
+    pickerFetch_('delete', '/sessions/' + encodeURIComponent(id));
+  } catch (error) {
+    // A session that is already gone is the outcome we wanted.
+  }
+  return { deleted: true };
+}
+
+/**
+ * Everything the person picked, straight through with pagination handled.
+ * `baseUrl` rides along so the review screen can show thumbnails and the
+ * import can download — it is temporary, and nothing here stores it.
+ */
+function listPickedPhotos_(body) {
+  var id = String(body.sessionId || '');
+  if (!id) throw new Error('Which picking session? None was named.');
+
+  var items = [];
+  var pageToken = '';
+  do {
+    var path = '/mediaItems?sessionId=' + encodeURIComponent(id) + '&pageSize=100' +
+      (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : '');
+    var page = pickerFetch_('get', path);
+    var got = page.mediaItems || [];
+    for (var i = 0; i < got.length; i++) {
+      var item = got[i] || {};
+      var file = item.mediaFile || {};
+      var meta = file.mediaFileMetadata || {};
+      items.push({
+        id: item.id || '',
+        createTime: item.createTime || '',
+        type: item.type || '',
+        baseUrl: file.baseUrl || '',
+        mimeType: file.mimeType || '',
+        filename: file.filename || '',
+        width: parseInt(meta.width, 10) || 0,
+        height: parseInt(meta.height, 10) || 0
+      });
+    }
+    pageToken = page.nextPageToken || '';
+  } while (pageToken);
+
+  // The review screen shows thumbnails, and picker base URLs only answer to
+  // the OAuth token — which the browser rightly does not have. The links are
+  // parked here for half an hour so getPickedPhotoPreview can resolve an
+  // item id to its URL server-side; the browser never nominates a URL.
+  try {
+    var links = {};
+    for (var k = 0; k < items.length; k++) {
+      if (items[k].id && items[k].baseUrl) links[items[k].id] = items[k].baseUrl;
+    }
+    CacheService.getScriptCache().put('picker-links:' + id, JSON.stringify(links), 1800);
+  } catch (cacheError) {
+    // Previews degrade to placeholders; the selection itself is unaffected.
+  }
+
+  return { items: items };
+}
+
+/**
+ * A small review thumbnail for one picked item. The item id is looked up in
+ * the session's own cached links — an arbitrary URL from the browser would
+ * otherwise ride out with the OAuth token attached, which is exactly the
+ * shape of request this script never makes.
+ */
+function getPickedPhotoPreview_(params) {
+  var sessionId = String(params.sessionId || '');
+  var itemId = String(params.itemId || '');
+  if (!sessionId || !itemId) throw new Error('A preview needs the session and the item.');
+
+  var raw = CacheService.getScriptCache().get('picker-links:' + sessionId);
+  if (!raw) {
+    throw new Error('The preview links for this selection have expired. The photos can still be imported.');
+  }
+  var links;
+  try {
+    links = JSON.parse(raw);
+  } catch (error) {
+    throw new Error('The preview links for this selection are unreadable.');
+  }
+  var baseUrl = links[itemId];
+  if (!baseUrl) throw new Error('That item is not part of this selection.');
+
+  var response = UrlFetchApp.fetch(baseUrl + '=w256-h256', {
+    headers: { Authorization: 'Bearer ' + photosAccessToken_() },
+    muteHttpExceptions: true
+  });
+  if (response.getResponseCode() !== 200) {
+    throw new Error('The preview could not be fetched (' + response.getResponseCode() + ').');
+  }
+  var blob = response.getBlob();
+  return {
+    itemId: itemId,
+    mimeType: blob.getContentType() || 'image/jpeg',
+    data: Utilities.base64Encode(blob.getBytes())
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Google Photos — import to Drive + Travel_Photos
+ * ------------------------------------------------------------------ */
+
+var TRAVEL_PHOTOS_FOLDER_PROPERTY = 'TRAVEL_PHOTOS_FOLDER_ID';
+var TRAVEL_PHOTOS_FOLDER_NAME = 'Travel App Photos';
+
+/** Rendition sizes: gallery-sized copies, never the 80MB original photo.
+ * The same width/height parameters on a video's base URL return a poster
+ * frame as an image, so videos get real thumbnails for free; '=dv' asks for
+ * the video bytes themselves. */
+var PHOTO_THUMB_PARAMS = '=w512-h512';
+var PHOTO_DISPLAY_PARAMS = '=w2048-h2048';
+var VIDEO_BYTES_PARAMS = '=dv';
+
+/** At most this many photos are imported per request; the app sends batches. */
+var IMPORT_BATCH_LIMIT = 10;
+
+/**
+ * The private Drive folder imported photos live in. Unlike the older
+ * uploadPhoto_ folder, files here are NOT link-shared: the only way bytes
+ * leave is through getTravelPhoto, which checks the media access code.
+ */
+function travelPhotosFolder_() {
+  var properties = PropertiesService.getScriptProperties();
+  var savedId = properties.getProperty(TRAVEL_PHOTOS_FOLDER_PROPERTY);
+  if (savedId) {
+    try {
+      return DriveApp.getFolderById(savedId);
+    } catch (error) {
+      // The folder was deleted; fall through and make a fresh one.
+    }
+  }
+  var existing = DriveApp.getFoldersByName(TRAVEL_PHOTOS_FOLDER_NAME);
+  var folder = existing.hasNext() ? existing.next() : DriveApp.createFolder(TRAVEL_PHOTOS_FOLDER_NAME);
+  properties.setProperty(TRAVEL_PHOTOS_FOLDER_PROPERTY, folder.getId());
+  return folder;
+}
+
+/** Reads a whole tab into { headers, map, rows } once, for lookups. */
+function tableFor_(tabName) {
+  var config = TABS[tabName];
+  var sheet = sheetNamed_(tabName);
+  var index = headerIndex_(sheet, config.header);
+  var lastRow = sheet.getLastRow();
+  var width = Math.max(sheet.getLastColumn(), 1);
+  var rows = lastRow > config.header
+    ? sheet.getRange(config.header + 1, 1, lastRow - config.header, width).getValues()
+    : [];
+  return { headers: index.headers, map: index.map, rows: rows };
+}
+
+function cellOf_(row, map, header) {
+  var at = map[header];
+  return at === undefined ? '' : String(row[at] == null ? '' : row[at]).trim();
+}
+
+/**
+ * The association a photo claims, checked against the sheet before anything
+ * is downloaded. The browser's word is never enough: a Visit ID must exist,
+ * must not be deleted, must belong to the Place ID supplied, and must not
+ * contradict the Trip ID supplied. What comes back is the validated triple,
+ * with the visit's own place and trip filling any blanks.
+ */
+function resolveAssociation_(body) {
+  var placeId = String(body.placeId || '').trim();
+  var visitId = String(body.visitId || '').trim();
+  var tripId = String(body.tripId || '').trim();
+
+  if (!placeId && !visitId && !tripId) {
+    throw new Error('These photos have nothing to attach to — no visit, trip or place was named.');
+  }
+
+  if (visitId) {
+    var visits = tableFor_('Dates_Visits');
+    var found = null;
+    for (var i = 0; i < visits.rows.length; i++) {
+      if (cellOf_(visits.rows[i], visits.map, 'Visit ID') === visitId) {
+        found = visits.rows[i];
+        break;
+      }
+    }
+    if (!found) {
+      throw new Error('The visit "' + visitId + '" is not in the sheet. If it was just added, let it sync first.');
+    }
+    if (cellOf_(found, visits.map, 'Deleted?').toLowerCase() === 'yes') {
+      throw new Error('That visit has been deleted, so photos can no longer be added to it.');
+    }
+    var visitPlace = cellOf_(found, visits.map, 'Place ID');
+    if (placeId && visitPlace && placeId !== visitPlace) {
+      throw new Error('That visit belongs to a different place than the one named.');
+    }
+    var visitTrip = cellOf_(found, visits.map, 'Trip ID');
+    if (tripId && visitTrip && tripId !== visitTrip) {
+      throw new Error('That visit belongs to a different trip than the one named.');
+    }
+    placeId = visitPlace || placeId;
+    tripId = visitTrip || tripId;
+  }
+
+  return { placeId: placeId, visitId: visitId, tripId: tripId };
+}
+
+/**
+ * Imports a confirmed batch. Each item succeeds or fails on its own — 22
+ * good photos are never rolled back over 3 bad ones — and the response says
+ * exactly which was which so the app can offer to retry just the failures.
+ */
+function importPickedPhotos_(body) {
+  var items = body.items;
+  if (!items || !items.length) throw new Error('The import carried no photos.');
+  if (items.length > IMPORT_BATCH_LIMIT) {
+    throw new Error('Import at most ' + IMPORT_BATCH_LIMIT + ' photos per request; the app sends batches.');
+  }
+
+  var association = resolveAssociation_(body);
+  var token = photosAccessToken_();
+  var folder = travelPhotosFolder_();
+
+  // What is already imported, by Google Photos item id — the durable identity
+  // that makes "already added" answerable at all.
+  var existing = tableFor_(TRAVEL_PHOTOS_TAB);
+  var byItemId = {};
+  for (var i = 0; i < existing.rows.length; i++) {
+    var row = existing.rows[i];
+    var itemId = cellOf_(row, existing.map, 'Google Photos Item ID');
+    if (!itemId || cellOf_(row, existing.map, 'Deleted?').toLowerCase() === 'yes') continue;
+    if (!byItemId[itemId]) byItemId[itemId] = [];
+    byItemId[itemId].push({
+      visitId: cellOf_(row, existing.map, 'Visit ID'),
+      tripId: cellOf_(row, existing.map, 'Trip ID'),
+      placeId: cellOf_(row, existing.map, 'Place ID'),
+      thumbId: cellOf_(row, existing.map, 'Thumb Drive File ID'),
+      displayId: cellOf_(row, existing.map, 'Display Drive File ID'),
+      videoId: cellOf_(row, existing.map, 'Video Drive File ID')
+    });
+  }
+
+  var results = [];
+  var savedRows = [];
+  var headers = null;
+
+  for (var j = 0; j < items.length; j++) {
+    var item = items[j] || {};
+    var googleId = String(item.id || '');
+    try {
+      if (!googleId) throw new Error('The photo carried no Google Photos id.');
+      var isVideo = String(item.type || '').toUpperCase() === 'VIDEO';
+
+      var twins = byItemId[googleId] || [];
+      var duplicate = false;
+      for (var t = 0; t < twins.length; t++) {
+        if (sameAssociation_(twins[t], association)) { duplicate = true; break; }
+      }
+      if (duplicate) {
+        results.push({ id: googleId, status: 'duplicate' });
+        continue;
+      }
+
+      // Already imported elsewhere: point a new metadata row at the same
+      // Drive files rather than downloading and storing a second copy.
+      var reuse = null;
+      for (var r = 0; r < twins.length; r++) {
+        if (twins[r].thumbId && twins[r].displayId) { reuse = twins[r]; break; }
+      }
+
+      var thumbId, displayId, videoId;
+      if (reuse) {
+        thumbId = reuse.thumbId;
+        displayId = reuse.displayId;
+        videoId = reuse.videoId || '';
+      } else {
+        var baseUrl = String(item.baseUrl || '');
+        if (!baseUrl) throw new Error('The photo carried no download link. Reopen the picker and try again.');
+        var safeName = String(item.filename || googleId).replace(/[\\\/:*?"<>|]/g, ' ').slice(0, 80).trim() || googleId;
+        // The size parameters work on a video's base URL too, answering with
+        // a poster frame — so both kinds get real image renditions, and
+        // video bytes are never mistaken for an image.
+        thumbId = downloadRendition_(baseUrl + PHOTO_THUMB_PARAMS, token, folder, safeName + ' (thumb)');
+        displayId = downloadRendition_(baseUrl + PHOTO_DISPLAY_PARAMS, token, folder, safeName);
+        videoId = '';
+        if (isVideo) {
+          // Best effort: a clip beyond the script's transfer limits keeps
+          // its poster frames and imports anyway rather than failing.
+          try {
+            videoId = downloadRendition_(baseUrl + VIDEO_BYTES_PARAMS, token, folder, safeName + ' (video)');
+          } catch (videoError) {
+            videoId = '';
+          }
+        }
+      }
+
+      var saved = saveTravelPhotoRow_({
+        'Google Photos Item ID': googleId,
+        'Place ID': association.placeId,
+        'Visit ID': association.visitId,
+        'Trip ID': association.tripId,
+        'Taken At': String(item.createTime || ''),
+        'Filename': String(item.filename || ''),
+        'MIME Type': String(item.mimeType || ''),
+        'Width': item.width ? String(item.width) : '',
+        'Height': item.height ? String(item.height) : '',
+        'Thumb Drive File ID': thumbId,
+        'Display Drive File ID': displayId,
+        'Video Drive File ID': videoId,
+        'Source': 'google-photos',
+        'Sort Order': '',
+        'Archived?': 'No',
+        'Deleted?': 'No'
+      });
+      headers = saved.headers;
+      savedRows.push(saved.row);
+      // Later items in this same batch see this one as already imported.
+      if (!byItemId[googleId]) byItemId[googleId] = [];
+      byItemId[googleId].push({
+        visitId: association.visitId, tripId: association.tripId,
+        placeId: association.placeId, thumbId: thumbId, displayId: displayId,
+        videoId: videoId
+      });
+      results.push({ id: googleId, status: 'imported', photoId: saved.id });
+    } catch (error) {
+      results.push({
+        id: googleId,
+        status: 'failed',
+        error: String(error && error.message ? error.message : error)
+      });
+    }
+  }
+
+  return { results: results, photos: { headers: headers || [], rows: savedRows } };
+}
+
+/** Whether an existing row already says what this import would say. */
+function sameAssociation_(twin, association) {
+  if (association.visitId) return twin.visitId === association.visitId;
+  if (association.tripId) return twin.tripId === association.tripId && !twin.visitId;
+  return twin.placeId === association.placeId && !twin.visitId && !twin.tripId;
+}
+
+/** One rendition, from the temporary base URL into the private folder. */
+function downloadRendition_(url, token, folder, name) {
+  var response = UrlFetchApp.fetch(url, {
+    headers: { Authorization: 'Bearer ' + token },
+    muteHttpExceptions: true
+  });
+  var code = response.getResponseCode();
+  if (code !== 200) {
+    throw new Error(
+      code === 403 || code === 401
+        ? 'The photo\'s temporary link has expired. Reopen the picker and choose it again.'
+        : 'Google Photos would not hand the photo over (' + code + ').'
+    );
+  }
+  var blob = response.getBlob();
+  blob.setName(name);
+  // The file stays private — no setSharing on purpose. getTravelPhoto is the
+  // only door, and it checks the media access code every time.
+  return folder.createFile(blob).getId();
+}
+
+/** Writes one Travel_Photos row under the script lock, via the same
+ * machinery as every other row so ids and derived columns stay uniform. */
+function saveTravelPhotoRow_(fields) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) {
+    throw new Error('The sheet is busy with another save. Try again in a moment.');
+  }
+  try {
+    var sheet = sheetNamed_(TRAVEL_PHOTOS_TAB);
+    var index = headerIndex_(sheet, TABS[TRAVEL_PHOTOS_TAB].header);
+    // An existing hand-made tab may not carry every column; require only the
+    // ones the gallery cannot work without, and write the rest where they fit.
+    requireColumn_(index, 'Thumb Drive File ID', TRAVEL_PHOTOS_TAB);
+    requireColumn_(index, 'Display Drive File ID', TRAVEL_PHOTOS_TAB);
+    var kept = {};
+    for (var header in fields) {
+      if (fields.hasOwnProperty(header) && index.map[header] !== undefined) {
+        kept[header] = fields[header];
+      }
+    }
+    return upsertRow_({ tab: TRAVEL_PHOTOS_TAB, id: '', fields: kept });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Travel photos — serving and deleting
+ *
+ * The hard rule: the browser names a PHOTO ID, never a Drive file id. The
+ * photo id is looked up in Travel_Photos, and only the Drive files that row
+ * points at can ever be answered. There is deliberately no action anywhere
+ * in this script that takes an arbitrary Drive file id.
+ * ------------------------------------------------------------------ */
+
+var MEDIA_ACCESS_CODE_PROPERTY = 'MEDIA_ACCESS_CODE';
+
+/**
+ * Private photo bytes need a better door than the shared access code, which
+ * is public by design (it ships in the static site). This second code lives
+ * only in Script Properties and in the browsers the owner typed it into —
+ * never in the repository, never in the bundle.
+ */
+function authorizeMedia_(supplied) {
+  var expected = PropertiesService.getScriptProperties().getProperty(MEDIA_ACCESS_CODE_PROPERTY) || '';
+  if (!expected) {
+    throw new Error(
+      'No media access code is set. Add a long random ' + MEDIA_ACCESS_CODE_PROPERTY +
+      ' script property before private photos can be viewed — see docs/SHEET-SETUP.md.'
+    );
+  }
+  if (!supplied || !constantTimeEquals_(String(supplied), expected)) {
+    throw new Error('Wrong or missing media access code.');
+  }
+}
+
+/** Finds one live Travel_Photos row by Photo ID, or throws readably. */
+function travelPhotoById_(photoId) {
+  var table = tableFor_(TRAVEL_PHOTOS_TAB);
+  for (var i = 0; i < table.rows.length; i++) {
+    var row = table.rows[i];
+    if (cellOf_(row, table.map, 'Photo ID') !== photoId) continue;
+    if (cellOf_(row, table.map, 'Deleted?').toLowerCase() === 'yes') {
+      throw new Error('That photo has been deleted.');
+    }
+    return { row: row, map: table.map, rowNumber: TABS[TRAVEL_PHOTOS_TAB].header + 1 + i };
+  }
+  throw new Error('No photo with the id "' + photoId + '" exists.');
+}
+
+/**
+ * One permitted image, as base64. Input is a photo id and a size word; the
+ * Drive file id is resolved from the row and double-checked to live in the
+ * app's own folder, so even a hand-edited row cannot exfiltrate an
+ * unrelated Drive file.
+ */
+function getTravelPhoto_(params) {
+  authorizeMedia_(params.media);
+
+  var photoId = String(params.photoId || '').trim();
+  if (!photoId) throw new Error('Which photo? No id was named.');
+  var requested = String(params.size || 'thumb');
+  var size = requested === 'display' || requested === 'video' ? requested : 'thumb';
+
+  var found = travelPhotoById_(photoId);
+  var fileId;
+  if (size === 'video') {
+    fileId = cellOf_(found.row, found.map, 'Video Drive File ID');
+    if (!fileId) {
+      throw new Error('This video\'s full clip wasn\'t stored — it was too large to copy. Its preview frames still show.');
+    }
+  } else {
+    var column = size === 'display' ? 'Display Drive File ID' : 'Thumb Drive File ID';
+    fileId = cellOf_(found.row, found.map, column) ||
+      cellOf_(found.row, found.map, size === 'display' ? 'Thumb Drive File ID' : 'Display Drive File ID');
+    if (!fileId) throw new Error('That photo has no stored image yet. Its import may still be running.');
+  }
+
+  var file;
+  try {
+    file = DriveApp.getFileById(fileId);
+  } catch (error) {
+    throw new Error('The photo\'s file is missing from Drive.');
+  }
+
+  // Belt and braces: only files that live in the app's own folder are served.
+  var folderId = travelPhotosFolder_().getId();
+  var inFolder = false;
+  var parents = file.getParents();
+  while (parents.hasNext()) {
+    if (parents.next().getId() === folderId) { inFolder = true; break; }
+  }
+  if (!inFolder) throw new Error('That file is not one of the app\'s travel photos.');
+
+  var blob = file.getBlob();
+  return {
+    photoId: photoId,
+    size: size,
+    mimeType: blob.getContentType() || 'image/jpeg',
+    data: Utilities.base64Encode(blob.getBytes()),
+    version: cellOf_(found.row, found.map, 'Updated At')
+  };
+}
+
+/**
+ * Soft-deletes the metadata row first — that is what every device follows —
+ * then trashes the Drive files if no other live row still points at them.
+ * Trash rather than delete, so a slip of the thumb is recoverable for 30
+ * days from Drive itself.
+ */
+function deleteTravelPhoto_(body) {
+  var photoId = String(body.id || '').trim();
+  if (!photoId) throw new Error('A delete needs the photo id.');
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) {
+    throw new Error('The sheet is busy with another save. Try again in a moment.');
+  }
+
+  var thumbId = '';
+  var displayId = '';
+  var videoId = '';
+  try {
+    var found;
+    try {
+      found = travelPhotoById_(photoId);
+    } catch (error) {
+      // Already deleted or never existed: the outcome the caller wanted.
+      appendLog_(TRAVEL_PHOTOS_TAB, photoId, 'delete', 'missing');
+      return { id: photoId, deleted: true, missing: true };
+    }
+    thumbId = cellOf_(found.row, found.map, 'Thumb Drive File ID');
+    displayId = cellOf_(found.row, found.map, 'Display Drive File ID');
+    videoId = cellOf_(found.row, found.map, 'Video Drive File ID');
+
+    deleteRow_({ tab: TRAVEL_PHOTOS_TAB, id: photoId });
+
+    // Only now, with the metadata gone, are unreferenced files cleaned up.
+    var table = tableFor_(TRAVEL_PHOTOS_TAB);
+    var stillUsed = {};
+    for (var i = 0; i < table.rows.length; i++) {
+      var row = table.rows[i];
+      if (cellOf_(row, table.map, 'Deleted?').toLowerCase() === 'yes') continue;
+      stillUsed[cellOf_(row, table.map, 'Thumb Drive File ID')] = true;
+      stillUsed[cellOf_(row, table.map, 'Display Drive File ID')] = true;
+      stillUsed[cellOf_(row, table.map, 'Video Drive File ID')] = true;
+    }
+    trashIfUnused_(thumbId, stillUsed);
+    trashIfUnused_(displayId, stillUsed);
+    trashIfUnused_(videoId, stillUsed);
+  } finally {
+    lock.releaseLock();
+  }
+  return { id: photoId, deleted: true };
+}
+
+function trashIfUnused_(fileId, stillUsed) {
+  if (!fileId || stillUsed[fileId]) return;
+  try {
+    DriveApp.getFileById(fileId).setTrashed(true);
+  } catch (error) {
+    // The metadata row is already tombstoned; a file that cannot be trashed
+    // is an orphan in a private folder, not a data problem.
+  }
 }
 
 /* ------------------------------------------------------------------ *

@@ -5,14 +5,18 @@ import { useCallback, useEffect, useSyncExternalStore } from "react";
 import type { SheetConnection } from "@/lib/sheets/connection";
 import {
   INITIAL_STATUS,
+  NO_CAPABILITIES,
   NO_PLACES,
+  NO_TRAVEL_PHOTOS,
   NO_TRIPS,
   NO_VISITS,
   sheetPlaceRepository,
   type SheetStatus,
 } from "@/lib/storage/sheetPlaceRepository";
+import type { SheetCapabilities } from "@/lib/sheets/sheetsClient";
 import type { PlaceVisit, VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
+import type { TravelPhoto } from "@/types/travelPhoto";
 
 /**
  * Wires the sheet-backed repository into React.
@@ -28,9 +32,13 @@ export type SheetSync = {
   places: VisitedPlace[];
   trips: Trip[];
   visits: PlaceVisit[];
+  /** Cloud photo metadata; the bytes load lazily per gallery. */
+  travelPhotos: TravelPhoto[];
   state: SheetStatus;
   connection: SheetConnection | null;
   lookups: Record<string, string[]>;
+  /** What this deployment of the script can do. */
+  capabilities: SheetCapabilities;
   connect: (connection: SheetConnection) => void;
   disconnect: () => void;
   /** Re-reads the sheet and pushes anything still queued. */
@@ -57,6 +65,16 @@ export function useSheetSync(): SheetSync {
     subscribe,
     () => sheetPlaceRepository.getVisibleVisits(),
     () => NO_VISITS,
+  );
+  const travelPhotos = useSyncExternalStore(
+    subscribe,
+    () => sheetPlaceRepository.getVisibleTravelPhotos(),
+    () => NO_TRAVEL_PHOTOS,
+  );
+  const capabilities = useSyncExternalStore(
+    subscribe,
+    () => sheetPlaceRepository.getCapabilities(),
+    () => NO_CAPABILITIES,
   );
   const state = useSyncExternalStore(
     subscribe,
@@ -118,5 +136,17 @@ export function useSheetSync(): SheetSync {
     void sheetPlaceRepository.load();
   }, []);
 
-  return { places, trips, visits, state, connection, lookups, connect, disconnect, syncNow };
+  return {
+    places,
+    trips,
+    visits,
+    travelPhotos,
+    state,
+    connection,
+    lookups,
+    capabilities,
+    connect,
+    disconnect,
+    syncNow,
+  };
 }

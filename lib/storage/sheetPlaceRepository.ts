@@ -18,6 +18,7 @@ import {
   MEDIA_TAB,
   MEDIA_TYPE_PHOTO,
   PLACES_TAB,
+  TRAVEL_PHOTOS_TAB,
   TRIPS_TAB,
   VISITS_TAB,
   VISIT_COLUMNS,
@@ -30,11 +31,18 @@ import {
   mediaFromTable,
   placesFromTable,
   restrictToHeaders,
+  travelPhotosFromTable,
   tripsFromTable,
   visitsFromTable,
   type MediaLink,
 } from "@/lib/sheets/mapping";
-import { implicitVisit, visitSpan, visitStats, visitStatusFor } from "@/lib/places/visits";
+import {
+  implicitVisit,
+  isImplicitVisitId,
+  visitSpan,
+  visitStats,
+  visitStatusFor,
+} from "@/lib/places/visits";
 import {
   LOCAL_ID_PREFIX,
   adoptFieldValue,
@@ -50,11 +58,15 @@ import {
 import {
   SheetError,
   deleteRow,
+  deleteTravelPhotoRemote,
   getAll,
+  importPickedPhotos,
   uploadPhoto,
   upsertRow,
+  type ImportItemResult,
   type SheetCapabilities,
 } from "@/lib/sheets/sheetsClient";
+import { forgetCachedPhoto } from "@/lib/storage/cloudPhotoCache";
 import { PersistenceError, type PlaceRepository } from "@/lib/storage/placeRepository";
 import { deletePhoto, getPhoto, isLocalPhotoRef } from "@/lib/storage/photoStore";
 import { createId } from "@/lib/utils/id";
@@ -68,6 +80,7 @@ import type {
   VisitedPlace,
 } from "@/types/place";
 import type { NewTripInput, Trip, TripChanges } from "@/types/trip";
+import type { GooglePickedMedia, TravelPhoto } from "@/types/travelPhoto";
 
 /**
  * The travel collection, stored in a Google Sheet.
@@ -126,12 +139,32 @@ export const NO_TRIPS: Trip[] = [];
 /** And one for visits. */
 export const NO_VISITS: PlaceVisit[] = [];
 
+/** And one for cloud photos. */
+export const NO_TRAVEL_PHOTOS: TravelPhoto[] = [];
+
 /**
  * What a deployment can do before it has been asked. Nothing, deliberately:
  * an app that offered a search the script cannot serve would fail on every
  * keystroke, and an older script simply omits the field.
  */
-export const NO_CAPABILITIES: SheetCapabilities = { placesSearch: false, photoUpload: false };
+export const NO_CAPABILITIES: SheetCapabilities = {
+  placesSearch: false,
+  photoUpload: false,
+  visits: false,
+  travelPhotos: false,
+  googlePhotosPicker: false,
+  googlePhotosConnected: false,
+};
+
+/** What one photo-import run did, item by item plus the running totals. */
+export type PhotoImportProgress = {
+  total: number;
+  done: number;
+  imported: number;
+  duplicates: number;
+  videos: number;
+  failed: GooglePickedMedia[];
+};
 
 /** Every photo reference on a place that is a real link rather than a blob. */
 function remotePhotoRefs(place: VisitedPlace): string[] {
@@ -181,6 +214,10 @@ class SheetPlaceRepository implements PlaceRepository {
   /** Visits, and the same collection minus tombstones. */
   private visits: PlaceVisit[] = [];
   private visibleVisits: PlaceVisit[] = NO_VISITS;
+
+  /** Cloud photos, and the same collection minus tombstones. */
+  private travelPhotos: TravelPhoto[] = [];
+  private visibleTravelPhotos: TravelPhoto[] = NO_TRAVEL_PHOTOS;
 
   /** Photo rows on Media_Links, kept so removing a photo can remove its row. */
   private media: MediaLink[] = [];
@@ -277,6 +314,19 @@ class SheetPlaceRepository implements PlaceRepository {
     this.notify();
   }
 
+  /** The cloud photos to draw, tombstones removed. Stable identity, as above. */
+  getVisibleTravelPhotos(): TravelPhoto[] {
+    return this.visibleTravelPhotos;
+  }
+
+  /** The one way the cloud photo collection changes. */
+  private commitTravelPhotos(photos: TravelPhoto[]): void {
+    this.travelPhotos = photos;
+    const visible = photos.filter((photo) => !photo.deletedAt);
+    this.visibleTravelPhotos = visible.length === 0 ? NO_TRAVEL_PHOTOS : visible;
+    this.notify();
+  }
+
   getLookups(): Record<string, string[]> {
     return this.lookups;
   }
@@ -324,6 +374,7 @@ class SheetPlaceRepository implements PlaceRepository {
       this.visitHeaders = cached.visitHeaders;
       this.commitTrips(cached.trips);
       this.commitVisits(cached.visits);
+      this.commitTravelPhotos(cached.travelPhotos);
       this.commit(cached.places);
     }
 
@@ -363,6 +414,8 @@ class SheetPlaceRepository implements PlaceRepository {
     this.commitTrips([]);
     this.commitVisits([]);
     this.commit([]);
+
+    this.commitTravelPhotos([]);
 
     this.connection = defaultConnection();
     this.setStatus({
@@ -421,6 +474,11 @@ class SheetPlaceRepository implements PlaceRepository {
       this.media = mediaFromTable(mediaTable);
       this.mediaHeaders = mediaTable?.headers ?? [];
       const withMedia = applyMediaPhotos(withSpans, this.media);
+
+      // Metadata only — the bytes stay in Drive until a gallery asks.
+      this.commitTravelPhotos(
+        travelPhotosFromTable(snapshot.tabs[TRAVEL_PHOTOS_TAB], snapshot.serverTime),
+      );
 
       // A sheet whose script predates trips has no Trips tab. That is not a
       // failure — it simply has no trips, and everything else loads as before.
@@ -514,6 +572,7 @@ class SheetPlaceRepository implements PlaceRepository {
       places: this.places,
       trips: this.trips,
       visits: this.visits,
+      travelPhotos: this.travelPhotos,
       media: this.media,
       visitHeaders: this.visitHeaders,
       lookups: this.lookups,
@@ -1116,6 +1175,103 @@ class SheetPlaceRepository implements PlaceRepository {
       fields: summary,
       queuedAt: new Date().toISOString(),
     });
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Cloud photos — Google Photos imports living in Drive
+   * ---------------------------------------------------------------- */
+
+  /**
+   * A visit id photos can actually attach to.
+   *
+   * The implicit visit — the one a place's old-style dates imply — has no
+   * row in the sheet, and the import validates its Visit ID against the
+   * sheet. So attaching photos to it first writes it down for real, exactly
+   * the way editing it does, and hands back the id of the real row.
+   */
+  async ensureRealVisit(placeId: string, visit: PlaceVisit): Promise<string> {
+    if (!isImplicitVisitId(visit.id)) return this.resolveId(visit.id);
+
+    const created = await this.addVisit(
+      placeId,
+      {
+        startDate: visit.startDate,
+        endDate: visit.endDate,
+        tripId: visit.tripId,
+        status: visitStatusFor(visit.startDate),
+      },
+      { materializeImplicit: false },
+    );
+    return created.id;
+  }
+
+  /**
+   * Imports one confirmed batch of picked photos and folds the created rows
+   * straight into memory, so the gallery fills in without a full reload.
+   * The visit id is re-resolved at the moment of import — a visit created
+   * seconds ago may have just been assigned its real sheet id.
+   */
+  async importGooglePhotos(request: {
+    items: GooglePickedMedia[];
+    placeId?: string;
+    visitId?: string;
+    tripId?: string;
+  }): Promise<ImportItemResult[]> {
+    this.requireConnection();
+    const connection = this.connection;
+    if (!connection) return [];
+
+    const visitId = request.visitId ? this.resolveId(request.visitId) : undefined;
+    if (visitId && isLocalId(visitId)) {
+      throw new PersistenceError(
+        "That visit hasn’t reached the sheet yet. Give it a moment to sync, then try again.",
+      );
+    }
+
+    const result = await importPickedPhotos(connection, {
+      items: request.items,
+      placeId: request.placeId ? this.resolveId(request.placeId) : undefined,
+      visitId,
+      tripId: request.tripId ? this.resolveId(request.tripId) : undefined,
+    });
+
+    const created = travelPhotosFromTable(result.photos, new Date().toISOString());
+    if (created.length > 0) {
+      const known = new Set(created.map((photo) => photo.id));
+      this.commitTravelPhotos([
+        ...this.travelPhotos.filter((photo) => !known.has(photo.id)),
+        ...created,
+      ]);
+      this.persist();
+    }
+    return result.results;
+  }
+
+  /**
+   * Removes one cloud photo. The script tombstones the metadata row and
+   * tidies the Drive files; this side only has to forget what it cached.
+   * Deliberately not queued: the delete touches Drive as well as the sheet,
+   * so it is an online action and says so when it cannot run.
+   */
+  async removeTravelPhoto(id: string): Promise<void> {
+    this.requireConnection();
+    const connection = this.connection;
+    if (!connection) return;
+
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      throw new PersistenceError("Removing a photo needs a connection. Try again when you’re back online.");
+    }
+
+    await deleteTravelPhotoRemote(connection, id);
+
+    const now = new Date().toISOString();
+    this.commitTravelPhotos(
+      this.travelPhotos.map((photo) =>
+        photo.id === id ? { ...photo, deletedAt: now, updatedAt: now } : photo,
+      ),
+    );
+    this.persist();
+    void forgetCachedPhoto(id);
   }
 
   /* ---------------------------------------------------------------- *

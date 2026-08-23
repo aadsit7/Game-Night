@@ -15,6 +15,8 @@ const suites = [
   "sheet-mapping.test.mjs",
   "sheet-queue.test.mjs",
   "visits.test.mjs",
+  "travel-photos.test.mjs",
+  "trip-membership.test.mjs",
   "sheet-connection.test.mjs",
   "timeline.test.mjs",
   "draft-dates.test.mjs",

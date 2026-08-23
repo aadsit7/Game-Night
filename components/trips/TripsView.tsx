@@ -11,7 +11,7 @@ import {
   tripSummary,
 } from "@/lib/trips/tripDays";
 import { formatVisitRange } from "@/lib/utils/date";
-import type { VisitedPlace } from "@/types/place";
+import type { PlaceVisit, VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
 
 /**
@@ -25,6 +25,7 @@ import type { Trip } from "@/types/trip";
 export function TripsView({
   trips,
   places,
+  visits,
   loading,
   bottomInset,
   onOpenTrip,
@@ -32,6 +33,8 @@ export function TripsView({
 }: {
   trips: Trip[];
   places: VisitedPlace[];
+  /** Every logged stay — visit-level trip membership reads from these. */
+  visits: PlaceVisit[];
   loading: boolean;
   bottomInset: number;
   onOpenTrip: (id: string) => void;
@@ -104,6 +107,7 @@ export function TripsView({
                   key={trip.id}
                   trip={trip}
                   places={places}
+                  visits={visits}
                   onOpen={() => onOpenTrip(trip.id)}
                 />
               ))}
@@ -163,13 +167,15 @@ function FlagStack({ codes }: { codes: string[] }) {
 function TripRow({
   trip,
   places,
+  visits,
   onOpen,
 }: {
   trip: Trip;
   places: VisitedPlace[];
+  visits: PlaceVisit[];
   onOpen: () => void;
 }) {
-  const summary = tripSummary(trip, places);
+  const summary = tripSummary(trip, places, visits);
   const when = formatVisitRange(trip.startDate, trip.endDate);
   const length = formatTripLength(summary.days);
 

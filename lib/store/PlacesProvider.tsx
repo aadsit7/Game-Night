@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
 
 import type { SheetConnection } from "@/lib/sheets/connection";
+import type { ImportItemResult, SheetCapabilities } from "@/lib/sheets/sheetsClient";
 import { useSheetSync } from "@/lib/sheets/useSheetSync";
 import { sortTrips } from "@/lib/trips/tripDays";
 import { deletePhotos } from "@/lib/storage/photoStore";
@@ -18,6 +19,7 @@ import type {
   VisitedPlace,
 } from "@/types/place";
 import type { NewTripInput, Trip, TripChanges } from "@/types/trip";
+import type { GooglePickedMedia, TravelPhoto } from "@/types/travelPhoto";
 
 /**
  * The single source of truth in the app, standing in front of the single
@@ -86,6 +88,20 @@ type PlacesContextValue = {
    * anything holding the old value needs this to catch up.
    */
   resolveTripId: (id: string) => string;
+  /** Cloud photos: metadata for every imported photo, all contexts. */
+  travelPhotos: TravelPhoto[];
+  /** What this deployment of the Apps Script can do. */
+  capabilities: SheetCapabilities;
+  /** A real, sheet-known visit id for photo attachment — materialising the
+   * implicit visit when that is what was tapped. */
+  ensureRealVisit: (placeId: string, visit: PlaceVisit) => Promise<string>;
+  importGooglePhotos: (request: {
+    items: GooglePickedMedia[];
+    placeId?: string;
+    visitId?: string;
+    tripId?: string;
+  }) => Promise<ImportItemResult[]>;
+  removeTravelPhoto: (id: string) => Promise<void>;
   reload: () => Promise<void>;
   /** The Google Sheet this browser is pointed at. */
   sync: {
@@ -242,6 +258,39 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
 
   const resolveTripId = useCallback((id: string) => sheetPlaceRepository.resolveId(id), []);
 
+  const ensureRealVisit = useCallback(async (placeId: string, visit: PlaceVisit) => {
+    try {
+      return await sheetPlaceRepository.ensureRealVisit(placeId, visit);
+    } catch (error) {
+      throw new Error(friendlyMessage(error, "That visit couldn’t be prepared for photos."));
+    }
+  }, []);
+
+  const importGooglePhotos = useCallback(
+    async (request: {
+      items: GooglePickedMedia[];
+      placeId?: string;
+      visitId?: string;
+      tripId?: string;
+    }) => {
+      try {
+        return await sheetPlaceRepository.importGooglePhotos(request);
+      } catch (error) {
+        if (error instanceof PersistenceError) throw new Error(error.message);
+        throw error;
+      }
+    },
+    [],
+  );
+
+  const removeTravelPhoto = useCallback(async (id: string) => {
+    try {
+      await sheetPlaceRepository.removeTravelPhoto(id);
+    } catch (error) {
+      throw new Error(friendlyMessage(error, "That photo couldn’t be removed."));
+    }
+  }, []);
+
   const reload = useCallback(async () => {
     await sheetPlaceRepository.load();
   }, []);
@@ -350,6 +399,11 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       updateTrip,
       deleteTrip,
       resolveTripId,
+      travelPhotos: sync.travelPhotos,
+      capabilities: sync.capabilities,
+      ensureRealVisit,
+      importGooglePhotos,
+      removeTravelPhoto,
       reload,
       sync: {
         state: sync.state,
@@ -383,6 +437,9 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       updateTrip,
       deleteTrip,
       resolveTripId,
+      ensureRealVisit,
+      importGooglePhotos,
+      removeTravelPhoto,
       reload,
       sync,
     ],
