@@ -81,7 +81,11 @@ export function PlaceImage({
       cancelled = true;
       if (created) URL.revokeObjectURL(created);
     };
-  }, [coverRef]);
+    // `subjectKey` matters too: the render-phase reset above clears the object
+    // URL whenever it changes, and this effect must re-resolve the blob after
+    // any reset — a moved pin changes the key while `coverRef` stays the same,
+    // and without the re-run the photo would sit on the gradient for good.
+  }, [coverRef, subjectKey]);
 
   const photoUrl = coverRef && !isLocalPhotoRef(coverRef) ? coverRef : objectUrl;
   const src = source === "photo" ? photoUrl : null;

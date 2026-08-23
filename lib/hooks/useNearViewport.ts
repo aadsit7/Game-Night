@@ -21,9 +21,10 @@ import { useEffect, useState, type RefObject } from "react";
  *
  * Two screens' worth: a flick can cover that between one observer callback and
  * the next, and a row that arrives unready is a row whose first swipe does
- * nothing.
+ * nothing. On both axes, because the things watched include tiles in
+ * horizontally scrolling strips as well as rows in vertical lists.
  */
-const MARGIN = "200% 0px";
+const MARGIN = "200%";
 
 const wanted = new WeakMap<Element, () => void>();
 let shared: IntersectionObserver | null = null;

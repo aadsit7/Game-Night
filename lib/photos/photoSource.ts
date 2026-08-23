@@ -36,6 +36,15 @@ const MAX_CONCURRENT_DOWNLOADS = 4;
 let active = 0;
 const waiting: Array<() => void> = [];
 
+/**
+ * Loads already under way, shared by everyone who asks for the same bytes.
+ * The player warms the next item while the gallery may be fetching the same
+ * rendition, and a clip is megabytes — one request must serve them all.
+ * Entries leave the moment they settle: success is served by the cache from
+ * then on, and a failure must not turn one bad response into a permanent no.
+ */
+const inFlight = new Map<string, Promise<Blob>>();
+
 async function withSlot<T>(work: () => Promise<T>): Promise<T> {
   if (active >= MAX_CONCURRENT_DOWNLOADS) {
     await new Promise<void>((resolve) => waiting.push(resolve));
@@ -66,14 +75,35 @@ export function photoVersion(photo: Pick<TravelPhoto, "updatedAt">): string {
  * The bytes of one rendition, as a Blob the caller turns into an object
  * URL. Cached bytes come back without touching the network — which is the
  * whole cross-device promise: on the second open, an iPad shows the gallery
- * from its own disk.
+ * from its own disk. Concurrent callers asking for the same rendition share
+ * one load rather than racing each other to the network.
  */
-export async function loadTravelPhotoBlob(
+export function loadTravelPhotoBlob(
   photo: Pick<TravelPhoto, "id" | "updatedAt">,
   size: TravelPhotoSize,
 ): Promise<Blob> {
   const version = photoVersion(photo);
-  const cached = await getCachedPhoto(photo.id, size, version);
+  const key = `${photo.id}|${size}|${version || "0"}`;
+  const joined = inFlight.get(key);
+  if (joined) return joined;
+
+  const load = loadRendition(photo.id, size, version);
+  inFlight.set(key, load);
+  // Attached before any caller's own handlers, so the entry is gone by the
+  // time a caller reacts to the result — a retry never rejoins a rejection.
+  load.then(
+    () => inFlight.delete(key),
+    () => inFlight.delete(key),
+  );
+  return load;
+}
+
+async function loadRendition(
+  photoId: string,
+  size: TravelPhotoSize,
+  version: string,
+): Promise<Blob> {
+  const cached = await getCachedPhoto(photoId, size, version);
   if (cached) return cached;
 
   const connection = sheetPlaceRepository.getConnection();
@@ -93,7 +123,7 @@ export async function loadTravelPhotoBlob(
 
   return withSlot(async () => {
     // Re-check inside the slot: the wait may have outlived the miss.
-    const again = await getCachedPhoto(photo.id, size, version);
+    const again = await getCachedPhoto(photoId, size, version);
     if (again) return again;
 
     try {
@@ -107,12 +137,12 @@ export async function loadTravelPhotoBlob(
           : undefined;
       const result = await getTravelPhoto(
         connection,
-        { photoId: photo.id, size, mediaCode },
+        { photoId, size, mediaCode },
         deadline,
       );
       const blob = base64ToBlob(result.data, result.mimeType);
       if (blob.size === 0) throw new PhotoSourceError("failed", "The photo arrived empty.");
-      void cachePhoto(photo.id, size, version, blob);
+      void cachePhoto(photoId, size, version, blob);
       return blob;
     } catch (error) {
       if (error instanceof PhotoSourceError) throw error;

@@ -422,6 +422,15 @@ export async function photosAuthStatus(
   };
 }
 
+/**
+ * A URL the app may point a window at: https anywhere, or plain http only on
+ * localhost — which is what `npm run mock-sheet` serves during development.
+ * Anything else — a javascript: URL, a bare path — is refused as malformed.
+ */
+function isNavigableUrl(url: string): boolean {
+  return /^https:\/\//.test(url) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(url);
+}
+
 /** Starts the OAuth dance; the browser opens the returned consent URL. */
 export async function photosAuthStart(
   connection: SheetConnection,
@@ -431,7 +440,7 @@ export async function photosAuthStart(
     | { authUrl?: string }
     | undefined;
   const authUrl = String(data?.authUrl ?? "");
-  if (!/^https:\/\//.test(authUrl)) {
+  if (!isNavigableUrl(authUrl)) {
     throw new SheetError("The script didn’t hand back a Google sign-in link.", "malformed");
   }
   return { authUrl };
@@ -465,7 +474,7 @@ export async function createPickerSession(
 
   const sessionId = String(data?.sessionId ?? "");
   const pickerUri = String(data?.pickerUri ?? "");
-  if (!sessionId || !/^https:\/\//.test(pickerUri)) {
+  if (!sessionId || !isNavigableUrl(pickerUri)) {
     throw new SheetError("Google Photos didn’t open a picking session.", "malformed");
   }
   return {

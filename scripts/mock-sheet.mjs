@@ -584,7 +584,7 @@ function handle(action, body) {
   throw new Error(`Unknown action "${action}".`);
 }
 
-createServer((req, res) => {
+const server = createServer((req, res) => {
   // Apps Script serves its final response with permissive CORS; match that so
   // the browser behaves the same way it will against the real thing.
   const send = (payload, status = 200) => {
@@ -675,4 +675,15 @@ createServer((req, res) => {
   // ever sends a JSON content type, the request must fail here exactly as it
   // would in production.
   send({ ok: false, error: `No handler for ${req.method}` }, 405);
-}).listen(PORT, () => console.log(`mock sheet on http://localhost:${PORT}`));
+});
+
+/*
+ * Node closes idle keep-alive sockets after 5 seconds by default; browsers
+ * pool connections for far longer and do not retry a POST over a socket that
+ * turns out to be dead — a write then fails with a connection reset the real
+ * Apps Script never produces. Outlive the browser's pool instead.
+ */
+server.keepAliveTimeout = 120_000;
+server.headersTimeout = 125_000;
+
+server.listen(PORT, () => console.log(`mock sheet on http://localhost:${PORT}`));
