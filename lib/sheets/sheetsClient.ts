@@ -1,6 +1,7 @@
 import type { SheetConnection } from "@/lib/sheets/connection";
 import type { SheetTable } from "@/lib/sheets/mapping";
 import type { GooglePlace } from "@/lib/maps/googlePlaces";
+import type { GooglePickedMedia, TravelPhotoSize } from "@/types/travelPhoto";
 
 /**
  * The only module in the app that touches the network.
@@ -34,6 +35,14 @@ export type SheetCapabilities = {
    * simply omits this and photos stay in the browser they were added in.
    */
   photoUpload: boolean;
+  /** The deployment serves Dates_Visits rows individually. */
+  visits: boolean;
+  /** The deployment has the Travel_Photos tab and its photo actions. */
+  travelPhotos: boolean;
+  /** OAuth client credentials are configured, so "Connect Google Photos" can work. */
+  googlePhotosPicker: boolean;
+  /** A Google Photos refresh token is currently stored server-side. */
+  googlePhotosConnected: boolean;
 };
 
 export type UpsertResult = { id: string; row: unknown[]; headers: string[] };
@@ -246,6 +255,10 @@ export async function getAll(
     capabilities: {
       placesSearch: capabilities.placesSearch === true,
       photoUpload: capabilities.photoUpload === true,
+      visits: capabilities.visits === true,
+      travelPhotos: capabilities.travelPhotos === true,
+      googlePhotosPicker: capabilities.googlePhotosPicker === true,
+      googlePhotosConnected: capabilities.googlePhotosConnected === true,
     },
     serverTime: String(data?.serverTime ?? new Date().toISOString()),
   };
@@ -372,4 +385,251 @@ export async function setSetting(
   signal?: AbortSignal,
 ): Promise<void> {
   await postToSheet(connection, { action: "setSetting", key, value }, signal);
+}
+
+/* ------------------------------------------------------------------ *
+ * Google Photos — every call the picker flow makes
+ *
+ * All of these talk to the Apps Script, never to Google directly: the
+ * script holds the OAuth tokens, and the browser only ever sees session
+ * ids, picker URLs and picked-item metadata.
+ * ------------------------------------------------------------------ */
+
+export type PhotosAuthStatus = {
+  /** Client id + secret are set on the script. */
+  configured: boolean;
+  /** A refresh token is stored server-side right now. */
+  connected: boolean;
+  connectedAt: string;
+  accountHint: string;
+  /** The exact redirect URI to register on the OAuth client. */
+  redirectUri: string;
+};
+
+export async function photosAuthStatus(
+  connection: SheetConnection,
+  signal?: AbortSignal,
+): Promise<PhotosAuthStatus> {
+  const data = (await getFromSheet(connection, { action: "photosAuthStatus" }, signal)) as
+    | Partial<PhotosAuthStatus>
+    | undefined;
+  return {
+    configured: data?.configured === true,
+    connected: data?.connected === true,
+    connectedAt: String(data?.connectedAt ?? ""),
+    accountHint: String(data?.accountHint ?? ""),
+    redirectUri: String(data?.redirectUri ?? ""),
+  };
+}
+
+/** Starts the OAuth dance; the browser opens the returned consent URL. */
+export async function photosAuthStart(
+  connection: SheetConnection,
+  signal?: AbortSignal,
+): Promise<{ authUrl: string }> {
+  const data = (await postToSheet(connection, { action: "photosAuthStart" }, signal)) as
+    | { authUrl?: string }
+    | undefined;
+  const authUrl = String(data?.authUrl ?? "");
+  if (!/^https:\/\//.test(authUrl)) {
+    throw new SheetError("The script didn’t hand back a Google sign-in link.", "malformed");
+  }
+  return { authUrl };
+}
+
+export async function photosAuthDisconnect(
+  connection: SheetConnection,
+  signal?: AbortSignal,
+): Promise<void> {
+  await postToSheet(connection, { action: "photosAuthDisconnect" }, signal);
+}
+
+export type PickerSession = {
+  sessionId: string;
+  pickerUri: string;
+  expireTime: string;
+  /** Google's recommended polling cadence, passed through as-is. */
+  pollingConfig: { pollInterval?: string; timeoutIn?: string };
+};
+
+export async function createPickerSession(
+  connection: SheetConnection,
+  request: { maxItems?: number } = {},
+  signal?: AbortSignal,
+): Promise<PickerSession> {
+  const data = (await postToSheet(
+    connection,
+    { action: "createPhotoPickerSession", maxItems: request.maxItems ?? 50 },
+    signal,
+  )) as Partial<PickerSession> | undefined;
+
+  const sessionId = String(data?.sessionId ?? "");
+  const pickerUri = String(data?.pickerUri ?? "");
+  if (!sessionId || !/^https:\/\//.test(pickerUri)) {
+    throw new SheetError("Google Photos didn’t open a picking session.", "malformed");
+  }
+  return {
+    sessionId,
+    pickerUri,
+    expireTime: String(data?.expireTime ?? ""),
+    pollingConfig: (data?.pollingConfig ?? {}) as PickerSession["pollingConfig"],
+  };
+}
+
+export async function getPickerSession(
+  connection: SheetConnection,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<{ mediaItemsSet: boolean; pollingConfig: PickerSession["pollingConfig"] }> {
+  const data = (await getFromSheet(
+    connection,
+    { action: "getPhotoPickerSession", sessionId },
+    signal,
+  )) as { mediaItemsSet?: boolean; pollingConfig?: PickerSession["pollingConfig"] } | undefined;
+  return {
+    mediaItemsSet: data?.mediaItemsSet === true,
+    pollingConfig: data?.pollingConfig ?? {},
+  };
+}
+
+export async function listPickedPhotos(
+  connection: SheetConnection,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<GooglePickedMedia[]> {
+  const data = (await postToSheet(connection, { action: "listPickedPhotos", sessionId }, signal)) as
+    | { items?: GooglePickedMedia[] }
+    | undefined;
+  return Array.isArray(data?.items) ? data.items : [];
+}
+
+/**
+ * A review thumbnail for one picked item, proxied through the script so the
+ * OAuth token never reaches the browser. Item id in, bytes out — the
+ * browser never nominates a URL.
+ */
+export async function getPickedPhotoPreview(
+  connection: SheetConnection,
+  request: { sessionId: string; itemId: string },
+  signal?: AbortSignal,
+): Promise<{ mimeType: string; data: string }> {
+  const data = (await getFromSheet(
+    connection,
+    { action: "getPickedPhotoPreview", sessionId: request.sessionId, itemId: request.itemId },
+    signal,
+  )) as { mimeType?: string; data?: string } | undefined;
+  return {
+    mimeType: String(data?.mimeType ?? "image/jpeg"),
+    data: String(data?.data ?? ""),
+  };
+}
+
+export async function deletePickerSession(
+  connection: SheetConnection,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await postToSheet(connection, { action: "deletePhotoPickerSession", sessionId }, signal);
+}
+
+export type ImportItemResult = {
+  /** The Google Photos item id the result is about. */
+  id: string;
+  status: "imported" | "duplicate" | "video" | "failed";
+  photoId?: string;
+  error?: string;
+};
+
+export type ImportResult = {
+  results: ImportItemResult[];
+  /** The Travel_Photos rows created, for merging without a full reload. */
+  photos: SheetTable;
+};
+
+/**
+ * Imports one confirmed batch. Deliberately small — the script downloads
+ * every image inside one execution, and Apps Script executions have a
+ * budget. The caller sends several of these, not one big one.
+ */
+export async function importPickedPhotos(
+  connection: SheetConnection,
+  request: {
+    items: GooglePickedMedia[];
+    placeId?: string;
+    visitId?: string;
+    tripId?: string;
+  },
+  signal?: AbortSignal,
+): Promise<ImportResult> {
+  const importDeadline =
+    signal ??
+    (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+      ? // Several Drive downloads ride in one request.
+        AbortSignal.timeout(120_000)
+      : undefined);
+
+  const data = (await postToSheet(
+    connection,
+    {
+      action: "importPickedPhotos",
+      items: request.items,
+      placeId: request.placeId ?? "",
+      visitId: request.visitId ?? "",
+      tripId: request.tripId ?? "",
+    },
+    importDeadline,
+  )) as { results?: ImportItemResult[]; photos?: Partial<SheetTable> } | undefined;
+
+  return {
+    results: Array.isArray(data?.results) ? data.results : [],
+    photos: asTable(data?.photos),
+  };
+}
+
+/**
+ * The only parameters the photo endpoint is ever asked with. A Drive file id
+ * has no field to travel in — the script resolves files from the photo id
+ * alone, which is the whole of the "no arbitrary Drive reads" rule.
+ */
+export function travelPhotoRequestParams(
+  photoId: string,
+  size: TravelPhotoSize,
+  mediaCode: string,
+): Record<string, string> {
+  return {
+    action: "getTravelPhoto",
+    photoId,
+    size: size === "display" ? "display" : "thumb",
+    media: mediaCode,
+  };
+}
+
+export async function getTravelPhoto(
+  connection: SheetConnection,
+  request: { photoId: string; size: TravelPhotoSize; mediaCode: string },
+  signal?: AbortSignal,
+): Promise<{ mimeType: string; data: string; version: string }> {
+  const data = (await getFromSheet(
+    connection,
+    travelPhotoRequestParams(request.photoId, request.size, request.mediaCode),
+    signal,
+  )) as { mimeType?: string; data?: string; version?: string } | undefined;
+
+  const bytes = String(data?.data ?? "");
+  if (!bytes) {
+    throw new SheetError("The script answered without the photo’s bytes.", "malformed");
+  }
+  return {
+    mimeType: String(data?.mimeType ?? "image/jpeg"),
+    data: bytes,
+    version: String(data?.version ?? ""),
+  };
+}
+
+export async function deleteTravelPhotoRemote(
+  connection: SheetConnection,
+  id: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await postToSheet(connection, { action: "deleteTravelPhoto", id }, signal);
 }

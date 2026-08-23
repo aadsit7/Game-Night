@@ -1,5 +1,6 @@
 import type { PlaceVisit, VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
+import type { TravelPhoto } from "@/types/travelPhoto";
 import type { MediaLink } from "@/lib/sheets/mapping";
 
 /**
@@ -23,6 +24,8 @@ export type CachedSnapshot = {
   trips: Trip[];
   /** Absent from older caches, read defensively for the same reason as trips. */
   visits: PlaceVisit[];
+  /** Cloud photo metadata — never bytes. Absent from older caches too. */
+  travelPhotos: TravelPhoto[];
   /** Photo rows from Media_Links, so uploads still show offline. */
   media: MediaLink[];
   /**
@@ -48,6 +51,9 @@ export function loadCache(): CachedSnapshot | null {
       places: parsed.places as VisitedPlace[],
       trips: Array.isArray(parsed.trips) ? (parsed.trips as Trip[]) : [],
       visits: Array.isArray(parsed.visits) ? (parsed.visits as PlaceVisit[]) : [],
+      travelPhotos: Array.isArray(parsed.travelPhotos)
+        ? (parsed.travelPhotos as TravelPhoto[])
+        : [],
       media: Array.isArray(parsed.media) ? (parsed.media as MediaLink[]) : [],
       visitHeaders: Array.isArray(parsed.visitHeaders)
         ? (parsed.visitHeaders as string[])

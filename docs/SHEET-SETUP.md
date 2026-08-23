@@ -146,6 +146,7 @@ had no effect, this is almost always why.
 | `Trips` | Read and written. One row per trip. **Created by the script on first run** if it isn't there. |
 | `Dates_Visits` | Read and written. One row per stay — the place card lists them, and the Places row's `First/Last Visited Date`, `Visit Count` and `Days Spent Total` are kept in step. The script appends its bookkeeping columns (`Created At` … `Deleted?`) on first run of this version. |
 | `Media_Links` | Read and written, for photos only. Each uploaded photo becomes a `Photo` row pointing at its place, which is how a photo added on one device appears on the others. Other row types are left alone. |
+| `Travel_Photos` | Read and written. One row per photo/video imported from Google Photos — the metadata; the image files live in a private Drive folder. **Created by the script on first run** if it isn't there. See [Google Photos](#google-photos). |
 | `Notes_Reviews`, `Lists_Tags`, `Trips_Itinerary` | Read into memory, never written. |
 | `Lookups` | Read at startup for dropdown values. |
 | `App_Settings`, `Sync_Log` | Created by the script on first run. |
@@ -294,6 +295,172 @@ stays local exactly as before, and the app retries on the next load.
 > script again, this time including Drive access. Until then the app simply
 > keeps photos local — the capability is advertised by the script, never
 > assumed.
+
+---
+
+## Google Photos
+
+Photos and videos can be imported straight from Google Photos into a specific
+**visit**, **trip**, or **residence period**. What actually happens:
+
+1. You pick items in Google's own picker (the app never scans your library).
+2. The Apps Script downloads gallery-sized copies — a ~512px thumbnail and a
+   ~2048px display image, plus the clip itself for a video when it fits — into
+   a **private** Drive folder called `Travel App Photos`.
+3. A row lands on the `Travel_Photos` tab with the visit/trip it belongs to.
+4. From then on every device shows the photo **from Drive via the script** —
+   Google Photos is never contacted again just to view.
+
+Two credentials are involved, and keeping them straight is the whole model:
+
+- **Google Photos OAuth** — an *import* permission. Connected once, from any
+  device; the script keeps the refresh token in Script Properties and renews
+  access itself. Viewing never asks for it.
+- **The media access code** — a *viewing* key you invent. Because the photo
+  files stay private in Drive, and the sheet's shared access code is public by
+  design (it ships in the static bundle), the photo bytes sit behind this
+  second, genuinely secret code. Typed once per device.
+
+### Step 0 — Partner Sharing preflight (two-account setups)
+
+If your original photo library lives in a **different** Google account from
+the one that owns this sheet (the “App account”), set up partner sharing so
+the App account can see everything, and verify it **before** doing the OAuth
+work:
+
+1. In Google Photos, sign into the **original** account → Settings → Partner
+   sharing → share with the App account (All photos).
+2. Sign into the **App account** → Settings → Partner sharing → under your
+   partner's name choose **Save to your account → All photos**.
+3. Open the App account's Photos library and confirm old photos from the
+   original account actually appear in it (saving can take a while to backfill).
+4. After finishing the setup below, run one small test: connect the App
+   account, tap Add photos on any visit, and confirm you can select one of
+   those old partner-shared photos in the picker.
+
+If the partner-saved photos show up in the picker, use the **App account** for
+the Photos connection permanently — everything (Sheet, Drive, Apps Script,
+Photos) then lives behind one account. If they don't, connect the **original**
+photos account instead: imports still land in the App account's Drive, because
+the script always runs as the sheet owner. Set the account to steer the
+consent screen with the `PHOTOS_ACCOUNT_HINT` property below rather than
+hard-coding an address anywhere.
+
+### Step 1 — Google Cloud project and the Picker API
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com/) and
+   create a project (or reuse the one from Maps search).
+2. **APIs & Services → Library** → search **Photos Picker API** → **Enable**.
+3. **APIs & Services → OAuth consent screen**:
+   - User type: **External** is fine for a personal account.
+   - Fill in the app name and your email; nothing else is required.
+   - Add yourself (and the photos account, if different) as a **test user**.
+4. Scopes: the app uses exactly one —
+   `https://www.googleapis.com/auth/photospicker.mediaitems.readonly`.
+   You can add it on the consent screen, and the script requests only this.
+
+> ### ⚠️ Publishing status and token lifetime
+>
+> While the consent screen is in **Testing**, Google expires refresh tokens
+> after **7 days** — you would be reconnecting weekly. For the intended
+> "connect once" behaviour, set the consent screen's publishing status to
+> **In production** (OAuth consent screen → Publish app). For a personal app
+> with only this sensitive-but-not-restricted Picker scope, Google currently
+> allows production use without completing verification — users just see an
+> "unverified app" interstitial (Advanced → Continue), and user counts are
+> limited. That is your own account, so it is fine. Follow whatever Google's
+> consent screen actually presents; if it demands verification steps for your
+> configuration, they are not optional.
+
+### Step 2 — OAuth client and redirect URI
+
+1. **APIs & Services → Credentials → Create credentials → OAuth client ID**.
+2. Application type: **Web application**. Name: anything.
+3. Under **Authorized redirect URIs**, add your Apps Script web app's own
+   `/exec` URL — exactly the address the app already talks to. The app shows
+   the precise value to copy under **Sync settings → Google Photos** ("OAuth
+   redirect URI"), and `photosAuthStatus` returns it as `redirectUri`; use
+   that rather than retyping it.
+4. Create, then copy the **Client ID** and **Client secret**.
+
+### Step 3 — Script Properties
+
+Apps Script editor → **Project Settings → Script Properties**. Add:
+
+| Property | Value |
+|---|---|
+| `PHOTOS_OAUTH_CLIENT_ID` | The OAuth client ID from step 2. |
+| `PHOTOS_OAUTH_CLIENT_SECRET` | The client secret from step 2. |
+| `MEDIA_ACCESS_CODE` | A long random string you invent — 20+ characters. This is the per-device viewing code. A password manager's generator is perfect. |
+| `PHOTOS_ACCOUNT_HINT` *(optional)* | The email of the Google account to preselect on the consent screen — the App account normally, or the original photos account if the preflight said so. |
+
+`TRAVEL_PHOTOS_FOLDER_ID` is filled in automatically the first time an import
+runs (the script creates the private `Travel App Photos` folder and remembers
+it). You never need to set it by hand.
+
+**Never commit any of these values to the repository.** The client secret,
+the refresh token and the media code live in Script Properties and nowhere
+else; none of them are ever written to the sheet, to Drive, or into the
+static site bundle.
+
+### Step 4 — Redeploy, then connect once
+
+1. Paste the new `Code.gs` and publish a new version — **Deploy → Manage
+   deployments → pencil → Version: New version → Deploy** (the
+   [re-deploy trap](#️-the-re-deploy-trap) applies here with real force: the
+   photo actions do not exist until the new version is serving). The first
+   run asks you to re-authorise the script, now including Drive access and
+   the ability to call external services (the Google Photos APIs).
+2. In the app: **sync chip → Sync settings → Google Photos → Connect**.
+   A Google window opens; sign in with the account chosen above and allow.
+   The page says "Google Photos connected" and closes itself.
+3. On each device you view photos from: **Google Photos → Media access
+   code**, paste the `MEDIA_ACCESS_CODE` value once.
+
+Reconnecting is only ever needed if you revoke access, Google invalidates the
+refresh token, or you switch the connected account — the status row in
+settings says so when it happens.
+
+### Adding photos
+
+- **A visit**: open the place → the visit's row → **Add** (photo tile). The
+  sheet shows the visit's dates before the picker opens.
+- **A trip**: open the trip → **Photos → Add from Google Photos**. The trip's
+  dates are the context; after selection, each photo whose date falls inside
+  exactly one member visit is filed under that visit automatically, and the
+  rest stay at trip level.
+- **A residence**: exactly like a visit — a residence is a `Dates_Visits` row
+  whose Visit Status is `Lived there`.
+
+After you pick and tap Done in Google Photos, the app shows the review
+screen: how many photos fall inside the dates, which are outside (flagged
+`Outside trip dates`, still selected — airport days and wrong camera clocks
+are real life), which are already imported, and which are videos. Confirm,
+and the import runs in small batches with progress; if some fail, the ones
+that landed stay landed and a **Retry** button re-sends only the failures.
+
+### What is stored where
+
+| Thing | Where | Notes |
+|---|---|---|
+| Photo/video metadata + associations | `Travel_Photos` tab | Source of truth; soft-deleted like every other row. |
+| Image bytes (thumb ~512px, display ~2048px, video clip when it fits) | Private Drive folder `Travel App Photos` | **Not** link-shared. Only the script can read them, and it serves them only through `getTravelPhoto`, only with the media code, and only for files its own rows point at. |
+| Google Photos item id | `Travel_Photos` tab | The durable identity, used to skip duplicates and reuse existing Drive files instead of storing copies. |
+| Google Photos `baseUrl` | **Nowhere** | Temporary by design; used server-side during import and discarded. |
+| OAuth refresh/access tokens, client secret, media code | Script Properties | Never in the sheet, Drive, or the repository. |
+| Viewed photo bytes | Each device's IndexedDB cache | So galleries are instant after the first look, and viewable offline. |
+
+Deleting a photo in the app tombstones its row first, then moves the Drive
+files to trash if no other photo still references them — recoverable from
+Drive's trash for 30 days.
+
+### Cross-device check
+
+Import a few photos on one device, wait for the sync chip to settle, then
+open the app on another device: the same visit shows the same gallery after
+entering the media code once. Viewing on the second device must never ask
+for Google Photos authorisation — if it seems to, you are looking at the
+*import* flow, not the gallery.
 
 ---
 
@@ -472,6 +639,15 @@ device puts it back on the built-in one.
   the file is there, `Photo URL` holds a link rather than nothing, and a
   `Photo` row exists on `Media_Links`. Open the site on another device — the
   photo is there too.
+- Open a place with two visits and add different Google Photos to each: each
+  visit keeps its own gallery, and **All photos** shows both in date order.
+- Add photos from a trip: the trip's dates show before the picker opens, and
+  photos dated outside them come back flagged `Outside trip dates` — still
+  importable.
+- Import on one device, open another device, enter the media access code once:
+  the same gallery appears, with no Google Photos sign-in anywhere.
+- Look at `Travel_Photos` in the sheet: rows carry Visit ID/Trip ID and Drive
+  file ids — and no Google URL of any kind.
 - Open **Trips**, create one, reload the page — it is still there, and a `Trips`
   tab now exists in the spreadsheet.
 - Put a place in a trip: only its `Trip ID / Collection` cell changes.

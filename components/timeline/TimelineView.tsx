@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useReducedMotion } from "framer-motion";
-import { CalendarClock, Luggage, Plus } from "lucide-react";
+import { CalendarClock, Home, Luggage, Plus } from "lucide-react";
 
 import { TimelineScrubber } from "@/components/timeline/TimelineScrubber";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -22,7 +22,7 @@ import { formatVisitRange } from "@/lib/utils/date";
 import { flagVariant } from "@/lib/ui/flags";
 import { countryFlag, placeSubtitle } from "@/lib/utils/geo";
 import { cn } from "@/lib/utils/cn";
-import type { VisitedPlace } from "@/types/place";
+import type { PlaceVisit, VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
 
 /**
@@ -36,6 +36,7 @@ import type { Trip } from "@/types/trip";
  */
 export function TimelineView({
   places,
+  visits,
   trips,
   loading,
   bottomInset,
@@ -45,6 +46,8 @@ export function TimelineView({
   onShowGlobe,
 }: {
   places: VisitedPlace[];
+  /** Every logged stay: what turns one pin into its separate visits here. */
+  visits: PlaceVisit[];
   /** Only used to name an entry's trip; the chronology itself is unchanged. */
   trips: Trip[];
   loading: boolean;
@@ -54,7 +57,7 @@ export function TimelineView({
   onAdd: () => void;
   onShowGlobe: () => void;
 }) {
-  const timeline = useMemo(() => buildTimeline(places), [places]);
+  const timeline = useMemo(() => buildTimeline(places, visits), [places, visits]);
   const tripNames = useMemo(() => {
     const map = new Map<string, string>();
     for (const trip of trips) map.set(trip.id, trip.name);
@@ -114,7 +117,7 @@ export function TimelineView({
     if (!stop) return undefined;
     return stop.indexInYear === 0
       ? sectionRefs.current.get(stop.year)
-      : entryRefs.current.get(stop.placeId);
+      : entryRefs.current.get(stop.entryId);
   }, []);
 
   const scrollMargins = useCallback(() => {
@@ -326,26 +329,22 @@ export function TimelineView({
                      times, in four pills, down four consecutive entries —
                      a caption that repeats itself stops being read. */
                   const opensATrip =
-                    Boolean(entry.place.tripId) && entry.place.tripId !== previous?.place.tripId;
+                    Boolean(entry.tripId) && entry.tripId !== previous?.tripId;
                   return (
-                    <li key={entry.place.id}>
+                    <li key={entry.id}>
                       {gap ? <Gap label={gap} /> : null}
                       <Entry
                         entry={entry}
                         anchorRef={(node) => {
-                          if (node) entryRefs.current.set(entry.place.id, node);
-                          else entryRefs.current.delete(entry.place.id);
+                          if (node) entryRefs.current.set(entry.id, node);
+                          else entryRefs.current.delete(entry.id);
                         }}
                         last={index === year.entries.length - 1}
                         tripName={
-                          opensATrip && entry.place.tripId
-                            ? tripNames.get(entry.place.tripId)
-                            : undefined
+                          opensATrip && entry.tripId ? tripNames.get(entry.tripId) : undefined
                         }
                         onOpen={() => onOpenPlace(entry.place.id)}
-                        onOpenTrip={() =>
-                          entry.place.tripId && onOpenTrip(entry.place.tripId)
-                        }
+                        onOpenTrip={() => entry.tripId && onOpenTrip(entry.tripId)}
                       />
                     </li>
                   );
@@ -422,9 +421,14 @@ function Entry({
       // scrubbed to is never hiding behind the year it belongs to.
       style={{ scrollMarginTop: "calc(env(safe-area-inset-top, 0px) + 54px)" }}
     >
-      {/* The spine: a dot for this stop, and the line onward to the next. */}
+      {/* The spine: a dot for this stop, and the line onward to the next.
+          A residence is a hollow square — home, not another hop. */}
       <div className="relative flex w-3 shrink-0 justify-center" aria-hidden="true">
-        <span className="absolute top-[20px] size-[9px] rounded-full bg-accent ring-4 ring-bg" />
+        {entry.residence ? (
+          <span className="absolute top-[19px] size-[10px] rounded-[3px] border-2 border-accent bg-bg" />
+        ) : (
+          <span className="absolute top-[20px] size-[9px] rounded-full bg-accent ring-4 ring-bg" />
+        )}
         {!last ? <span className="absolute top-[31px] bottom-[-4px] w-[2px] bg-separator" /> : null}
       </div>
 
@@ -452,8 +456,14 @@ function Entry({
           )}
 
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[16.5px] font-semibold leading-tight text-ink">
-              {place.name}
+            <span className="flex items-center gap-1.5 text-[16.5px] font-semibold leading-tight text-ink">
+              <span className="truncate">{place.name}</span>
+              {entry.residence ? (
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-pill bg-accent-soft px-2 py-[2px] text-[11.5px] font-semibold text-accent">
+                  <Home size={11} aria-hidden="true" />
+                  Lived here
+                </span>
+              ) : null}
             </span>
             <span className="mt-0.5 block truncate text-[13.5px] leading-snug text-ink-2">
               {hasPhoto && hasFlag ? (

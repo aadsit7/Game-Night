@@ -88,11 +88,38 @@ export function visitSpan(visits: PlaceVisit[]): { from?: string; to?: string } 
 
 /**
  * Visit Status words, from the sheet's own Status vocabulary. A stay that has
- * happened is "Been"; one still ahead is "Planned". Anything else found in a
- * cell — "Booked", "Considering" — is kept as written, never flattened.
+ * happened is "Been"; one still ahead is "Planned"; a period of living
+ * somewhere is "Lived there". Anything else found in a cell — "Booked",
+ * "Considering" — is kept as written, never flattened.
  */
 export const VISIT_STATUS_BEEN = "Been";
 export const VISIT_STATUS_PLANNED = "Planned";
+export const VISIT_STATUS_LIVED = "Lived there";
+
+/** Whether a status word means "lived here", matched the way people type it. */
+export function isResidenceStatus(status: string | undefined): boolean {
+  const word = (status ?? "").trim().toLowerCase();
+  return word === "lived there" || word === "lived here" || word === "living there" ||
+    word === "living here" || word === "residence" || word === "lived";
+}
+
+/** A residence period: a Dates_Visits row whose status says lived, not visited. */
+export function isResidenceVisit(visit: Pick<PlaceVisit, "status">): boolean {
+  return isResidenceStatus(visit.status);
+}
+
+/** A place's residence periods and its ordinary stays, told apart once. */
+export function splitResidences(visits: PlaceVisit[]): {
+  residences: PlaceVisit[];
+  stays: PlaceVisit[];
+} {
+  const residences: PlaceVisit[] = [];
+  const stays: PlaceVisit[] = [];
+  for (const visit of visits) {
+    (isResidenceVisit(visit) ? residences : stays).push(visit);
+  }
+  return { residences, stays };
+}
 
 /**
  * The status a stay earns from its start date: already happened means "Been",
@@ -116,13 +143,22 @@ export function isUpcomingVisit(visit: PlaceVisit): boolean {
 }
 
 export type VisitStats = {
+  /** Stays only — a year of living somewhere is not "one more visit". */
   count: number;
-  /** Whole days across every visit, both ends counted — a day trip is 1. */
+  /**
+   * Whole days across every stay, both ends counted — a day trip is 1.
+   * Residence periods are excluded on purpose: a 285-day residence would
+   * swamp "16 days of trips" and make the number mean nothing.
+   */
   daysTotal: number;
-  /** The year of the earliest visit, e.g. "2015". */
+  /** The year of the earliest visit or residence, e.g. "2015". */
   firstYear: string | null;
   /** The most recent visit as "Aug 2026". */
   lastLabel: string | null;
+  /** Whether any residence period exists — what "Lived here" hangs from. */
+  hasResidence: boolean;
+  /** Whole days across residence periods, kept apart from the trip days. */
+  residenceDays: number;
 };
 
 const MONTHS_SHORT = [
@@ -139,11 +175,25 @@ export function monthYearLabel(value: string | undefined): string | null {
 
 export function visitStats(visits: PlaceVisit[]): VisitStats {
   let daysTotal = 0;
+  let residenceDays = 0;
+  let stays = 0;
+  let hasResidence = false;
   let first: string | undefined;
   let last: string | undefined;
+  let lastStay: string | undefined;
 
   for (const visit of visits) {
-    daysTotal += inclusiveDayCount(visit.startDate, visit.endDate) ?? 0;
+    const days = inclusiveDayCount(visit.startDate, visit.endDate) ?? 0;
+    if (isResidenceVisit(visit)) {
+      hasResidence = true;
+      residenceDays += days;
+    } else {
+      stays += 1;
+      daysTotal += days;
+      if (visit.startDate && (!lastStay || visit.startDate > lastStay)) {
+        lastStay = visit.startDate;
+      }
+    }
     if (visit.startDate) {
       if (!first || visit.startDate < first) first = visit.startDate;
       if (!last || visit.startDate > last) last = visit.startDate;
@@ -151,11 +201,43 @@ export function visitStats(visits: PlaceVisit[]): VisitStats {
   }
 
   return {
-    count: visits.length,
+    count: stays,
     daysTotal,
     firstYear: first ? first.slice(0, 4) : null,
-    lastLabel: monthYearLabel(last),
+    // The stays' own latest date where there is one; a residence only stands
+    // in for "last visit" when it is the only thing that ever happened here.
+    lastLabel: monthYearLabel(lastStay ?? last),
+    hasResidence,
+    residenceDays,
   };
+}
+
+/**
+ * The trip a visit effectively belongs to — its own Trip ID, or the one the
+ * migration rule inherits from the place.
+ *
+ * Older sheets hold the trip on the Places row alone. The rule from there is
+ * deliberately narrow: the place's trip is inherited only while *none* of the
+ * place's visits carries a trip of its own — the moment any visit says which
+ * trip it belonged to, visit rows are the whole story and the place-level
+ * cell is legacy. A place with several visits and only a place-level trip is
+ * genuinely ambiguous, so nothing is guessed row by row: each visit inherits
+ * the place's trip only when it is the place's lone visit; otherwise the
+ * membership stays at place level until a person assigns visits themselves
+ * (the visit form offers exactly that).
+ */
+export function effectiveVisitTripId(
+  visit: PlaceVisit,
+  place: Pick<VisitedPlace, "tripId"> | undefined,
+  siblingVisits: PlaceVisit[],
+): string | undefined {
+  if (visit.tripId) return visit.tripId;
+  if (!place?.tripId) return undefined;
+
+  const own = siblingVisits.filter((v) => v.placeId === visit.placeId && !v.deletedAt);
+  const anyTagged = own.some((v) => v.tripId);
+  if (anyTagged) return undefined;
+  return own.length <= 1 ? place.tripId : undefined;
 }
 
 /**

@@ -15,6 +15,8 @@ import {
   type GlobePoint,
   type TravelGlobeHandle,
 } from "@/components/globe/TravelGlobe";
+import { GooglePhotosFlowSheet } from "@/components/photos/GooglePhotosReviewSheet";
+import { MediaCodeSheet } from "@/components/photos/MediaCodeSheet";
 import { AdjustPinBar } from "@/components/place/AdjustPinBar";
 import { LocationSearchSheet } from "@/components/place/LocationSearchSheet";
 import { PlaceDetailSheet } from "@/components/place/PlaceDetailSheet";
@@ -53,11 +55,15 @@ import {
   type PlaceDraft,
 } from "@/lib/store/draft";
 import {
+  VISIT_STATUS_LIVED,
   isImplicitVisitId,
   isPlannedStatus,
+  isResidenceStatus,
   visitStatusFor,
   visitsForPlace,
 } from "@/lib/places/visits";
+import { closePickerWindow, openPickerWindow } from "@/lib/photos/pickerWindow";
+import { formatVisitRange } from "@/lib/utils/date";
 import { alreadyTaggedMessage, placesToRetag, tagSummary } from "@/lib/trips/tagging";
 import { sheetDepth } from "@/lib/ui/sheetStack";
 import { hasValidCoordinates } from "@/lib/utils/geo";
@@ -72,6 +78,7 @@ import type {
   VisitedPlace,
 } from "@/types/place";
 import type { Trip } from "@/types/trip";
+import type { PhotoContext, TravelPhoto } from "@/types/travelPhoto";
 
 /**
  * The one place that knows what is on screen.
@@ -89,7 +96,9 @@ type Overlay =
   | { kind: "trip"; id: string }
   | { kind: "tripForm"; mode: "create" | "edit"; id?: string }
   /** Logging or editing one stay; `visitId` may name the implicit visit. */
-  | { kind: "visitForm"; placeId: string; visitId?: string };
+  | { kind: "visitForm"; placeId: string; visitId?: string }
+  /** The Google Photos picking flow; its context lives in `photoContext`. */
+  | { kind: "photoFlow" };
 
 type PinSession = {
   mode: "create" | "adjust";
@@ -127,6 +136,7 @@ export function AppShell() {
     createPlace,
     updatePlace,
     findExistingPlace,
+    visits,
     getVisits,
     addVisit,
     updateVisit,
@@ -141,6 +151,10 @@ export function AppShell() {
     updateTrip,
     deleteTrip,
     resolveTripId,
+    travelPhotos,
+    capabilities,
+    ensureRealVisit,
+    removeTravelPhoto,
     sync,
   } = usePlaces();
 
@@ -178,6 +192,12 @@ export function AppShell() {
   const [visitDraft, setVisitDraft] = useState<VisitDraft>(emptyVisitDraft);
   const [visitSaving, setVisitSaving] = useState(false);
   const [visitError, setVisitError] = useState<string | null>(null);
+
+  /** What the open photo flow is attaching to — visit, residence or trip. */
+  const [photoContext, setPhotoContext] = useState<PhotoContext | null>(null);
+  const [mediaCodeOpen, setMediaCodeOpen] = useState(false);
+  /** Bumped when the media code is saved, so failed galleries retry clean. */
+  const [galleryEpoch, setGalleryEpoch] = useState(0);
   const [confirmDeleteVisit, setConfirmDeleteVisit] = useState<{
     placeId: string;
     visitId: string;
@@ -647,6 +667,7 @@ export function AppShell() {
       tripId: visit.tripId ?? "",
       tripType: visit.tripType ?? "",
       notes: visit.notes ?? "",
+      lived: isResidenceStatus(visit.status),
     });
     setVisitError(null);
     setOverlays((current) => [...current, { kind: "visitForm", placeId, visitId: visit.id }]);
@@ -665,6 +686,9 @@ export function AppShell() {
         tripId: visitDraft.tripId || undefined,
         tripType: visitDraft.tripType || undefined,
         notes: visitDraft.notes || undefined,
+        // The switch owns the residence word outright; everything else keeps
+        // the calendar-derived status rules below.
+        status: visitDraft.lived ? VISIT_STATUS_LIVED : undefined,
       };
 
       if (!overlay.visitId) {
@@ -678,11 +702,20 @@ export function AppShell() {
       } else {
         const existing = getVisits(overlay.placeId).find((v) => v.id === overlay.visitId);
         const changes: VisitChanges = { ...input };
-        // Status is written only when the answer to "has this happened?"
-        // actually changes — a "Booked" stay stays "Booked" until it has.
-        const nextPlanned = isPlannedStatus(visitStatusFor(input.startDate));
-        if (!existing?.status || isPlannedStatus(existing.status) !== nextPlanned) {
+        if (visitDraft.lived) {
+          changes.status = VISIT_STATUS_LIVED;
+        } else if (existing && isResidenceStatus(existing.status)) {
+          // Switched off: the residence becomes an ordinary dated stay.
           changes.status = visitStatusFor(input.startDate);
+        } else {
+          // Status is written only when the answer to "has this happened?"
+          // actually changes — a "Booked" stay stays "Booked" until it has.
+          const nextPlanned = isPlannedStatus(visitStatusFor(input.startDate));
+          if (!existing?.status || isPlannedStatus(existing.status) !== nextPlanned) {
+            changes.status = visitStatusFor(input.startDate);
+          } else {
+            delete changes.status;
+          }
         }
         await updateVisit(overlay.visitId, changes);
         showToast(whenOffline("Visit updated", "Updated here — it’ll sync when you’re back"));
@@ -716,6 +749,82 @@ export function AppShell() {
       });
     }
   }, [confirmDeleteVisit, updatePlace, deleteVisit, showToast]);
+
+  /* ---------------------------------------------------------------------- */
+  /* Photos                                                                   */
+  /* ---------------------------------------------------------------------- */
+
+  const photosEnabled = capabilities.travelPhotos;
+
+  const startAddPhotosForVisit = useCallback(
+    (place: VisitedPlace, visit: PlaceVisit) => {
+      // The blank window must open inside this tap — Safari's rule — and is
+      // pointed at Google Photos once the session exists.
+      openPickerWindow();
+      void (async () => {
+        try {
+          // Photos attach to real rows, so the visit the old dates implied is
+          // written down first — exactly what editing it does.
+          const visitId = await ensureRealVisit(place.id, visit);
+          setPhotoContext({
+            kind: "visit",
+            placeId: place.id,
+            visitId,
+            tripId: visit.tripId,
+            startDate: visit.startDate,
+            endDate: visit.endDate,
+            title: place.name,
+            subtitle: formatVisitRange(visit.startDate, visit.endDate) ?? undefined,
+          });
+          pushOverlay({ kind: "photoFlow" });
+        } catch (error) {
+          closePickerWindow();
+          showToast(
+            error instanceof Error ? error.message : "Photos couldn’t be started.",
+            { tone: "error" },
+          );
+        }
+      })();
+    },
+    [ensureRealVisit, pushOverlay, showToast],
+  );
+
+  const startAddPhotosForTrip = useCallback(
+    (trip: Trip) => {
+      openPickerWindow();
+      setPhotoContext({
+        kind: "trip",
+        tripId: trip.id,
+        startDate: trip.startDate,
+        endDate: trip.endDate,
+        title: trip.name,
+        subtitle: formatVisitRange(trip.startDate, trip.endDate) ?? undefined,
+      });
+      pushOverlay({ kind: "photoFlow" });
+    },
+    [pushOverlay],
+  );
+
+  const closePhotoFlow = useCallback(() => {
+    setOverlays((current) => current.filter((overlay) => overlay.kind !== "photoFlow"));
+    setPhotoContext(null);
+  }, []);
+
+  const handleRemovePhoto = useCallback(
+    async (photo: TravelPhoto) => {
+      try {
+        await removeTravelPhoto(photo.id);
+        showToast("Photo removed");
+      } catch (error) {
+        showToast(
+          error instanceof Error ? error.message : "That photo couldn’t be removed.",
+          { tone: "error" },
+        );
+        throw error;
+      }
+    },
+    [removeTravelPhoto, showToast],
+  );
 
   /* ---------------------------------------------------------------------- */
   /* Trips                                                                    */
@@ -1475,6 +1584,7 @@ export function AppShell() {
           >
             <TimelineView
               places={places}
+              visits={visits}
               trips={trips}
               loading={status === "loading"}
               bottomInset={tabBarHeight + 16}
@@ -1503,6 +1613,7 @@ export function AppShell() {
             <TripsView
               trips={trips}
               places={places}
+              visits={visits}
               loading={status === "loading"}
               bottomInset={tabBarHeight + 16}
               onOpenTrip={openTripDetail}
@@ -1574,6 +1685,12 @@ export function AppShell() {
         onAddVisit={() => detailPlace && startAddVisit(detailPlace.id)}
         onEditVisit={(visit) => detailPlace && startEditVisit(detailPlace.id, visit)}
         tripNameFor={(tripId) => (tripId ? getTrip(tripId)?.name : undefined)}
+        travelPhotos={travelPhotos}
+        photosEnabled={photosEnabled}
+        onAddPhotosToVisit={(visit) => detailPlace && startAddPhotosForVisit(detailPlace, visit)}
+        onRemovePhoto={handleRemovePhoto}
+        onNeedMediaCode={() => setMediaCodeOpen(true)}
+        galleryEpoch={galleryEpoch}
       />
 
       <VisitFormSheet
@@ -1638,6 +1755,7 @@ export function AppShell() {
       <TripDetailSheet
         trip={openTrip ?? null}
         places={places}
+        visits={visits}
         open={Boolean(tripOverlay)}
         depth={depthOf("trip")}
         onClose={closeAllOverlays}
@@ -1647,6 +1765,12 @@ export function AppShell() {
           tripOverlay?.kind === "trip" &&
           startCreate({ tripId: tripOverlay.id, keepTripOpen: true })
         }
+        travelPhotos={travelPhotos}
+        photosEnabled={photosEnabled}
+        onAddPhotos={() => openTrip && startAddPhotosForTrip(openTrip)}
+        onRemovePhoto={handleRemovePhoto}
+        onNeedMediaCode={() => setMediaCodeOpen(true)}
+        galleryEpoch={galleryEpoch}
       />
 
       <TripFormSheet
@@ -1815,6 +1939,23 @@ export function AppShell() {
           setDiscardPrompt(false);
           setDraft(draftBaseline);
           popOverlay();
+        }}
+      />
+
+      <GooglePhotosFlowSheet
+        open={overlays.some((overlay) => overlay.kind === "photoFlow")}
+        depth={depthOf("photoFlow")}
+        context={photoContext}
+        onClose={closePhotoFlow}
+        onToast={showToast}
+      />
+
+      <MediaCodeSheet
+        open={mediaCodeOpen}
+        onClose={() => setMediaCodeOpen(false)}
+        onSaved={() => {
+          setGalleryEpoch((epoch) => epoch + 1);
+          showToast("Media code saved on this device");
         }}
       />
 

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Check, CloudOff, Loader2, RefreshCw, ShieldCheck, Unplug } from "lucide-react";
 
+import { GooglePhotosSettings } from "@/components/photos/GooglePhotosSettings";
 import { SheetConnectionForm } from "@/components/sync/SheetConnectionForm";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -65,6 +66,8 @@ export function SyncSettingsSheet({
             site in another browser shows the same data. There is no Save button — changes
             go up as you make them.
           </p>
+
+          <GooglePhotosSettings connection={connection} />
 
           <section>
             <h3 className="px-1 pb-1.5 text-[13px] font-semibold uppercase tracking-[0.06em] text-ink-3">

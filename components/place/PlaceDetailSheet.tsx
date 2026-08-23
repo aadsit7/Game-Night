@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Globe2,
   Heart,
+  Home,
   Luggage,
   MapPin,
   Pencil,
@@ -17,16 +18,19 @@ import {
   X,
 } from "lucide-react";
 
+import { TravelPhotoGallery } from "@/components/photos/TravelPhotoGallery";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
 import { formatDays } from "@/lib/timeline/buildTimeline";
-import { isUpcomingVisit, visitStats } from "@/lib/places/visits";
+import { isResidenceVisit, isUpcomingVisit, visitStats } from "@/lib/places/visits";
+import { photosForPlace, photosForVisit } from "@/lib/photos/travelPhotos";
 import { formatVisitRange, inclusiveDayCount } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
 import { countryFlag, formatCoordinates, placeSubtitle } from "@/lib/utils/geo";
 import type { PlaceVisit, VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
+import type { TravelPhoto } from "@/types/travelPhoto";
 
 /**
  * The full memory: the name, the photograph if there is one, when you were
@@ -54,6 +58,12 @@ export function PlaceDetailSheet({
   onAddVisit,
   onEditVisit,
   tripNameFor,
+  travelPhotos,
+  photosEnabled,
+  onAddPhotosToVisit,
+  onRemovePhoto,
+  onNeedMediaCode,
+  galleryEpoch,
 }: {
   place: VisitedPlace | null;
   open: boolean;
@@ -83,6 +93,16 @@ export function PlaceDetailSheet({
   onEditVisit: (visit: PlaceVisit) => void;
   /** The name a visit's trip chip should carry, when it belongs to one. */
   tripNameFor: (tripId: string | undefined) => string | undefined;
+  /** Every cloud photo, all contexts; this sheet slices per visit itself. */
+  travelPhotos: TravelPhoto[];
+  /** Whether the deployed script supports cloud photos at all. */
+  photosEnabled: boolean;
+  /** Launches Google Photos in the context of exactly this visit. */
+  onAddPhotosToVisit: (visit: PlaceVisit) => void;
+  onRemovePhoto: (photo: TravelPhoto) => Promise<void>;
+  onNeedMediaCode: () => void;
+  /** Bumped when the media code changes, so galleries retry cleanly. */
+  galleryEpoch: number;
 }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const reduceMotion = useReducedMotion();
@@ -102,6 +122,11 @@ export function PlaceDetailSheet({
   const been = Boolean(place && !place.wantToGo);
   const stats = visitStats(visits);
   const photoCount = extraPhotos.length + (hasCover ? 1 : 0);
+  const placePhotos = place ? photosForPlace(travelPhotos, place.id) : [];
+  /** More than one gallery worth combining — the "All photos" strip. */
+  const galleriesWithPhotos = new Set(
+    placePhotos.map((photo) => photo.visitId ?? "").filter(Boolean),
+  ).size;
 
   return (
     <>
@@ -197,43 +222,71 @@ export function PlaceDetailSheet({
                   Want to go
                 </Badge>
               </div>
-            ) : stats.count > 0 ? (
+            ) : stats.hasResidence || stats.count > 0 ? (
               <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                <Badge icon={<Plane size={13} aria-hidden="true" />} tone="accent">
-                  {stats.count === 1
-                    ? "You’ve been here once"
-                    : `You’ve been here ${stats.count} times`}
-                </Badge>
+                {stats.hasResidence ? (
+                  <Badge icon={<Home size={13} aria-hidden="true" />} tone="accent">
+                    Lived here
+                  </Badge>
+                ) : null}
+                {stats.count > 0 ? (
+                  <Badge icon={<Plane size={13} aria-hidden="true" />} tone="accent">
+                    {stats.count === 1
+                      ? "You’ve been here once"
+                      : `You’ve been here ${stats.count} times`}
+                  </Badge>
+                ) : null}
               </div>
             ) : null}
 
             {/* The numbers at a glance: how often, how long, when it started. */}
-            {been && stats.count > 0 ? (
+            {been && (stats.count > 0 || stats.hasResidence) ? (
               <div className="mt-4 grid grid-cols-4 divide-x divide-separator rounded-[18px] bg-fill/60 py-3.5">
                 <Stat value={String(stats.count)} label={stats.count === 1 ? "visit" : "visits"} />
                 <Stat
                   value={stats.daysTotal > 0 ? String(stats.daysTotal) : "—"}
                   label="days total"
                 />
-                <Stat value={stats.firstYear ?? "—"} label="first visit" />
+                <Stat value={stats.firstYear ?? "—"} label="first here" />
                 <Stat value={stats.lastLabel ?? "—"} label="last visit" />
               </div>
             ) : null}
 
-            {/* Every stay, newest first — the heart of the card. */}
+            {/* Every stay, newest first — the heart of the card. Each visit
+                carries its own gallery: photos belong to the February trip,
+                not to the city in the abstract. */}
             {been ? (
               <Section title="Your visits">
                 <div className="overflow-hidden rounded-[18px] bg-fill/60">
                   <div className="divide-y divide-separator">
-                    {visits.map((visit, index) => (
-                      <VisitRow
-                        key={visit.id}
-                        visit={visit}
-                        index={index}
-                        tripName={visit.tripType ?? tripNameFor(visit.tripId)}
-                        onPress={() => onEditVisit(visit)}
-                      />
-                    ))}
+                    {visits.map((visit, index) => {
+                      const visitPhotos = photosForVisit(travelPhotos, visit.id);
+                      return (
+                        <div key={visit.id}>
+                          <VisitRow
+                            visit={visit}
+                            index={index}
+                            tripName={visit.tripType ?? tripNameFor(visit.tripId)}
+                            photoCount={visitPhotos.length}
+                            onPress={() => onEditVisit(visit)}
+                          />
+                          {photosEnabled || visitPhotos.length > 0 ? (
+                            <div className="px-3.5 pb-3">
+                              <TravelPhotoGallery
+                                key={galleryEpoch}
+                                photos={visitPhotos}
+                                bleed={false}
+                                onAddPhotos={
+                                  photosEnabled ? () => onAddPhotosToVisit(visit) : undefined
+                                }
+                                onRemovePhoto={onRemovePhoto}
+                                onNeedMediaCode={onNeedMediaCode}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
                   </div>
                   <button
                     type="button"
@@ -247,6 +300,27 @@ export function PlaceDetailSheet({
                     Add visit
                   </button>
                 </div>
+              </Section>
+            ) : null}
+
+            {/* Everything across all visits, chronological, visits intact
+                underneath — only worth its space once two galleries exist. */}
+            {galleriesWithPhotos > 1 ? (
+              <Section
+                title="All photos"
+                aside={
+                  <span className="text-[14px] text-ink-3">
+                    {placePhotos.length === 1 ? "1 photo" : `${placePhotos.length} photos`}
+                  </span>
+                }
+              >
+                <TravelPhotoGallery
+                  key={galleryEpoch}
+                  photos={placePhotos}
+                  size="lg"
+                  onRemovePhoto={onRemovePhoto}
+                  onNeedMediaCode={onNeedMediaCode}
+                />
               </Section>
             ) : null}
 
@@ -508,17 +582,28 @@ function VisitRow({
   visit,
   index,
   tripName,
+  photoCount,
   onPress,
 }: {
   visit: PlaceVisit;
   index: number;
   /** The chip text: the visit's own type, or the trip it belonged to. */
   tripName?: string;
+  photoCount: number;
   onPress: () => void;
 }) {
   const range = formatVisitRange(visit.startDate, visit.endDate);
   const days = inclusiveDayCount(visit.startDate, visit.endDate);
   const upcoming = isUpcomingVisit(visit);
+  const residence = isResidenceVisit(visit);
+
+  const detail = [
+    days ? formatDays(days) : null,
+    upcoming ? "upcoming" : null,
+    photoCount > 0 ? (photoCount === 1 ? "1 photo" : `${photoCount} photos`) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <button
@@ -526,25 +611,30 @@ function VisitRow({
       onClick={onPress}
       className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors active:bg-fill-strong"
     >
-      <span
-        aria-hidden="true"
-        className="size-[9px] shrink-0 rounded-full"
-        style={{ background: VISIT_DOT_COLORS[index % VISIT_DOT_COLORS.length] }}
-      />
+      {/* A residence gets home's own mark, not another trip dot. */}
+      {residence ? (
+        <Home size={13} aria-hidden="true" className="shrink-0 text-accent" />
+      ) : (
+        <span
+          aria-hidden="true"
+          className="size-[9px] shrink-0 rounded-full"
+          style={{ background: VISIT_DOT_COLORS[index % VISIT_DOT_COLORS.length] }}
+        />
+      )}
       <span className="min-w-0 flex-1">
+        {residence ? (
+          <span className="block text-[13px] font-semibold uppercase tracking-[0.04em] leading-tight text-accent">
+            Lived here
+          </span>
+        ) : null}
         <span className="block truncate text-[16px] leading-tight text-ink">
           {range ?? "No date"}
         </span>
-        {days ? (
-          <span className="mt-[3px] block text-[13px] leading-tight text-ink-3">
-            {formatDays(days)}
-            {upcoming ? " · upcoming" : ""}
-          </span>
-        ) : upcoming ? (
-          <span className="mt-[3px] block text-[13px] leading-tight text-ink-3">upcoming</span>
+        {detail ? (
+          <span className="mt-[3px] block text-[13px] leading-tight text-ink-3">{detail}</span>
         ) : null}
       </span>
-      {tripName ? (
+      {tripName && !residence ? (
         <span className="max-w-[38%] truncate rounded-pill bg-accent-soft px-2.5 py-[4px] text-[13px] font-medium text-accent">
           {tripName}
         </span>

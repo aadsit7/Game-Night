@@ -1,17 +1,32 @@
+import { effectiveVisitTripId, isResidenceVisit } from "@/lib/places/visits";
 import { inclusiveDayCount, parseCalendarDate } from "@/lib/utils/date";
-import type { VisitedPlace } from "@/types/place";
+import type { PlaceVisit, VisitedPlace } from "@/types/place";
 
 /**
  * The travel history as a chronology.
  *
- * Kept as a pure function over the same `places` array the globe and the list
- * read, so the timeline cannot show a different history from the other two.
- * All of the date reasoning lives here rather than in the view, which is what
- * makes it testable without a browser.
+ * Kept as a pure function over the same `places` and `visits` arrays the rest
+ * of the app reads, so the timeline cannot show a different history from the
+ * other views. All of the date reasoning lives here rather than in the view,
+ * which is what makes it testable without a browser.
+ *
+ * The globe draws Places; the timeline draws what *happened* — so a place
+ * with three visit rows is three entries here and still one pin there. A
+ * residence period is an entry too, marked apart from the trips around it.
  */
 
 export type TimelineEntry = {
+  /** Unique on the whole timeline — the visit id, or the place id when the
+   * entry comes from the place's own dates. React keys and scrubber anchors
+   * both need this, because one place can now appear several times. */
+  id: string;
   place: VisitedPlace;
+  /** The visit row behind this entry, when there is one. */
+  visitId?: string;
+  /** A period of living here rather than a trip. */
+  residence: boolean;
+  /** The trip this entry belonged to, visit-level first. */
+  tripId?: string;
   /** `YYYY-MM-DD`. */
   start: string;
   /** `YYYY-MM-DD`. Equals `start` for an open-ended or single-day visit. */
@@ -47,25 +62,41 @@ function countryKey(place: VisitedPlace): string | null {
   return key ? key : null;
 }
 
-function toEntry(place: VisitedPlace): TimelineEntry | null {
-  const start = parseCalendarDate(place.visitedFrom);
+function spanEntry(
+  id: string,
+  place: VisitedPlace,
+  from: string | undefined,
+  to: string | undefined,
+  extra: Pick<TimelineEntry, "visitId" | "residence" | "tripId">,
+): TimelineEntry | null {
+  const start = parseCalendarDate(from);
   if (!start) return null;
 
-  const parsedEnd = parseCalendarDate(place.visitedTo);
+  const parsedEnd = parseCalendarDate(to);
   // An end before the start is a typo, not a negative trip; treat it as a day.
   const ends = parsedEnd && parsedEnd.getTime() >= start.getTime();
 
   return {
+    id,
     place,
-    start: place.visitedFrom as string,
-    end: ends ? (place.visitedTo as string) : (place.visitedFrom as string),
-    days: inclusiveDayCount(place.visitedFrom, place.visitedTo) ?? 1,
+    ...extra,
+    start: from as string,
+    end: ends ? (to as string) : (from as string),
+    days: inclusiveDayCount(from, to) ?? 1,
   };
 }
 
-export function buildTimeline(places: VisitedPlace[]): Timeline {
+export function buildTimeline(places: VisitedPlace[], visits: PlaceVisit[] = []): Timeline {
   const entries: TimelineEntry[] = [];
   const undated: VisitedPlace[] = [];
+
+  const liveVisits = visits.filter((visit) => !visit.deletedAt);
+  const visitsByPlace = new Map<string, PlaceVisit[]>();
+  for (const visit of liveVisits) {
+    const list = visitsByPlace.get(visit.placeId) ?? [];
+    list.push(visit);
+    visitsByPlace.set(visit.placeId, list);
+  }
 
   for (const place of places) {
     // Somewhere still to go has not happened yet, so it has no place in a
@@ -73,7 +104,31 @@ export function buildTimeline(places: VisitedPlace[]): Timeline {
     // visits whose dates were never filled in.
     if (place.wantToGo) continue;
 
-    const entry = toEntry(place);
+    const own = visitsByPlace.get(place.id) ?? [];
+    if (own.length > 0) {
+      // Every dated stay is its own historical event. The place's own date
+      // columns are just the fold of these, so using the rows loses nothing
+      // and gains the years in between.
+      let anyDated = false;
+      for (const visit of own) {
+        const entry = spanEntry(visit.id, place, visit.startDate, visit.endDate, {
+          visitId: visit.id,
+          residence: isResidenceVisit(visit),
+          tripId: effectiveVisitTripId(visit, place, liveVisits),
+        });
+        if (entry) {
+          anyDated = true;
+          entries.push(entry);
+        }
+      }
+      if (!anyDated) undated.push(place);
+      continue;
+    }
+
+    const entry = spanEntry(place.id, place, place.visitedFrom, place.visitedTo, {
+      residence: false,
+      tripId: place.tripId,
+    });
     if (entry) entries.push(entry);
     else undated.push(place);
   }
@@ -100,7 +155,9 @@ export function buildTimeline(places: VisitedPlace[]): Timeline {
       for (const entry of yearEntries) {
         const key = countryKey(entry.place);
         if (key) countries.add(key);
-        days += entry.days;
+        // A year of living somewhere is not 365 days "away"; residence time
+        // is shown on its own entry rather than folded into travel totals.
+        if (!entry.residence) days += entry.days;
       }
 
       return { year, entries: yearEntries, countries: countries.size, days };
@@ -111,7 +168,7 @@ export function buildTimeline(places: VisitedPlace[]): Timeline {
   for (const entry of entries) {
     const key = countryKey(entry.place);
     if (key) allCountries.add(key);
-    totalDays += entry.days;
+    if (!entry.residence) totalDays += entry.days;
   }
 
   return {
@@ -169,6 +226,9 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 
 /** One reachable position on the scrubber. */
 export type ScrubStop = {
+  /** The timeline entry this stop lands on — unique even when one place
+   * appears in several years. What the view keys its anchors by. */
+  entryId: string;
   placeId: string;
   name: string;
   year: number;
@@ -206,6 +266,7 @@ export function buildScrubTrack(years: TimelineYear[]): ScrubTrack {
 
     year.entries.forEach((entry, indexInYear) => {
       stops.push({
+        entryId: entry.id,
         placeId: entry.place.id,
         name: entry.place.name,
         year: year.year,

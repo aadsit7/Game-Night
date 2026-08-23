@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarPlus, Trash2 } from "lucide-react";
+import { CalendarPlus, Home, Trash2 } from "lucide-react";
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { Button } from "@/components/ui/Button";
@@ -20,10 +20,12 @@ export type VisitDraft = {
   tripId: string;
   tripType: string;
   notes: string;
+  /** A period of living here, not a stay — Visit Status "Lived there". */
+  lived: boolean;
 };
 
 export function emptyVisitDraft(): VisitDraft {
-  return { startDate: "", endDate: "", tripId: "", tripType: "", notes: "" };
+  return { startDate: "", endDate: "", tripId: "", tripType: "", notes: "", lived: false };
 }
 
 export function VisitFormSheet({
@@ -155,6 +157,21 @@ export function VisitFormSheet({
               Add an end date
             </button>
           )}
+
+          {/* A residence is the same row with a different word in Visit
+              Status — one switch, not a separate system. */}
+          <label className="flex min-h-11 items-center justify-between gap-3">
+            <span className="flex items-center gap-2 text-[15px] text-ink">
+              <Home size={16} aria-hidden="true" className="text-accent" />
+              I lived here during this time
+            </span>
+            <input
+              type="checkbox"
+              checked={draft.lived}
+              onChange={(event) => set("lived", event.target.checked)}
+              className="size-5 accent-[var(--color-accent,#0a84ff)]"
+            />
+          </label>
 
           <label className="block">
             <span className="mb-1.5 block text-[14px] font-medium text-ink-2">Trip type</span>

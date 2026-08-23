@@ -1,5 +1,6 @@
+import { effectiveVisitTripId } from "@/lib/places/visits";
 import { formatDayHeading, parseCalendarDate } from "@/lib/utils/date";
-import type { VisitedPlace } from "@/types/place";
+import type { PlaceVisit, VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
 
 /**
@@ -72,9 +73,81 @@ export function tripDayNumber(startDate: string | undefined, date: string): numb
   return Math.round((day.getTime() - start.getTime()) / DAY_MS) + 1;
 }
 
-/** Every place currently assigned to a trip. */
-export function placesInTrip(trip: Trip | null | undefined, places: VisitedPlace[]): VisitedPlace[] {
+/**
+ * A trip's membership, worked out from visits first.
+ *
+ * Visit.Trip ID is the authoritative relationship: it is what lets Salt Lake
+ * City belong to the 2015 trip *and* the 2024 trip without being two pins.
+ * The place-level Trip ID cell stays honoured as a fallback for rows written
+ * before visits carried trips — a place whose visits never mention any trip
+ * still belongs where its own cell says it does. The moment any of a place's
+ * visits names a trip, the visit rows are the whole story for that place.
+ */
+export type TripMembership = {
+  /** The visits that belong to this trip, place-resolved where possible. */
+  visits: PlaceVisit[];
+  /** Every member place, from visits and the legacy fallback alike. */
+  places: VisitedPlace[];
+  /**
+   * Members through the place-level cell alone — no visit rows tie them in.
+   * These group by the place's own dates, exactly as they always did.
+   */
+  legacyPlaces: VisitedPlace[];
+};
+
+export function tripMembership(
+  trip: Trip | null | undefined,
+  places: VisitedPlace[],
+  visits: PlaceVisit[] = [],
+): TripMembership {
+  if (!trip) return { visits: [], places: [], legacyPlaces: [] };
+
+  const byId = new Map(places.map((place) => [place.id, place]));
+  const live = visits.filter((visit) => !visit.deletedAt);
+
+  const memberVisits = live.filter(
+    (visit) => effectiveVisitTripId(visit, byId.get(visit.placeId), live) === trip.id,
+  );
+  const placesViaVisits = new Set(memberVisits.map((visit) => visit.placeId));
+
+  const legacyPlaces = places.filter((place) => {
+    if (place.tripId !== trip.id || placesViaVisits.has(place.id)) return false;
+    // Any visit that names a trip means visit rows own this place's history.
+    const own = live.filter((visit) => visit.placeId === place.id);
+    return !own.some((visit) => visit.tripId);
+  });
+
+  const memberPlaces: VisitedPlace[] = [];
+  const seen = new Set<string>();
+  for (const visit of memberVisits) {
+    const place = byId.get(visit.placeId);
+    if (place && !seen.has(place.id)) {
+      seen.add(place.id);
+      memberPlaces.push(place);
+    }
+  }
+  for (const place of legacyPlaces) {
+    if (!seen.has(place.id)) {
+      seen.add(place.id);
+      memberPlaces.push(place);
+    }
+  }
+
+  return { visits: memberVisits, places: memberPlaces, legacyPlaces };
+}
+
+/**
+ * Every place assigned to a trip. With visits supplied, membership follows
+ * `tripMembership`; without them it reads the place-level cell alone, which
+ * is exactly what every caller did before visits carried trips.
+ */
+export function placesInTrip(
+  trip: Trip | null | undefined,
+  places: VisitedPlace[],
+  visits?: PlaceVisit[],
+): VisitedPlace[] {
   if (!trip) return [];
+  if (visits && visits.length > 0) return tripMembership(trip, places, visits).places;
   return places.filter((place) => place.tripId === trip.id);
 }
 
@@ -107,21 +180,41 @@ export function isVisitOutsideTrip(
 export function groupTripDays(
   trip: Trip,
   places: VisitedPlace[],
+  visits: PlaceVisit[] = [],
 ): TripGrouping {
-  const inTrip = placesInTrip(trip, places);
+  const membership = tripMembership(trip, places, visits);
+  const byId = new Map(places.map((place) => [place.id, place]));
 
   const byDate = new Map<string, VisitedPlace[]>();
   const undated: VisitedPlace[] = [];
+  const undatedSeen = new Set<string>();
 
-  for (const place of inTrip) {
-    const date = place.visitedFrom;
+  const add = (date: string | undefined, place: VisitedPlace) => {
     if (!date || !parseCalendarDate(date)) {
-      undated.push(place);
-      continue;
+      if (!undatedSeen.has(place.id)) {
+        undatedSeen.add(place.id);
+        undated.push(place);
+      }
+      return;
     }
     const bucket = byDate.get(date);
-    if (bucket) bucket.push(place);
-    else byDate.set(date, [place]);
+    // The same place twice on one day is one row, not an echo.
+    if (bucket) {
+      if (!bucket.some((existing) => existing.id === place.id)) bucket.push(place);
+    } else {
+      byDate.set(date, [place]);
+    }
+  };
+
+  // Member visits pin their place to the day that stay began — which is what
+  // lets one city sit under two different days of two different years.
+  for (const visit of membership.visits) {
+    const place = byId.get(visit.placeId);
+    if (place) add(visit.startDate, place);
+  }
+  // Legacy members group by their own dates, exactly as before.
+  for (const place of membership.legacyPlaces) {
+    add(place.visitedFrom, place);
   }
 
   const days: TripDay[] = [];
@@ -152,8 +245,12 @@ export function groupTripDays(
  * what was planned; a trip with no dates falls back to the span its visits
  * actually cover, so a card still says something true rather than nothing.
  */
-export function tripSummary(trip: Trip, places: VisitedPlace[]): TripSummary {
-  const inTrip = placesInTrip(trip, places);
+export function tripSummary(
+  trip: Trip,
+  places: VisitedPlace[],
+  visits: PlaceVisit[] = [],
+): TripSummary {
+  const inTrip = placesInTrip(trip, places, visits);
 
   const countries: string[] = [];
   const countryCodes: string[] = [];

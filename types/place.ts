@@ -75,10 +75,18 @@ export type PlaceVisit = {
   tripId?: string;
   /** The sheet's own vocabulary — "Family", "Solo", "Study"… Free text is fine. */
   tripType?: string;
-  /** The sheet's Visit Status word — "Been", "Planned"… Never invented here. */
+  /**
+   * The sheet's Visit Status word — "Been", "Planned", "Lived there"… Never
+   * invented here. "Lived there" is what makes a row a residence rather than
+   * a stay; see `isResidenceVisit`.
+   */
   status?: string;
   /** The Highlights cell: what made this stay this stay. */
   notes?: string;
+  /** The Companions cell, kept as the sheet wrote it. */
+  companions?: string;
+  /** The Accommodation Name cell. */
+  accommodationName?: string;
   createdAt: string;
   updatedAt: string;
   /** Tombstone, for the same reason places have one. */
