@@ -24,6 +24,7 @@ const suites = [
   "flag-chips.test.mjs",
   "globe-frame.test.mjs",
   "swipe.test.mjs",
+  "country-marks.test.mjs",
 ];
 
 let failed = false;
