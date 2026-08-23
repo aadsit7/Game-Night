@@ -12,11 +12,10 @@ import {
   useEffect,
   useId,
   useRef,
-  useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
 
+import { Portal } from "@/components/ui/Portal";
 import { useKeyboardInset } from "@/lib/hooks/useKeyboardInset";
 import { scrimLayer, sheetLayer } from "@/lib/ui/sheetStack";
 import { cn } from "@/lib/utils/cn";
@@ -51,10 +50,6 @@ import { cn } from "@/lib/utils/cn";
  */
 
 const SPRING = { type: "spring" as const, stiffness: 420, damping: 40, mass: 0.9 };
-
-/** Whether there is a DOM to portal into. Never changes once answered. */
-const noSubscription = () => () => {};
-const useIsClient = () => useSyncExternalStore(noSubscription, () => true, () => false);
 
 /** How far a card behind peeks above the one in front of it. */
 const PEEK_PX = 10;
@@ -171,7 +166,6 @@ export function BottomSheet({
     [requestClose],
   );
 
-  const isClient = useIsClient();
   const lift = Math.max(keyboardInset, 0);
   const safeBottom = "max(env(safe-area-inset-bottom, 0px), 14px)";
 
@@ -301,5 +295,5 @@ export function BottomSheet({
 
   // Nothing to portal into until there is a document. Sheets are never open on
   // a first render, so the server and the client agree on "nothing here yet".
-  return isClient ? createPortal(tree, document.body) : null;
+  return <Portal>{tree}</Portal>;
 }

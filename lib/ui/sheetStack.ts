@@ -15,6 +15,27 @@
 /** The frontmost sheet's layer. */
 export const FRONT_LAYER = 56;
 
+/*
+ * What floats above the sheets, and in what order.
+ *
+ * Everything below goes through `Portal`, so all of these numbers are compared
+ * in the same stacking context — the body's — and mean exactly what they say
+ * relative to `FRONT_LAYER` above. Keeping them here rather than as a `z-[90]`
+ * in each component is the only way the order between them is legible: an
+ * alert has to outrank a menu, a menu has to outrank a toast, and all three
+ * have to outrank the frontmost sheet, because every one of them can be raised
+ * from inside one.
+ */
+
+/** A toast: above the sheets, below anything waiting on an answer. */
+export const TOAST_LAYER = 70;
+
+/** A `•••` menu. */
+export const MENU_LAYER = 80;
+
+/** An alert. Nothing is allowed over the question you have to answer. */
+export const ALERT_LAYER = 90;
+
 /**
  * Each step back down the stack costs two layers: one for the sheet, one for
  * the scrim that dims whatever is behind it.

@@ -11,6 +11,7 @@ import { TripTagSheet } from "@/components/places/TripTagSheet";
 import { TravelStats } from "@/components/places/TravelStats";
 import { PlacesFilters } from "@/components/places/PlacesFilters";
 import { PlacesSearch } from "@/components/places/PlacesSearch";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SwipeRow } from "@/components/ui/SwipeRow";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
@@ -85,6 +86,7 @@ export function PlacesView({
   onTagPlaces,
   onCreateTripFor,
   onDeletePlace,
+  onDeletePlaces,
   onSelectingChange,
 }: {
   places: VisitedPlace[];
@@ -111,6 +113,13 @@ export function PlacesView({
    * expected to delete and leave an undo standing rather than ask again.
    */
   onDeletePlace: (id: string) => void;
+  /**
+   * Removes a whole selection at once. Asked about first — a swipe is one
+   * deliberate gesture aimed at one row, but a tick list is easy to build up
+   * without looking, and "seven places" is not something to find out about
+   * from a toast.
+   */
+  onDeletePlaces: (ids: string[]) => void;
   /** Lets the shell stand the tab bar down while the selection bar is up. */
   onSelectingChange: (selecting: boolean) => void;
 }) {
@@ -130,6 +139,8 @@ export function PlacesView({
   const [tagIds, setTagIds] = useState<string[] | null>(null);
   /** The one row currently pulled open, so two can never be. */
   const [swipedId, setSwipedId] = useState<string | null>(null);
+  /** Up while the selection is being asked about before it is deleted. */
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const debouncedQuery = useDebouncedValue(query, 140);
 
@@ -179,6 +190,7 @@ export function PlacesView({
       if (!next) {
         setSelectedIds([]);
         setTagIds(null);
+        setConfirmingDelete(false);
       }
       onSelectingChange(next);
     },
@@ -254,6 +266,20 @@ export function PlacesView({
             <div className="mt-2.5 flex gap-2" aria-hidden="true">
               <div className="skeleton h-4 w-40 rounded" />
             </div>
+          ) : selecting ? (
+            /*
+              How many are ticked, under the title — where iOS puts it, and
+              where it does not have to compete for width with the actions.
+              It lived in the middle of the bar below until that bar had two
+              actions in it and the count was squeezed down to "Pick so…".
+            */
+            <p aria-live="polite" className="mt-2 text-[15px] tabular-nums text-ink-2">
+              {selected.length === 0
+                ? "Pick some places"
+                : selected.length === 1
+                  ? "1 place selected"
+                  : `${selected.length} places selected`}
+            </p>
           ) : !isEmpty ? (
             <div className="mt-2">
               <TravelStats
@@ -448,7 +474,7 @@ export function PlacesView({
             exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 20 }}
             transition={{ duration: reduceMotion ? 0 : 0.24, ease: [0.2, 0.8, 0.3, 1] }}
           >
-            <div className="glass mx-auto flex max-w-[520px] items-center gap-2 rounded-[26px] border border-glass-border p-2 pl-3 shadow-float">
+            <div className="glass mx-auto flex max-w-[520px] items-center gap-1.5 rounded-[26px] border border-glass-border p-2 pl-3 shadow-float">
               <button
                 type="button"
                 onClick={() =>
@@ -459,14 +485,31 @@ export function PlacesView({
                 {allVisibleSelected ? "Clear" : "Select all"}
               </button>
 
-              <p
-                aria-live="polite"
-                className="min-w-0 flex-1 truncate text-center text-[14px] tabular-nums text-ink-2"
+              {/* Pushes the two actions to the far side, under the thumb. */}
+              <div aria-hidden="true" className="min-w-0 flex-1" />
+
+              {/*
+                The other half of what a selection is for. Ticking places and
+                then being able to do only one thing with them is why deleting
+                more than one meant swiping each row in turn — and why the
+                swipe had to carry the whole job. Icon-only, so both actions
+                fit beside "Select all" on the width of a phone.
+              */}
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(true)}
+                disabled={selected.length === 0}
+                aria-label={
+                  selected.length === 1 ? "Delete 1 place" : `Delete ${selected.length} places`
+                }
+                className={cn(
+                  "pressable inline-flex size-11 shrink-0 items-center justify-center rounded-pill",
+                  "transition-colors",
+                  selected.length === 0 ? "text-ink-3" : "bg-danger-soft text-danger",
+                )}
               >
-                {selected.length === 0
-                  ? "Pick some places"
-                  : `${selected.length} selected`}
-              </p>
+                <Trash2 size={18} aria-hidden="true" />
+              </button>
 
               <button
                 type="button"
@@ -487,6 +530,27 @@ export function PlacesView({
           </motion.div>
         ) : null}
       </AnimatePresence>
+
+      <ConfirmDialog
+        open={confirmingDelete && selected.length > 0}
+        title={
+          selected.length === 1
+            ? `Delete “${selected[0]?.name}”?`
+            : `Delete ${selected.length} places?`
+        }
+        message={
+          selected.length === 1
+            ? "It will be removed from your travel history."
+            : "They will be removed from your travel history."
+        }
+        confirmLabel="Delete"
+        onCancel={() => setConfirmingDelete(false)}
+        onConfirm={() => {
+          setConfirmingDelete(false);
+          onDeletePlaces(selected.map((place) => place.id));
+          setSelectionMode(false);
+        }}
+      />
 
       <TripTagSheet
         open={tagTargets.length > 0}

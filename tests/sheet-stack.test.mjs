@@ -12,7 +12,8 @@
  */
 import assert from "node:assert/strict";
 
-const { sheetDepth, sheetLayer, scrimLayer, FRONT_LAYER } = await import("../lib/ui/sheetStack.ts");
+const { sheetDepth, sheetLayer, scrimLayer, FRONT_LAYER, TOAST_LAYER, MENU_LAYER, ALERT_LAYER } =
+  await import("../lib/ui/sheetStack.ts");
 
 let failures = 0;
 function test(name, body) {
@@ -68,6 +69,37 @@ test("sheets stay between the tab bar and the pin-adjust bar", () => {
   assert.ok(FRONT_LAYER < 60);
   for (let depth = 0; depth < 8; depth += 1) {
     assert.ok(scrimLayer(depth) > 30, `depth ${depth} still clears the tab bar`);
+  }
+});
+
+console.log("what floats over the sheets");
+
+/*
+ * These three cost the app its delete, and the failure was silent: "Delete
+ * Place" inside a place's sheet raised an alert that painted entirely behind
+ * that sheet, so the button did nothing visible and every delete reachable
+ * from a sheet was unreachable. All four layers are compared in the body's
+ * stacking context — everything here portals — so the ordering below is the
+ * whole guarantee.
+ */
+
+test("an alert outranks everything, because it is waiting for an answer", () => {
+  assert.ok(ALERT_LAYER > MENU_LAYER);
+  assert.ok(ALERT_LAYER > TOAST_LAYER);
+  assert.ok(ALERT_LAYER > FRONT_LAYER);
+});
+
+test("a menu outranks a toast, and a toast outranks the sheets", () => {
+  assert.ok(MENU_LAYER > TOAST_LAYER);
+  assert.ok(TOAST_LAYER > FRONT_LAYER);
+});
+
+test("no depth of sheet stack ever reaches what floats above it", () => {
+  // Sheets only ever go backwards from the front, so one deep stack cannot
+  // climb into the toast's layer — but the front sheet must clear it by
+  // enough that adding a peek or a scrim between them stays safe.
+  for (let depth = 0; depth < 8; depth += 1) {
+    assert.ok(sheetLayer(depth) < TOAST_LAYER, `depth ${depth} reached the toast layer`);
   }
 });
 
