@@ -15,6 +15,10 @@ import { GlobeFallback } from "@/components/globe/GlobeFallback";
 import { usePrefersDark, usePrefersReducedMotion } from "@/lib/hooks/useMediaQuery";
 import {
   CITY_LAYERS,
+  COUNTRY_CHIP_OPACITY,
+  COUNTRY_CHIP_SORT,
+  COUNTRY_INTERACTIVE_LAYERS,
+  COUNTRY_LAYERS,
   COUNT_BADGE_TEXT_SIZE,
   COUNTRIES_URL,
   COUNTRY_BEFORE_IDS,
@@ -28,6 +32,8 @@ import {
   LABEL_OPACITY_DEFAULT,
   LAYER_CLUSTER,
   LAYER_CLUSTER_COUNT,
+  LAYER_COUNTRY_CHIP,
+  LAYER_COUNTRY_COUNT,
   LAYER_COUNTRY_FILL,
   LAYER_COUNTRY_LINE,
   LAYER_PIN,
@@ -36,10 +42,12 @@ import {
   MARKER_ICON_IMAGE,
   MARKER_ICON_SIZE_DEFAULT,
   SOURCE_COUNTRIES,
+  SOURCE_COUNTRY_MARKS,
   SOURCE_ID,
   STYLE_URLS,
   assetUrl,
   clusterIconSize,
+  countryChipSize,
   countBadgeOffset,
   countBadgeTextOffset,
   labelOpacity,
@@ -53,9 +61,11 @@ import {
   type MapView,
   type OverlayPalette,
 } from "@/lib/maps/basemap";
+import { countryMarks, type CountryMark } from "@/lib/maps/countryMarks";
 import {
   COUNT_BADGE_IMAGE,
   MARKER_PIXEL_RATIO,
+  MARKER_RADIUS,
   drawCountBadge,
   drawMarker,
   markerImageId,
@@ -150,6 +160,29 @@ function toFeatureCollection(places: VisitedPlace[]): FeatureCollection {
   };
 }
 
+/**
+ * The countries view's own features: one per country, wearing that country's
+ * chip and carrying how many places are in it.
+ */
+function toCountryCollection(marks: CountryMark[]): FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: marks.map((mark) => ({
+      type: "Feature" as const,
+      geometry: { type: "Point" as const, coordinates: [mark.longitude, mark.latitude] },
+      properties: {
+        code: mark.code,
+        name: mark.name,
+        count: mark.count,
+        // Only worth saying when there is more than one; a badge reading "1"
+        // on every country is a row of badges saying nothing.
+        label: mark.count > 1 ? String(mark.count) : "",
+        icon: markerImageId(mark.code, "visited"),
+      },
+    })),
+  };
+}
+
 /** Guards against re-attaching hover handlers when a style reloads. */
 const wiredMaps = new WeakSet<MapLibreMap>();
 
@@ -206,6 +239,7 @@ function registerMarkerImages(
 function installStyleLayers(
   map: MapLibreMap,
   data: FeatureCollection,
+  countryData: FeatureCollection,
   overlay: OverlayPalette,
 ): void {
   if (map.getSource(SOURCE_ID)) {
@@ -275,6 +309,64 @@ function installStyleLayers(
     }
   } catch {
     // Country highlighting is a garnish; never let it break the globe.
+  }
+
+  /*
+   * The countries view's marks, over the fills and under everything the cities
+   * view draws. A country you have been to says which country it is and how
+   * much of your life is in it, rather than being a shape you have to
+   * recognise.
+   */
+  try {
+    if (!map.getSource(SOURCE_COUNTRY_MARKS)) {
+      map.addSource(SOURCE_COUNTRY_MARKS, { type: "geojson", data: countryData });
+    } else {
+      (map.getSource(SOURCE_COUNTRY_MARKS) as GeoJSONSource).setData(countryData);
+    }
+
+    if (!map.getLayer(LAYER_COUNTRY_CHIP)) {
+      map.addLayer({
+        id: LAYER_COUNTRY_CHIP,
+        type: "symbol",
+        source: SOURCE_COUNTRY_MARKS,
+        layout: {
+          "icon-image": MARKER_ICON_IMAGE,
+          "icon-size": countryChipSize(),
+          "icon-allow-overlap": true,
+          "symbol-sort-key": COUNTRY_CHIP_SORT,
+        },
+        paint: { "icon-opacity": COUNTRY_CHIP_OPACITY },
+      });
+    }
+
+    if (!map.getLayer(LAYER_COUNTRY_COUNT)) {
+      map.addLayer({
+        id: LAYER_COUNTRY_COUNT,
+        type: "symbol",
+        source: SOURCE_COUNTRY_MARKS,
+        filter: ["!=", ["get", "label"], ""],
+        layout: {
+          "icon-image": COUNT_BADGE_IMAGE,
+          "icon-offset": countBadgeOffset(),
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+          "text-field": ["get", "label"],
+          "text-font": FONT_BOLD,
+          "text-size": COUNT_BADGE_TEXT_SIZE,
+          "text-offset": countBadgeTextOffset(),
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+          "symbol-sort-key": COUNTRY_CHIP_SORT,
+        },
+        paint: {
+          "text-color": "#FFFFFF",
+          "icon-opacity": COUNTRY_CHIP_OPACITY,
+          "text-opacity": COUNTRY_CHIP_OPACITY,
+        },
+      });
+    }
+  } catch {
+    // The marks are the garnish on the fills; never let them break the globe.
   }
 
   /*
@@ -597,7 +689,12 @@ export function TravelGlobe({
         // draws an empty planet.
         const overlay = overlayFor(prefersDarkRef.current);
         registerMarkerImages(map, placesRef.current, overlay);
-        installStyleLayers(map, toFeatureCollection(placesRef.current), overlay);
+        installStyleLayers(
+          map,
+          toFeatureCollection(placesRef.current),
+          toCountryCollection(countryMarks(placesRef.current)),
+          overlay,
+        );
         setStyleReady(true);
         setStyleEpoch((epoch) => epoch + 1);
       });
@@ -677,11 +774,27 @@ export function TravelGlobe({
         // In Countries mode a tap means "show me this country", so pins and
         // clusters are not in play at all.
         if (mapViewRef.current === "countries") {
-          if (!map.getLayer(LAYER_COUNTRY_FILL)) return;
-          const hit = map.queryRenderedFeatures(event.point, {
-            layers: [LAYER_COUNTRY_FILL],
-          })[0];
-          const code = hit?.properties?.code;
+          /* The chip first, and with a finger's worth of slack around it: it
+             is a small target over a large one, and someone reaching for the
+             flag of a country means the same thing as someone reaching for the
+             country — but missing the flag and hitting the sea next to it
+             should not dismiss what they were aiming at. */
+          const pad = 16;
+          const box: [[number, number], [number, number]] = [
+            [event.point.x - pad, event.point.y - pad],
+            [event.point.x + pad, event.point.y + pad],
+          ];
+          const layers = COUNTRY_INTERACTIVE_LAYERS.filter((id) => map?.getLayer(id));
+          if (layers.length === 0) return;
+
+          const chip = map
+            .queryRenderedFeatures(box, { layers: [LAYER_COUNTRY_CHIP] })
+            .find((feature) => feature.properties?.code);
+          const fill = map
+            .queryRenderedFeatures(event.point, { layers: [LAYER_COUNTRY_FILL] })
+            .find((feature) => feature.properties?.code);
+
+          const code = chip?.properties?.code ?? fill?.properties?.code;
           if (code) {
             onCountryTapRef.current?.(String(code));
           } else {
@@ -802,6 +915,9 @@ export function TravelGlobe({
     const source = map.getSource(SOURCE_ID) as GeoJSONSource | undefined;
     source?.setData(toFeatureCollection(places));
 
+    const marks = map.getSource(SOURCE_COUNTRY_MARKS) as GeoJSONSource | undefined;
+    marks?.setData(toCountryCollection(countryMarks(places)));
+
     try {
       const codes = [
         ...new Set(
@@ -872,11 +988,15 @@ export function TravelGlobe({
          side margin that keeps a *pin* off the edge only shrinks the Earth —
          which is the one thing this screen is for. */
       const side = overHorizon ? 10 : padding.left;
+      /* A place is a chip, not a point. Fitting the coordinates alone puts the
+         outermost one's *centre* on the edge of the box, which leaves half its
+         flag — and most of its name — off the side of the phone. */
+      const mark = overHorizon ? 0 : MARKER_RADIUS + 8;
       const box = {
-        left: side,
-        right: container.clientWidth - side,
-        top: padding.top,
-        bottom: container.clientHeight - padding.bottom,
+        left: side + mark,
+        right: container.clientWidth - side - mark,
+        top: padding.top + mark,
+        bottom: container.clientHeight - padding.bottom - mark,
       };
 
       const fits = (zoom: number) => {
@@ -987,6 +1107,15 @@ export function TravelGlobe({
             layer,
             "visibility",
             mapView === "cities" ? "visible" : "none",
+          );
+        }
+      }
+      for (const layer of COUNTRY_LAYERS) {
+        if (map.getLayer(layer)) {
+          map.setLayoutProperty(
+            layer,
+            "visibility",
+            mapView === "countries" ? "visible" : "none",
           );
         }
       }

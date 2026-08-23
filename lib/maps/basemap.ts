@@ -29,9 +29,13 @@ export const FONT_BOLD = ["Noto Sans Bold"];
 
 export const SOURCE_ID = "visited-places";
 export const SOURCE_COUNTRIES = "world-countries";
+/** One point per visited country, where that country's places average out. */
+export const SOURCE_COUNTRY_MARKS = "visited-country-marks";
 
 export const LAYER_COUNTRY_FILL = "visited-country-fill";
 export const LAYER_COUNTRY_LINE = "visited-country-line";
+export const LAYER_COUNTRY_CHIP = "visited-country-chip";
+export const LAYER_COUNTRY_COUNT = "visited-country-count";
 export const LAYER_CLUSTER = "visited-cluster";
 export const LAYER_CLUSTER_COUNT = "visited-cluster-count";
 /** The soft disc under the chip you last tapped. */
@@ -41,6 +45,12 @@ export const LAYER_PIN = "visited-pin-label";
 
 /** Layers a tap can land on, in the order the tap handler considers them. */
 export const INTERACTIVE_LAYERS = [LAYER_PIN_MARKER, LAYER_CLUSTER];
+
+/** What a tap in Countries mode can land on, in the order it is considered. */
+export const COUNTRY_INTERACTIVE_LAYERS = [LAYER_COUNTRY_CHIP, LAYER_COUNTRY_FILL];
+
+/** The marks the Countries view owns, hidden in Cities mode. */
+export const COUNTRY_LAYERS = [LAYER_COUNTRY_CHIP, LAYER_COUNTRY_COUNT];
 
 /** Everything belonging to the city-pin view, hidden in Countries mode. */
 export const CITY_LAYERS = [
@@ -256,6 +266,51 @@ export const markerSortKey = (selected: ExpressionSpecification): ExpressionSpec
   "case",
   selected,
   1,
+  0,
+];
+
+/**
+ * A country's mark, which has to survive being one of forty.
+ *
+ * Bigger than a place's chip at globe zoom — this is the mark the whole view
+ * is made of, and there is nothing else on screen competing with it — then
+ * held back as the map becomes a map, where the fill and the coastline have
+ * taken over the job of saying which country you are looking at.
+ */
+export const countryChipSize = (): ExpressionSpecification => [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  0,
+  0.86,
+  3,
+  1.02,
+  6,
+  0.88,
+];
+
+/**
+ * Which country's mark is on top where two overlap.
+ *
+ * Portugal and Spain are one chip apart at globe zoom, and something has to
+ * decide. The busier country wins, because it is the one with more to say —
+ * and the spec sorts ascending and lets a *higher* key overlap a lower one
+ * where icons are allowed to overlap, which these are.
+ */
+export const COUNTRY_CHIP_SORT: ExpressionSpecification = ["get", "count"];
+
+/**
+ * Marks fade out rather than vanishing, and they go before the fill does.
+ * Past this zoom you are inside one country and being told its name by the
+ * basemap; a flag pinned to the middle of it is furniture.
+ */
+export const COUNTRY_CHIP_OPACITY: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  4.4,
+  1,
+  5.6,
   0,
 ];
 
