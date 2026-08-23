@@ -121,6 +121,10 @@ export function AppShell() {
   const reduceMotion = useReducedMotion();
 
   const [mode, setMode] = useState<AppMode>("globe");
+  /* Read by callbacks that outlive the render they were made in — the undo in
+     a toast is pressed up to six seconds later, by which time the tab it was
+     raised from may not be the tab in front of anyone. */
+  const modeRef = useRef<AppMode>("globe");
   const [mapView, setMapView] = useState<MapView>("cities");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -170,7 +174,10 @@ export function AppShell() {
   const tabBarRef = useRef<HTMLDivElement>(null);
   const globeHandle = useRef<TravelGlobeHandle | null>(null);
   const undoTimer = useRef<number | null>(null);
-  const pendingDelete = useRef<VisitedPlace | null>(null);
+  /* Everything the last delete removed, held whole for the length of the undo
+     window. A list rather than one record, because a selection is deleted in
+     one go and has to come back in one go. */
+  const pendingDelete = useRef<VisitedPlace[]>([]);
 
   /**
    * The draft, pointed at a trip that actually exists.
@@ -252,6 +259,10 @@ export function AppShell() {
     const timer = window.setTimeout(() => setToast(null), toast.action ? UNDO_WINDOW_MS : 3200);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
 
   useEffect(
     () => () => {
@@ -975,6 +986,66 @@ export function AppShell() {
   /* Delete & undo                                                            */
   /* ---------------------------------------------------------------------- */
 
+  /**
+   * Lets go of whatever the last delete was holding, photographs included.
+   *
+   * Called when the undo window runs out and when a second delete replaces the
+   * first: only one delete can be standing at a time, and the one being
+   * displaced is now permanent.
+   */
+  const forgetPendingDelete = useCallback(() => {
+    for (const place of pendingDelete.current) discardPlacePhotos(place);
+    pendingDelete.current = [];
+  }, [discardPlacePhotos]);
+
+  /**
+   * Holds a delete open for as long as the toast stands, and puts the undo in
+   * it.
+   *
+   * Undo restores and then gets out of the way. It used to select the place,
+   * open its preview and swing the app round to the globe — which, pressed
+   * from a list, answered "put that back" by throwing away where you were.
+   * The place reappears where it was deleted from; only somebody already
+   * looking at the globe, who has just watched a pin vanish, is shown it
+   * coming back.
+   */
+  const holdForUndo = useCallback(
+    (removed: VisitedPlace[], text: string) => {
+      if (removed.length === 0) return;
+
+      if (undoTimer.current) window.clearTimeout(undoTimer.current);
+      forgetPendingDelete();
+      pendingDelete.current = removed;
+
+      undoTimer.current = window.setTimeout(() => {
+        forgetPendingDelete();
+        undoTimer.current = null;
+      }, UNDO_WINDOW_MS);
+
+      showToast(text, {
+        action: {
+          label: "Undo",
+          onPress: () => {
+            if (undoTimer.current) window.clearTimeout(undoTimer.current);
+            undoTimer.current = null;
+            const records = pendingDelete.current;
+            pendingDelete.current = [];
+            if (records.length === 0) return;
+
+            void Promise.all(records.map((record) => restorePlace(record)))
+              .then(() => {
+                if (modeRef.current !== "globe" || records.length !== 1) return;
+                setSelectedId(records[0].id);
+                setPreviewOpen(true);
+              })
+              .catch((error: Error) => showToast(error.message, { tone: "error" }));
+          },
+        },
+      });
+    },
+    [forgetPendingDelete, restorePlace, showToast],
+  );
+
   const performDelete = useCallback(
     async (id: string) => {
       setConfirmDeleteId(null);
@@ -985,38 +1056,7 @@ export function AppShell() {
       try {
         const removed = await deletePlace(id);
         if (!removed) return;
-
-        // Hold the record — and its photos — for the length of the undo window.
-        if (undoTimer.current) window.clearTimeout(undoTimer.current);
-        const previous = pendingDelete.current;
-        if (previous) discardPlacePhotos(previous);
-        pendingDelete.current = removed;
-
-        undoTimer.current = window.setTimeout(() => {
-          if (pendingDelete.current) discardPlacePhotos(pendingDelete.current);
-          pendingDelete.current = null;
-          undoTimer.current = null;
-        }, UNDO_WINDOW_MS);
-
-        showToast("Place deleted", {
-          action: {
-            label: "Undo",
-            onPress: () => {
-              if (undoTimer.current) window.clearTimeout(undoTimer.current);
-              undoTimer.current = null;
-              const record = pendingDelete.current;
-              pendingDelete.current = null;
-              if (!record) return;
-              void restorePlace(record)
-                .then(() => {
-                  setSelectedId(record.id);
-                  setPreviewOpen(true);
-                  setMode("globe");
-                })
-                .catch((error: Error) => showToast(error.message, { tone: "error" }));
-            },
-          },
-        });
+        holdForUndo([removed], "Place deleted");
       } catch (error) {
         showToast(
           error instanceof Error ? error.message : "That place couldn’t be deleted.",
@@ -1024,7 +1064,55 @@ export function AppShell() {
         );
       }
     },
-    [deletePlace, restorePlace, discardPlacePhotos, showToast, closeAllOverlays],
+    [deletePlace, holdForUndo, showToast, closeAllOverlays],
+  );
+
+  /**
+   * Deletes a whole selection, and leaves one undo covering all of it.
+   *
+   * Sequential rather than parallel: every write goes through the same queue
+   * to the same sheet, and firing a dozen at once only reorders them.
+   *
+   * A partial failure keeps the undo rather than replacing it with the error,
+   * and says how far it got — "4 of 7 places deleted". An error message that
+   * takes the undo away with it is the worst of both: it explains what went
+   * wrong and removes the only way to put back what went right.
+   */
+  const performDeleteMany = useCallback(
+    async (ids: string[]) => {
+      if (ids.length === 0) return;
+      closeAllOverlays();
+      setPreviewOpen(false);
+      setSelectedId(null);
+
+      const removed: VisitedPlace[] = [];
+      let failure: string | null = null;
+
+      for (const id of ids) {
+        try {
+          const place = await deletePlace(id);
+          if (place) removed.push(place);
+        } catch (error) {
+          failure =
+            error instanceof Error ? error.message : "Those places couldn’t all be deleted.";
+        }
+      }
+
+      if (removed.length === 0) {
+        if (failure) showToast(failure, { tone: "error" });
+        return;
+      }
+
+      holdForUndo(
+        removed,
+        failure
+          ? `${removed.length} of ${ids.length} places deleted`
+          : removed.length === 1
+            ? "Place deleted"
+            : `${removed.length} places deleted`,
+      );
+    },
+    [deletePlace, holdForUndo, showToast, closeAllOverlays],
   );
 
   /* ---------------------------------------------------------------------- */
@@ -1161,6 +1249,10 @@ export function AppShell() {
                  tap that opened it could have been a mis-tap; a swipe across
                  half a row could not. */
               onDeletePlace={(id) => void performDelete(id)}
+              /* The selection's own delete, which does ask first — it can be
+                 many places at once, and a tick list is easier to build up by
+                 accident than a swipe is. */
+              onDeletePlaces={(ids) => void performDeleteMany(ids)}
               onSelectingChange={setSelectingPlaces}
             />
           </motion.div>

@@ -21,6 +21,12 @@ import { cn } from "@/lib/utils/cn";
  * Not the only way to reach any of this: everything on the row is also in the
  * row's own menu, which is what a keyboard and a screen reader use. A gesture
  * may be the fastest path to an action; it must never be the only one.
+ *
+ * An open row is a held state, and a held state that outlives the attention
+ * that made it is just clutter in the way of the list. So it lets go of
+ * itself: scroll the list, touch anything else, press Escape, or leave the
+ * window, and the row puts itself away. Only the thing you are looking at
+ * stays open.
  */
 
 export type SwipeAction = {
@@ -66,6 +72,13 @@ export function SwipeRow({
   const openSide = useRef<SwipeSide | null>(null);
   /** Set while a pull is in progress, so the click it ends with can be eaten. */
   const pulled = useRef(false);
+  /* The list passes a fresh callback every render. Held in a ref so the
+     dismissal listeners below are bound once per open row rather than torn
+     down and rebuilt on every render of the list around it. */
+  const notify = useRef(onOpenChange);
+  useEffect(() => {
+    notify.current = onOpenChange;
+  }, [onOpenChange]);
 
   const settleTo = useCallback(
     (to: number) => {
@@ -92,6 +105,55 @@ export function SwipeRow({
       onOpenChange(false);
     }
   }, [disabled, close, onOpenChange]);
+
+  /*
+   * Everything that means "I am done with this row".
+   *
+   * A row left standing open is the complaint people actually have about
+   * swipe actions: the button follows the list up the screen, sits under the
+   * next thing they reach for, and the only way anyone finds to put it away
+   * is to swipe it back. Every one of these is someone's attention moving on,
+   * so every one of them closes it.
+   *
+   * Bound only while a row is open, and only ever one row is, so this is a
+   * handful of listeners on the document rather than a set per row.
+   */
+  useEffect(() => {
+    if (!open) return;
+
+    const dismiss = () => {
+      if (!openSide.current) return;
+      close();
+      notify.current(false);
+    };
+
+    // Capture, so a tap that lands on a button elsewhere still puts this away
+    // — the row closing must not depend on what was tapped letting it bubble.
+    const onPointerDown = (event: PointerEvent) => {
+      if (rowRef.current?.contains(event.target as Node)) return;
+      dismiss();
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") dismiss();
+    };
+
+    // Capture again, and on `window`: scroll does not bubble, and the list
+    // this row is in scrolls inside a container of its own rather than the
+    // page. Without capture, the one gesture most likely to follow a swipe —
+    // carrying on down the list — would be the one that left it open.
+    window.addEventListener("scroll", dismiss, true);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("blur", dismiss);
+
+    return () => {
+      window.removeEventListener("scroll", dismiss, true);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("blur", dismiss);
+    };
+  }, [open, close]);
 
   const run = useCallback(
     (side: SwipeSide) => {
