@@ -1,13 +1,13 @@
 "use client";
 
-import { ImagePlus, MapPin, Pencil, Plus, TriangleAlert, X } from "lucide-react";
+import { ImagePlus, MapPin, Pencil, Play, Plus, TriangleAlert, X } from "lucide-react";
 
 import { TravelPhotoGallery } from "@/components/photos/TravelPhotoGallery";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
-import { photosForTrip } from "@/lib/photos/travelPhotos";
+import { formatMediaCounts, mediaCounts, playlistForTrip } from "@/lib/photos/mediaPlaylist";
 import {
   formatPlaceCount,
   formatTripLength,
@@ -46,6 +46,7 @@ export function TripDetailSheet({
   onAddPhotos,
   onRemovePhoto,
   onNeedMediaCode,
+  onPlayMemories,
   galleryEpoch,
 }: {
   trip: Trip | null;
@@ -66,12 +67,17 @@ export function TripDetailSheet({
   onAddPhotos: () => void;
   onRemovePhoto: (photo: TravelPhoto) => Promise<void>;
   onNeedMediaCode: () => void;
+  /** Opens the memories player on the whole trip's combined media. */
+  onPlayMemories: () => void;
   galleryEpoch: number;
 }) {
   const grouping = trip ? groupTripDays(trip, places, visits) : null;
   const summary = trip ? tripSummary(trip, places, visits) : null;
   const when = trip ? formatVisitRange(trip.startDate, trip.endDate) : null;
-  const tripPhotos = trip ? photosForTrip(travelPhotos, trip.id) : [];
+  /* The trip's whole gallery: its own journey-level media plus every member
+     place's, one entry per record however many ways it is reachable. */
+  const tripPhotos = trip ? playlistForTrip(travelPhotos, trip, places, visits) : [];
+  const tripCounts = mediaCounts(tripPhotos);
   const isEmpty = Boolean(
     grouping &&
       grouping.days.length === 0 &&
@@ -128,19 +134,31 @@ export function TripDetailSheet({
             </p>
           ) : null}
 
-          {/* The trip's own gallery: its journey-level photos and every
-              member visit's, chronological. Adding here opens Google Photos
-              with the trip's dates as context. */}
+          {/* The trip's whole gallery: journey-level media and every member
+              place's, chronological. Adding here opens Google Photos with
+              the trip's dates as context. */}
           {photosEnabled || tripPhotos.length > 0 ? (
             <section className="mt-5">
               <div className="flex items-baseline justify-between gap-3 pb-2">
-                <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">Photos</h3>
+                <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">
+                  Memories
+                </h3>
                 {tripPhotos.length > 0 ? (
                   <span className="text-[14px] text-ink-3">
-                    {tripPhotos.length === 1 ? "1 photo" : `${tripPhotos.length} photos`}
+                    {formatMediaCounts(tripCounts)}
                   </span>
                 ) : null}
               </div>
+              {tripPhotos.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={onPlayMemories}
+                  className="pressable mb-3 flex min-h-[50px] w-full items-center justify-center gap-2 rounded-md bg-accent text-[16px] font-semibold text-on-accent"
+                >
+                  <Play size={16} fill="currentColor" aria-hidden="true" />
+                  Play Trip Memories
+                </button>
+              ) : null}
               <TravelPhotoGallery
                 key={galleryEpoch}
                 photos={tripPhotos}

@@ -13,6 +13,7 @@ import {
   MapPin,
   Pencil,
   Plane,
+  Play,
   Plus,
   Trash2,
   X,
@@ -24,6 +25,7 @@ import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
 import { formatDays } from "@/lib/timeline/buildTimeline";
 import { isResidenceVisit, isUpcomingVisit, visitStats } from "@/lib/places/visits";
+import { formatMediaCounts, mediaCounts } from "@/lib/photos/mediaPlaylist";
 import { photosForPlace, photosForVisit } from "@/lib/photos/travelPhotos";
 import { formatVisitRange, inclusiveDayCount } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
@@ -63,6 +65,7 @@ export function PlaceDetailSheet({
   onAddPhotosToVisit,
   onRemovePhoto,
   onNeedMediaCode,
+  onPlayMemories,
   galleryEpoch,
 }: {
   place: VisitedPlace | null;
@@ -101,6 +104,8 @@ export function PlaceDetailSheet({
   onAddPhotosToVisit: (visit: PlaceVisit) => void;
   onRemovePhoto: (photo: TravelPhoto) => Promise<void>;
   onNeedMediaCode: () => void;
+  /** Opens the memories player on everything attached to this place. */
+  onPlayMemories: () => void;
   /** Bumped when the media code changes, so galleries retry cleanly. */
   galleryEpoch: number;
 }) {
@@ -303,24 +308,37 @@ export function PlaceDetailSheet({
               </Section>
             ) : null}
 
-            {/* Everything across all visits, chronological, visits intact
-                underneath — only worth its space once two galleries exist. */}
-            {galleriesWithPhotos > 1 ? (
+            {/* Everything attached to this place, playable as one show. The
+                combined strip only earns its space once two visit galleries
+                exist — with one, it would repeat the strip just above. */}
+            {placePhotos.length > 0 ? (
               <Section
-                title="All photos"
+                title="Memories"
                 aside={
                   <span className="text-[14px] text-ink-3">
-                    {placePhotos.length === 1 ? "1 photo" : `${placePhotos.length} photos`}
+                    {formatMediaCounts(mediaCounts(placePhotos))}
                   </span>
                 }
               >
-                <TravelPhotoGallery
-                  key={galleryEpoch}
-                  photos={placePhotos}
-                  size="lg"
-                  onRemovePhoto={onRemovePhoto}
-                  onNeedMediaCode={onNeedMediaCode}
-                />
+                <button
+                  type="button"
+                  onClick={onPlayMemories}
+                  className="pressable flex min-h-[50px] w-full items-center justify-center gap-2 rounded-md bg-accent text-[16px] font-semibold text-on-accent"
+                >
+                  <Play size={16} fill="currentColor" aria-hidden="true" />
+                  Play Memories
+                </button>
+                {galleriesWithPhotos > 1 ? (
+                  <div className="mt-3">
+                    <TravelPhotoGallery
+                      key={galleryEpoch}
+                      photos={placePhotos}
+                      size="lg"
+                      onRemovePhoto={onRemovePhoto}
+                      onNeedMediaCode={onNeedMediaCode}
+                    />
+                  </div>
+                ) : null}
               </Section>
             ) : null}
 
@@ -364,7 +382,7 @@ export function PlaceDetailSheet({
 
             {extraPhotos.length > 0 ? (
               <Section
-                title="Memories"
+                title="More photos"
                 aside={
                   <span className="text-[14px] text-ink-3">
                     {photoCount === 1 ? "1 photo" : `${photoCount} photos`}

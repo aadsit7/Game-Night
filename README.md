@@ -378,6 +378,7 @@ components/
   trips/                 trip list, trip detail by day, trip form
   sync/                  setup screen, connection form, settings sheet
   place/                 detail, form, location search, photos, pin bar
+  photos/                cloud gallery, Google Photos flow, memories player
   ui/                    BottomSheet, SegmentedControl, dialogs, imagery
 lib/
   maps/                  basemap config and layer ids, geocoding
@@ -426,6 +427,21 @@ rather than a hole in the layout: a calm gradient keyed off the place name,
 with a small pin mark. The gradient sits underneath the image at all times, so
 a slow or failed load reveals something intentional — no card ever shows a
 broken-image icon.
+
+**Play Memories** turns any place's or trip's media into a full-screen show:
+photos hold for four seconds and dissolve into each other, videos play inline
+with their own sound and yield on their `ended` event, and one pause button
+holds both kinds. A trip's show combines the trip's own media with every
+member place's — selected, never copied, and deduplicated by the record's own
+id — in capture order across the whole journey. The playlist logic and the
+player's state machine are pure modules (`lib/photos/mediaPlaylist.ts`,
+`lib/photos/playerCore.ts`), so both are tested without a browser in
+`tests/media-player.test.mjs`. Playback reads the app's own stored copies
+through the same cache the galleries use; Google Photos originals are never
+touched, and a clip too large for the script to have stored plays as its
+poster frame, honestly labelled, rather than stalling the show. When iOS
+Safari declines to continue a later video's audio without a fresh gesture,
+the player asks for one tap instead of freezing.
 
 ## Deliberately not built yet
 

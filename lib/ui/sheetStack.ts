@@ -37,6 +37,14 @@ export const MENU_LAYER = 80;
 export const ALERT_LAYER = 90;
 
 /**
+ * The full-screen media layers: the photo viewer, the lightbox and the
+ * memories player. Above even alerts, because each one is entered and left
+ * by an explicit tap and covers the whole screen — nothing underneath can
+ * usefully ask a question while one is up.
+ */
+export const PLAYER_LAYER = 95;
+
+/**
  * Each step back down the stack costs two layers: one for the sheet, one for
  * the scrim that dims whatever is behind it.
  */

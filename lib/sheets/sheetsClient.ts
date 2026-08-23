@@ -599,7 +599,7 @@ export function travelPhotoRequestParams(
   return {
     action: "getTravelPhoto",
     photoId,
-    size: size === "display" ? "display" : "thumb",
+    size: size === "display" || size === "video" ? size : "thumb",
     media: mediaCode,
   };
 }

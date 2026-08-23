@@ -17,6 +17,7 @@ import {
 } from "@/components/globe/TravelGlobe";
 import { GooglePhotosFlowSheet } from "@/components/photos/GooglePhotosReviewSheet";
 import { MediaCodeSheet } from "@/components/photos/MediaCodeSheet";
+import { TravelMediaPlayer } from "@/components/photos/TravelMediaPlayer";
 import { AdjustPinBar } from "@/components/place/AdjustPinBar";
 import { LocationSearchSheet } from "@/components/place/LocationSearchSheet";
 import { PlaceDetailSheet } from "@/components/place/PlaceDetailSheet";
@@ -62,6 +63,12 @@ import {
   visitStatusFor,
   visitsForPlace,
 } from "@/lib/places/visits";
+import {
+  formatMediaCounts,
+  mediaCounts,
+  playlistForPlace,
+  playlistForTrip,
+} from "@/lib/photos/mediaPlaylist";
 import { closePickerWindow, openPickerWindow } from "@/lib/photos/pickerWindow";
 import { formatVisitRange } from "@/lib/utils/date";
 import { alreadyTaggedMessage, placesToRetag, tagSummary } from "@/lib/trips/tagging";
@@ -107,6 +114,18 @@ type PinSession = {
   position: GlobePoint | null;
   /** Whether the flow should return to the form afterwards. */
   returnToForm: boolean;
+};
+
+/**
+ * One run of the memories player, snapshotted at the tap that started it.
+ * A snapshot rather than a live selection, so a background sync mid-show
+ * can never renumber the playlist out from under the item on screen.
+ */
+type PlayerSession = {
+  title: string;
+  subtitle?: string;
+  completionLabel: string;
+  photos: TravelPhoto[];
 };
 
 const UNDO_WINDOW_MS = 6000;
@@ -196,6 +215,8 @@ export function AppShell() {
   /** What the open photo flow is attaching to — visit, residence or trip. */
   const [photoContext, setPhotoContext] = useState<PhotoContext | null>(null);
   const [mediaCodeOpen, setMediaCodeOpen] = useState(false);
+  /** The memories player, when one is up — a place's show or a whole trip's. */
+  const [playerSession, setPlayerSession] = useState<PlayerSession | null>(null);
   /** Bumped when the media code is saved, so failed galleries retry clean. */
   const [galleryEpoch, setGalleryEpoch] = useState(0);
   const [confirmDeleteVisit, setConfirmDeleteVisit] = useState<{
@@ -824,6 +845,38 @@ export function AppShell() {
       }
     },
     [removeTravelPhoto, showToast],
+  );
+
+  /* Play Memories. Both levels assemble their playlist through the same pure
+     selectors and play it through the same player — the only difference is
+     the array handed over. */
+
+  const startPlaceMemories = useCallback(
+    (place: VisitedPlace) => {
+      const playlist = playlistForPlace(travelPhotos, place.id);
+      if (playlist.length === 0) return;
+      setPlayerSession({
+        title: place.name,
+        subtitle: formatMediaCounts(mediaCounts(playlist)),
+        completionLabel: "Memories complete",
+        photos: playlist,
+      });
+    },
+    [travelPhotos],
+  );
+
+  const startTripMemories = useCallback(
+    (trip: Trip) => {
+      const playlist = playlistForTrip(travelPhotos, trip, places, visits);
+      if (playlist.length === 0) return;
+      setPlayerSession({
+        title: trip.name,
+        subtitle: formatMediaCounts(mediaCounts(playlist)),
+        completionLabel: "Trip complete",
+        photos: playlist,
+      });
+    },
+    [travelPhotos, places, visits],
   );
 
   /* ---------------------------------------------------------------------- */
@@ -1690,6 +1743,7 @@ export function AppShell() {
         onAddPhotosToVisit={(visit) => detailPlace && startAddPhotosForVisit(detailPlace, visit)}
         onRemovePhoto={handleRemovePhoto}
         onNeedMediaCode={() => setMediaCodeOpen(true)}
+        onPlayMemories={() => detailPlace && startPlaceMemories(detailPlace)}
         galleryEpoch={galleryEpoch}
       />
 
@@ -1770,6 +1824,7 @@ export function AppShell() {
         onAddPhotos={() => openTrip && startAddPhotosForTrip(openTrip)}
         onRemovePhoto={handleRemovePhoto}
         onNeedMediaCode={() => setMediaCodeOpen(true)}
+        onPlayMemories={() => openTrip && startTripMemories(openTrip)}
         galleryEpoch={galleryEpoch}
       />
 
@@ -1957,6 +2012,16 @@ export function AppShell() {
           setGalleryEpoch((epoch) => epoch + 1);
           showToast("Media code saved on this device");
         }}
+      />
+
+      <TravelMediaPlayer
+        open={Boolean(playerSession)}
+        title={playerSession?.title ?? ""}
+        subtitle={playerSession?.subtitle}
+        photos={playerSession?.photos ?? []}
+        completionLabel={playerSession?.completionLabel}
+        onClose={() => setPlayerSession(null)}
+        onNeedMediaCode={() => setMediaCodeOpen(true)}
       />
 
       <SyncSettingsSheet
