@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import { PlacesProvider } from "@/lib/store/PlacesProvider";
+import { TILE_ORIGIN } from "@/lib/maps/tileHost";
 
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
@@ -39,6 +40,24 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        {/*
+          Open the connection to the tile host while the app is still parsing.
+
+          Nothing can be drawn until the style arrives, and the style cannot be
+          asked for until a DNS lookup, a TCP handshake and a TLS handshake
+          have all completed — three round trips that, on a phone's radio, are
+          most of the wait before the first pixel of Earth. Starting them here
+          overlaps all three with work the browser is doing anyway, so by the
+          time the map asks, the connection is already open.
+
+          `crossOrigin` matters: the tiles are fetched by CORS, and a warmed
+          connection opened without it is a different connection pool.
+        */}
+        <link rel="preconnect" href={TILE_ORIGIN} crossOrigin="anonymous" />
+        {/* For browsers that do not preconnect, at least resolve the name. */}
+        <link rel="dns-prefetch" href={TILE_ORIGIN} />
+      </head>
       <body className="antialiased">
         <PlacesProvider>{children}</PlacesProvider>
       </body>

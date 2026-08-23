@@ -20,11 +20,13 @@ import {
   COUNTRY_INTERACTIVE_LAYERS,
   COUNTRY_LAYERS,
   COUNT_BADGE_TEXT_SIZE,
+  COUNTRIES_SOURCE_MAXZOOM,
   COUNTRIES_URL,
   COUNTRY_BEFORE_IDS,
   COUNTRY_FILL_OPACITY,
   COUNTRY_LINE_OPACITY,
   COUNTRY_LINE_WIDTH,
+  COUNTRY_MARKS_SOURCE_MAXZOOM,
   DEFAULT_CAMERA,
   FONT_BOLD,
   HALO_RADIUS,
@@ -41,6 +43,7 @@ import {
   LAYER_PIN_MARKER,
   MARKER_ICON_IMAGE,
   MARKER_ICON_SIZE_DEFAULT,
+  PLACES_SOURCE_MAXZOOM,
   SOURCE_COUNTRIES,
   SOURCE_COUNTRY_MARKS,
   SOURCE_ID,
@@ -248,6 +251,18 @@ function installStyleLayers(
     map.addSource(SOURCE_ID, {
       type: "geojson",
       data,
+      /*
+       * Stop re-tiling the pins long before the map stops zooming.
+       *
+       * A GeoJSON source builds a fresh set of tiles at every zoom level up to
+       * this, and the default is the renderer's maximum — so zooming from the
+       * globe down to a street rebuilt these points thirteen times over, every
+       * rebuild a worker parse and a buffer upload landing mid-gesture. Past
+       * the cap the renderer reuses the tiles it already has, and a point does
+       * not lose anything by being reused: at this zoom a tile unit is under a
+       * metre, which is finer than the coordinates themselves.
+       */
+      maxzoom: PLACES_SOURCE_MAXZOOM,
       cluster: true,
       /* Tuned to the chip, not to the dot it replaced. A 46px radius was the
          right distance to keep 9px dots from touching; against a 21–32px chip
@@ -265,11 +280,23 @@ function installStyleLayers(
   }
 
   // OpenStreetMap tiles carry boundary lines but not country polygons, so the
-  // Countries view brings its own geometry — public-domain Natural Earth,
-  // simplified to about a kilometre, which is invisible at these zooms.
+  // Countries view brings its own geometry — public-domain Natural Earth at
+  // 1:110m, which is a shape meant to be read at globe zoom and carries a
+  // vertex every few tens of kilometres.
   try {
     if (!map.getSource(SOURCE_COUNTRIES)) {
-      map.addSource(SOURCE_COUNTRIES, { type: "geojson", data: assetUrl(COUNTRIES_URL) });
+      map.addSource(SOURCE_COUNTRIES, {
+        type: "geojson",
+        data: assetUrl(COUNTRIES_URL),
+        /*
+         * The same cap, and here it costs nothing measurable at all: these
+         * polygons carry a vertex every few tens of kilometres, and a tile at
+         * this zoom resolves to a few hundred metres. Every level above it was
+         * the worker re-cutting 174 polygons into detail the file has never
+         * contained.
+         */
+        maxzoom: COUNTRIES_SOURCE_MAXZOOM,
+      });
     }
     // Under the borders and labels, over the land, water, roads and buildings.
     const before = COUNTRY_BEFORE_IDS.find((id) => map.getLayer(id));
@@ -319,7 +346,13 @@ function installStyleLayers(
    */
   try {
     if (!map.getSource(SOURCE_COUNTRY_MARKS)) {
-      map.addSource(SOURCE_COUNTRY_MARKS, { type: "geojson", data: countryData });
+      map.addSource(SOURCE_COUNTRY_MARKS, {
+        type: "geojson",
+        data: countryData,
+        // These marks have faded out entirely by zoom 5.6 (`COUNTRY_CHIP_OPACITY`),
+        // so tiling them past that is work for something nobody can see.
+        maxzoom: COUNTRY_MARKS_SOURCE_MAXZOOM,
+      });
     } else {
       (map.getSource(SOURCE_COUNTRY_MARKS) as GeoJSONSource).setData(countryData);
     }
