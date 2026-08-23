@@ -1,5 +1,7 @@
 import type { ExpressionSpecification } from "maplibre-gl";
 
+import { TILE_ORIGIN } from "@/lib/maps/tileHost";
+
 /**
  * The map stack lives behind this module.
  *
@@ -10,7 +12,7 @@ import type { ExpressionSpecification } from "maplibre-gl";
  */
 
 /** OpenFreeMap: free OpenStreetMap vector tiles, no key, no registration. */
-const STYLE_BASE = "https://tiles.openfreemap.org/styles";
+const STYLE_BASE = `${TILE_ORIGIN}/styles`;
 
 export const STYLE_LIGHT = `${STYLE_BASE}/liberty`;
 export const STYLE_DARK = `${STYLE_BASE}/dark`;
@@ -31,6 +33,36 @@ export const SOURCE_ID = "visited-places";
 export const SOURCE_COUNTRIES = "world-countries";
 /** One point per visited country, where that country's places average out. */
 export const SOURCE_COUNTRY_MARKS = "visited-country-marks";
+
+/*
+ * How far down each of our own GeoJSON sources is re-cut into tiles.
+ *
+ * A GeoJSON source is not a tile server: the worker builds its tiles on the
+ * device, at every zoom level from 0 up to the source's `maxzoom`, and the
+ * default is the renderer's own maximum. Left alone, a pinch from the globe to
+ * a street rebuilds all three of these sources more than a dozen times, and
+ * every rebuild is a worker parse and a set of buffer uploads arriving in the
+ * middle of the gesture that asked for them. Above the cap the renderer reuses
+ * the tiles it already has, which is free.
+ *
+ * Each number is the zoom past which more detail would be a lie:
+ */
+
+/** Points. A tile unit here is well under a metre — finer than the fixes are. */
+export const PLACES_SOURCE_MAXZOOM = 14;
+
+/*
+ * Polygons whose own vertices are tens of kilometres apart — the shipped file
+ * is simplified far harder than the note on it suggests, and measuring it says
+ * a median spacing of 63km and a tenth percentile of 32km. A tile at this zoom
+ * resolves to about 300m, so it already records every bend the data contains a
+ * hundred times over. Nothing above it could be anything but the same shape,
+ * recomputed.
+ */
+export const COUNTRIES_SOURCE_MAXZOOM = 5;
+
+/** Marks that `COUNTRY_CHIP_OPACITY` has faded to nothing by 5.6. */
+export const COUNTRY_MARKS_SOURCE_MAXZOOM = 6;
 
 export const LAYER_COUNTRY_FILL = "visited-country-fill";
 export const LAYER_COUNTRY_LINE = "visited-country-line";

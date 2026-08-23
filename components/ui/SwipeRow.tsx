@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import { animate, motion, useMotionValue, useReducedMotion, type PanInfo } from "framer-motion";
 
+import { useNearViewport } from "@/lib/hooks/useNearViewport";
 import { settleSwipe, type SwipeSide } from "@/lib/ui/swipe";
 import { cn } from "@/lib/utils/cn";
 
@@ -69,6 +70,17 @@ export function SwipeRow({
   const x = useMotionValue(0);
   const rowRef = useRef<HTMLLIElement>(null);
   const reduceMotion = useReducedMotion();
+  /*
+   * Whether this row is close enough to the screen to be worth wiring up.
+   *
+   * Turning on `drag` makes the animation library measure the element, which
+   * is a synchronous layout — three of them per row, on mount. At seven places
+   * that is free and at three hundred it is most of a second of frozen tab,
+   * paid to make rows draggable that are a dozen screens down. The panels
+   * underneath cost their own DOM besides. A row nobody can reach needs
+   * neither, and by the time it can be reached it has both.
+   */
+  const near = useNearViewport(rowRef);
   const openSide = useRef<SwipeSide | null>(null);
   /** Set while a pull is in progress, so the click it ends with can be eaten. */
   const pulled = useRef(false);
@@ -197,6 +209,8 @@ export function SwipeRow({
   );
 
   const style = { borderRadius: radius };
+  /** Both actions and the gesture that reveals them, once there is a point. */
+  const live = near && !disabled && Boolean(left || right);
 
   return (
     /* Clipped to its own footprint. These rows are inset cards rather than
@@ -209,7 +223,7 @@ export function SwipeRow({
         colour is already there the instant the row starts to move — the action
         is being uncovered, not fetched.
       */}
-      {(left || right) && !disabled ? (
+      {live ? (
         <div className="absolute inset-0 overflow-hidden" style={style}>
           {left ? <Panel action={left} side="left" x={x} onRun={() => run("left")} /> : null}
           {right ? <Panel action={right} side="right" x={x} onRun={() => run("right")} /> : null}
@@ -219,7 +233,7 @@ export function SwipeRow({
       <motion.div
         style={{ x, borderRadius: radius }}
         className="relative z-10 bg-bg"
-        drag={disabled || (!left && !right) ? false : "x"}
+        drag={live ? "x" : false}
         // Lets the browser keep the vertical scroll it would otherwise have to
         // fight this gesture for.
         dragDirectionLock
