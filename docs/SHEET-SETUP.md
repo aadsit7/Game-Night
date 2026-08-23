@@ -144,8 +144,9 @@ had no effect, this is almost always why.
 |---|---|
 | `Places` | Read and written. The main table. A place joins a trip through its existing `Trip ID / Collection` column; `Favorite` and `Status` back the favourites and want-to-go lists. |
 | `Trips` | Read and written. One row per trip. **Created by the script on first run** if it isn't there. |
-| `Dates_Visits` | Read only — multiple visits on one place fold into a single date range. |
-| `Notes_Reviews`, `Media_Links`, `Lists_Tags`, `Trips_Itinerary` | Read into memory, never written. |
+| `Dates_Visits` | Read and written. One row per stay — the place card lists them, and the Places row's `First/Last Visited Date`, `Visit Count` and `Days Spent Total` are kept in step. The script appends its bookkeeping columns (`Created At` … `Deleted?`) on first run of this version. |
+| `Media_Links` | Read and written, for photos only. Each uploaded photo becomes a `Photo` row pointing at its place, which is how a photo added on one device appears on the others. Other row types are left alone. |
+| `Notes_Reviews`, `Lists_Tags`, `Trips_Itinerary` | Read into memory, never written. |
 | `Lookups` | Read at startup for dropdown values. |
 | `App_Settings`, `Sync_Log` | Created by the script on first run. |
 | *(no tab)* | `searchPlaces` proxies Google Places when a `GOOGLE_MAPS_API_KEY` script property is set — see [Google Maps search](#optional-google-maps-search). |
@@ -226,11 +227,6 @@ A trip's length, how many places are in it, and which countries and cities it
 covers are all counted from the rows at the moment they are shown. There is no
 `Number Of Places` column to go stale when you add a place to a trip.
 
-`Dates_Visits` has a `Trip ID` column of its own. This version does not read or
-write it: the app's unit is a place with its dates, so that is where the trip
-id lives. It is left exactly as it is, and is where a future per-visit model
-would go.
-
 > ### ⚠️ This needs a re-deploy
 >
 > The `Trips` tab appears the first time the **new** script runs. Until you
@@ -238,6 +234,66 @@ would go.
 > version → Deploy), the old code keeps serving, the app sees no trips, and
 > creating one fails with a message saying the tab is missing. See
 > [the re-deploy trap](#️-the-re-deploy-trap) above.
+
+---
+
+## Visits
+
+A place is somewhere; a visit is a time you were there. Each stay is one row
+on `Dates_Visits` — the tab's own description has said so all along ("Repeat
+rows support multiple trips to the same place") — and the place card lists
+them: dates, length, trip type, and the trip it belonged to through the tab's
+own `Trip ID` column.
+
+- **Adding a place you have already been to logs a visit instead.** Same name
+  in the same country, or a pin within about 150 m, is recognised as the same
+  place: no duplicate row appears on `Places`, and the dates you typed become
+  a new `Dates_Visits` row.
+- **A place recorded the old way** — dates on the Places row, no visit rows —
+  still shows those dates as its one visit. The first time you log another,
+  the original is written into `Dates_Visits` too, so the history the card
+  showed is the history the sheet holds.
+- **The summary stays on `Places`.** `First Visited Date`, `Last Visited Date`,
+  `Visit Count` and `Days Spent Total` are recomputed from the visit rows on
+  every change, so the timeline, the sort orders and the sheet's own columns
+  all keep telling the same story. `Days`, `Year`, `Month` and `Season` on
+  each visit row are filled in from its dates the same way.
+- The app writes the sheet's own vocabulary: `Visit Status` gets `Been` or
+  `Planned`, and `Trip Type` comes from the Lookups tab's list.
+
+The script's generic row machinery already covers all of this, but the tab
+needs its bookkeeping columns (`Created At`, `Updated At`, `Last Synced At`,
+`Sync Version`, `Archived?`, `Deleted?`); the new script appends any that are
+missing the first time it runs.
+
+## Photos in Google Drive
+
+Photos used to stay in the browser they were added in. With this version of
+the script they follow your account instead:
+
+- The app still stores a photo locally first, so nothing waits on the network.
+- When the deployment supports it, each local photo is uploaded once through
+  the script, which files it in a Drive folder called **Travel Globe Photos**
+  under the sheet owner's account and hands back a link.
+- The link replaces the local copy: the cover goes into `Photo URL` on the
+  place's row, and every photo gets a `Photo` row on `Media_Links` — which is
+  what the app on another device reads to show it.
+- Uploaded files are shared **anyone with the link, view only**, because the
+  link lives in a spreadsheet cell that every connected device must be able
+  to render. Removing a photo in the app tombstones its `Media_Links` row;
+  the file itself stays in Drive, yours to delete.
+
+If the upload fails — offline, an older deployment — nothing breaks: the photo
+stays local exactly as before, and the app retries on the next load.
+
+> ### ⚠️ This needs a re-deploy, and a fresh authorization
+>
+> `uploadPhoto` exists only in the new script, and it is the script's first
+> use of Drive. Publishing the new version (Deploy → Manage deployments →
+> pencil → Version: New version → Deploy) will ask you to authorize the
+> script again, this time including Drive access. Until then the app simply
+> keeps photos local — the capability is advertised by the script, never
+> assumed.
 
 ---
 
@@ -405,7 +461,17 @@ device puts it back on the built-in one.
 - Turn off wifi, make a change (the chip says **Not saved yet**), turn wifi back
   on — it saves by itself.
 - Two visits attached to one place in `Dates_Visits` both survive a reload; the
-  place shows the earliest start and the latest end.
+  place card lists both, and the Places row shows the earliest start and the
+  latest end.
+- Open a place's card and **Add visit**: a new `Dates_Visits` row appears with
+  `Days`, `Year`, `Month` and `Season` filled in, and the place's `Visit Count`
+  and `Days Spent Total` update.
+- Add a place you already have (same name, same country): no new `Places` row —
+  the existing place gains a visit and its card opens to show it.
+- Attach a photo, wait a moment, and look at **Travel Globe Photos** in Drive:
+  the file is there, `Photo URL` holds a link rather than nothing, and a
+  `Photo` row exists on `Media_Links`. Open the site on another device — the
+  photo is there too.
 - Open **Trips**, create one, reload the page — it is still there, and a `Trips`
   tab now exists in the spreadsheet.
 - Put a place in a trip: only its `Trip ID / Collection` cell changes.

@@ -35,6 +35,13 @@ have seen, and shows on the globe in its own colour. Either kind can be marked
 a **favourite** — one tap from the card, the pin or the detail sheet — and
 Places filters to favourites, been, or still to go without opening a menu.
 
+A place you keep going back to stays **one place with many visits**. Its card
+opens on the numbers — visits, days total, first visited, last visit — above
+the stays themselves, each with its dates, its length and the kind of trip it
+was, and **Add visit** logs another. Adding a place you have already been to —
+same name in the same country, or a pin on the same spot — doesn't grow a
+duplicate: the existing place gains a visit, and the card opens to show it.
+
 Adding, pinning, editing, moving and deleting a place are the core of the app,
 and every change lands in all four views on the same frame.
 
@@ -186,9 +193,24 @@ every row written before this feature already says, and clearing the cell is
 how a place leaves a trip without being deleted. The `Trips` tab is created by
 the Apps Script on first run, so there is nothing to add by hand.
 
-Uploaded photos are the one thing that stays local. They are blobs in this
-browser's IndexedDB and would be meaningless elsewhere, so only real image
-*links* go into the `Photo URL` column.
+**Visits live in their own tab too.** Each stay at a place is a row on
+`Dates_Visits` — the tab the spreadsheet always had for exactly this — keyed
+by `Place ID`, with the row's own `Days`, `Year`, `Month` and `Season` filled
+in from the dates and `Trip Type` drawn from the sheet's own Lookups. The
+place's `First/Last Visited Date`, `Visit Count` and `Days Spent Total` are
+re-derived from its visit rows on every change, so the timeline and the sort
+orders keep working on one date range however many stays it folds. A place
+recorded before visits existed shows its old dates as its first visit, and
+that visit is written down for real the first time another is logged.
+
+**Photos follow your account, when the script allows it.** A photo lands in
+this browser's IndexedDB first, so nothing waits on the network. A deployment
+that advertises `photoUpload` then gets each one once — the script files it in
+a **Travel Globe Photos** folder in the sheet owner's Drive and answers with a
+link, the cover link goes into `Photo URL`, and every upload becomes a `Photo`
+row on `Media_Links`, which is how the same pictures appear on every device.
+An older deployment changes nothing: photos simply stay local, exactly as
+before.
 
 ---
 
@@ -237,11 +259,13 @@ makes a network call, and every write in it goes through one `postToSheet`
 helper.
 
 Photos are deliberately *not* in that collection. A place record is a few
-hundred bytes and a photo is a few hundred kilobytes, so images live in
+hundred bytes and a photo is a few hundred kilobytes, so images land in
 IndexedDB (`lib/storage/photoStore.ts`), downscaled to 1600px on the way in.
 The travel data never bumps into the 5 MB localStorage ceiling, and the split
 is why a photo cannot go into a spreadsheet cell: a `Photo URL` is text every
-device can resolve, a blob reference is not.
+device can resolve, a blob reference is not. When the deployed script offers
+`uploadPhoto`, a background sweep turns each blob into exactly that — a Drive
+link written into the sheet — and deletes the local copy it replaced.
 
 ### Two ways to read the map
 
@@ -395,11 +419,13 @@ scripts/build-countries.mjs
 
 ## Photography
 
-Attached photographs are downscaled and kept in IndexedDB. A place without one
-still gets a picture rather than a hole in the layout: a calm gradient keyed off
-the place name, with a small pin mark. The gradient sits underneath the image at
-all times, so a slow or failed load reveals something intentional — no card ever
-shows a broken-image icon.
+Attached photographs are downscaled and kept in IndexedDB, then uploaded to
+the sheet owner's Drive when the deployed script supports it, so they follow
+the account rather than the browser. A place without one still gets a picture
+rather than a hole in the layout: a calm gradient keyed off the place name,
+with a small pin mark. The gradient sits underneath the image at all times, so
+a slow or failed load reveals something intentional — no card ever shows a
+broken-image icon.
 
 ## Deliberately not built yet
 

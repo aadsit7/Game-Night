@@ -28,6 +28,12 @@ export type SheetSnapshot = {
 export type SheetCapabilities = {
   /** A Google Maps API key is set on the script, so Places search works. */
   placesSearch: boolean;
+  /**
+   * The script can save photos to the sheet owner's Google Drive, so a photo
+   * added on one device can be seen on all of them. An older deployment
+   * simply omits this and photos stay in the browser they were added in.
+   */
+  photoUpload: boolean;
 };
 
 export type UpsertResult = { id: string; row: unknown[]; headers: string[] };
@@ -237,7 +243,10 @@ export async function getAll(
     lookups: (data?.lookups ?? {}) as Record<string, string[]>,
     settings: (data?.settings ?? {}) as Record<string, string>,
     schemaVersion: String(data?.schemaVersion ?? ""),
-    capabilities: { placesSearch: capabilities.placesSearch === true },
+    capabilities: {
+      placesSearch: capabilities.placesSearch === true,
+      photoUpload: capabilities.photoUpload === true,
+    },
     serverTime: String(data?.serverTime ?? new Date().toISOString()),
   };
 }
@@ -306,6 +315,45 @@ export async function upsertRow(
     row: Array.isArray(data?.row) ? data.row : [],
     headers: Array.isArray(data?.headers) ? data.headers.map((h) => String(h ?? "")) : [],
   };
+}
+
+/**
+ * Sends one photo to the script, which files it in the sheet owner's Drive
+ * and answers with a link any device can render.
+ *
+ * Not queued with the row writes on purpose: a photo is hundreds of kilobytes
+ * where a row is hundreds of bytes, and a queue that survives reloads in
+ * localStorage cannot reasonably carry it. A failed upload simply leaves the
+ * photo local, and the next sweep tries again.
+ */
+export async function uploadPhoto(
+  connection: SheetConnection,
+  request: { name: string; mimeType: string; data: string },
+  signal?: AbortSignal,
+): Promise<{ url: string; fileId: string }> {
+  const uploadDeadline =
+    signal ??
+    (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+      ? // A photo on a slow uplink needs longer than a row does.
+        AbortSignal.timeout(90_000)
+      : undefined);
+
+  const data = (await postToSheet(
+    connection,
+    {
+      action: "uploadPhoto",
+      name: request.name,
+      mimeType: request.mimeType,
+      data: request.data,
+    },
+    uploadDeadline,
+  )) as { url?: string; fileId?: string } | undefined;
+
+  const url = String(data?.url ?? "").trim();
+  if (!/^https?:\/\//i.test(url)) {
+    throw new SheetError("The script saved the photo but didn’t hand back its link.", "malformed");
+  }
+  return { url, fileId: String(data?.fileId ?? "").trim() };
 }
 
 /** Sets Deleted? to Yes. The row itself always stays where it is. */

@@ -45,6 +45,17 @@ const VISIT_HEADERS = [
   "Accommodation Name", "Accommodation URL", "Booking Reference", "Transport Notes",
   "Highlights", "Lessons Learned", "Weather Summary", "Budget Estimate",
   "Actual Cost", "Currency",
+  // Appended by ensureBookkeepingColumns_ in Code.gs, so writes and soft
+  // deletes work on this tab the same way they do everywhere else.
+  "Created At", "Updated At", "Last Synced At", "Sync Version", "Archived?", "Deleted?",
+];
+
+const MEDIA_HEADERS = [
+  "Media ID", "Place ID", "Visit ID", "Media Type", "Title", "URL", "File Name",
+  "Caption", "Taken Date", "Credit / Creator", "License / Permission", "Favorite?",
+  "Created At", "Updated At",
+  // Appended by ensureBookkeepingColumns_ in Code.gs, as above.
+  "Last Synced At", "Sync Version", "Archived?", "Deleted?",
 ];
 
 /**
@@ -98,25 +109,54 @@ const places = [
   makePlace({ "Place ID": "PL-0008", "Place Name": "Somewhere I removed", "Status": "Been", "Country": "France", "Country Code": "FR", "Latitude": "48.856600", "Longitude": "2.352200", "Created At": "2020-01-01", "Updated At": "2020-02-01", "Sync Version": 2, "Archived?": "No", "Deleted?": "Yes" }),
 ];
 
-// Two visits on one place, to prove they fold into a single span on reload.
+const VI = index(VISIT_HEADERS);
+const MI = index(MEDIA_HEADERS);
+
+function makeVisit(values) {
+  const row = blank(VISIT_HEADERS);
+  for (const [header, value] of Object.entries(values)) row[VI[header]] = value;
+  return row;
+}
+
+// Two visits on one place: the card lists both, and they fold into one
+// First/Last span on the Places side.
 const visits = [
-  (() => { const r = blank(VISIT_HEADERS); const m = index(VISIT_HEADERS);
-    r[m["Place ID"]] = "PL-0002"; r[m["Visit ID"]] = "VIS-0001";
-    r[m["Start Date"]] = "2019-05-01"; r[m["End Date"]] = "2019-05-08"; return r; })(),
-  (() => { const r = blank(VISIT_HEADERS); const m = index(VISIT_HEADERS);
-    r[m["Place ID"]] = "PL-0002"; r[m["Visit ID"]] = "VIS-0002";
-    r[m["Start Date"]] = "2023-09-12"; r[m["End Date"]] = "2023-09-19"; return r; })(),
+  makeVisit({
+    "Place ID": "PL-0002", "Visit ID": "VIS-0001", "Visit Status": "Been",
+    "Start Date": "2019-05-01", "End Date": "2019-05-08", "Days": "8",
+    "Year": "2019", "Month": "May", "Season": "Spring", "Trip Type": "Friends",
+    "Highlights": "First time — the trip that started it.",
+    "Archived?": "No", "Deleted?": "No",
+  }),
+  makeVisit({
+    "Place ID": "PL-0002", "Visit ID": "VIS-0002", "Visit Status": "Been",
+    "Start Date": "2023-09-12", "End Date": "2023-09-19", "Days": "8",
+    "Year": "2023", "Month": "September", "Season": "Autumn/Fall", "Trip Type": "Couple",
+    "Archived?": "No", "Deleted?": "No",
+  }),
 ];
+
+/** Media rows start empty; uploads made against this mock land here. */
+const media = [];
 
 /** Trips start empty, the way a sheet that has never had one does. */
 const trips = [];
+
+/** Uploaded photo bytes, served back at /photo/<id> so <img> tags work. */
+const photos = new Map();
+let nextPhotoNumber = 1;
 
 /**
  * Google Places is off unless asked for — `MOCK_PLACES=1 npm run mock-sheet` —
  * because a sheet with no API key is the default case and the one most worth
  * developing against.
  */
-const CAPABILITIES = { placesSearch: process.env.MOCK_PLACES === "1" };
+const CAPABILITIES = {
+  placesSearch: process.env.MOCK_PLACES === "1",
+  // The mock can always "upload": bytes are held in memory and served back
+  // from /photo/<id>, standing in for the Drive link the real script returns.
+  photoUpload: true,
+};
 
 /** A few results shaped exactly like the script's, for the on case. */
 const MOCK_PLACES = [
@@ -188,15 +228,6 @@ function applyTripDerived(row, isNew) {
   if (!String(row[TI["Deleted?"]] || "").trim()) row[TI["Deleted?"]] = "No";
 }
 
-function nextTripId() {
-  let highest = 0;
-  for (const row of trips) {
-    const m = /^TRIP-(\d+)$/.exec(String(row[TI["Trip ID"]]).trim());
-    if (m) highest = Math.max(highest, parseInt(m[1], 10));
-  }
-  return `TRIP-${String(highest + 1).padStart(4, "0")}`;
-}
-
 function applyDerived(row, isNew) {
   const now = stamp();
   if (isNew || !String(row[PI["Created At"]] || "").trim()) row[PI["Created At"]] = now;
@@ -220,14 +251,46 @@ function applyDerived(row, isNew) {
     .join(" ").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-function nextId() {
+/**
+ * The tabs the app writes, in one shape — mirroring how Code.gs drives every
+ * write off its TABS config rather than special-casing each tab. `derive` is
+ * the tab's own extra columns; the timestamps are common to all of them.
+ */
+function stampCommon(row, map, isNew) {
+  const now = stamp();
+  if (map["Created At"] !== undefined && (isNew || !String(row[map["Created At"]] || "").trim())) {
+    row[map["Created At"]] = now;
+  }
+  if (map["Updated At"] !== undefined) row[map["Updated At"]] = now;
+  if (map["Last Synced At"] !== undefined) row[map["Last Synced At"]] = now;
+  if (map["Sync Version"] !== undefined) {
+    const v = parseInt(row[map["Sync Version"]], 10);
+    row[map["Sync Version"]] = Number.isNaN(v) || v < 1 ? 1 : v + 1;
+  }
+  if (map["Archived?"] !== undefined && !String(row[map["Archived?"]] || "").trim()) {
+    row[map["Archived?"]] = "No";
+  }
+  if (map["Deleted?"] !== undefined && !String(row[map["Deleted?"]] || "").trim()) {
+    row[map["Deleted?"]] = "No";
+  }
+}
+
+function nextIdFor(rows, map, idColumn, prefix) {
   let highest = 0;
-  for (const row of places) {
-    const m = /^PL-(\d+)$/.exec(String(row[PI["Place ID"]]).trim());
+  const pattern = new RegExp(`^${prefix}-(\\d+)$`);
+  for (const row of rows) {
+    const m = pattern.exec(String(row[map[idColumn]]).trim());
     if (m) highest = Math.max(highest, parseInt(m[1], 10));
   }
-  return `PL-${String(highest + 1).padStart(4, "0")}`;
+  return `${prefix}-${String(highest + 1).padStart(4, "0")}`;
 }
+
+const WRITABLE_TABS = {
+  Places: { headers: PLACES_HEADERS, map: PI, rows: places, idColumn: "Place ID", prefix: "PL", derive: applyDerived },
+  Trips: { headers: TRIP_HEADERS, map: TI, rows: trips, idColumn: "Trip ID", prefix: "TRIP", derive: applyTripDerived },
+  Dates_Visits: { headers: VISIT_HEADERS, map: VI, rows: visits, idColumn: "Visit ID", prefix: "VIS", derive: (row, isNew) => stampCommon(row, VI, isNew) },
+  Media_Links: { headers: MEDIA_HEADERS, map: MI, rows: media, idColumn: "Media ID", prefix: "MEDIA", derive: (row, isNew) => stampCommon(row, MI, isNew) },
+};
 
 function handle(action, body) {
   if (action === "ping") return { ok: true, schemaVersion: "3", capabilities: CAPABILITIES };
@@ -250,7 +313,7 @@ function handle(action, body) {
         Places: { headers: PLACES_HEADERS, rows: places },
         Dates_Visits: { headers: VISIT_HEADERS, rows: visits },
         Notes_Reviews: { headers: [], rows: [] },
-        Media_Links: { headers: [], rows: [] },
+        Media_Links: { headers: MEDIA_HEADERS, rows: media },
         Lists_Tags: { headers: [], rows: [] },
         Trips_Itinerary: { headers: [], rows: [] },
         Trips: { headers: TRIP_HEADERS, rows: trips },
@@ -262,67 +325,66 @@ function handle(action, body) {
 
   if (action === "getLookups") return { lookups: LOOKUPS };
 
+  // Stands in for the script's Drive upload: the bytes stay in this process
+  // and the returned link points back at it, so the swap from a local blob to
+  // a shared URL can be exercised end to end.
+  if (action === "uploadPhoto") {
+    const mimeType = String(body.mimeType || "image/jpeg");
+    if (!mimeType.startsWith("image/")) throw new Error("Only images can be uploaded.");
+    const data = String(body.data || "");
+    if (!data) throw new Error("The upload carried no photo data.");
+    let bytes;
+    try {
+      bytes = Buffer.from(data, "base64");
+    } catch {
+      throw new Error("The photo data was not readable.");
+    }
+    const id = `mockphoto-${nextPhotoNumber++}`;
+    photos.set(id, { bytes, mimeType });
+    return { url: `http://localhost:${PORT}/photo/${id}`, fileId: id };
+  }
+
   if (action === "upsertRow") {
     if (["Search_View", "Dashboard", "Guide"].includes(body.tab)) {
       throw new Error(`The tab "${body.tab}" is built from live formulas and is never written to.`);
     }
-    if (body.tab === "Trips") {
-      let tripId = String(body.id || "").trim();
-      let tripRow = tripId ? trips.find((r) => String(r[TI["Trip ID"]]).trim() === tripId) : null;
-      const isNewTrip = !tripRow;
-      if (isNewTrip) {
-        tripRow = blank(TRIP_HEADERS);
-        if (!tripId) tripId = nextTripId();
-        tripRow[TI["Trip ID"]] = tripId;
-        trips.push(tripRow);
-      }
-      for (const [header, value] of Object.entries(body.fields || {})) {
-        if (DERIVED.includes(header)) continue;
-        if (TI[header] === undefined) throw new Error(`The tab "Trips" has no column named "${header}".`);
-        tripRow[TI[header]] = value ?? "";
-      }
-      applyTripDerived(tripRow, isNewTrip);
-      log.push([stamp(), body.tab, tripId, isNewTrip ? "create" : "update", "ok"]);
-      return { id: tripId, row: tripRow, headers: TRIP_HEADERS };
-    }
+    const tab = WRITABLE_TABS[body.tab];
+    if (!tab) throw new Error(`The tab "${body.tab}" is not one this app writes to.`);
 
     let id = String(body.id || "").trim();
-    let row = id ? places.find((r) => String(r[PI["Place ID"]]).trim() === id) : null;
+    let row = id ? tab.rows.find((r) => String(r[tab.map[tab.idColumn]]).trim() === id) : null;
     const isNew = !row;
     if (isNew) {
-      row = blank(PLACES_HEADERS);
-      if (!id) id = nextId();
-      row[PI["Place ID"]] = id;
-      places.push(row);
+      row = blank(tab.headers);
+      if (!id) id = nextIdFor(tab.rows, tab.map, tab.idColumn, tab.prefix);
+      row[tab.map[tab.idColumn]] = id;
+      tab.rows.push(row);
     }
     for (const [header, value] of Object.entries(body.fields || {})) {
       if (DERIVED.includes(header)) continue;
-      if (PI[header] === undefined) throw new Error(`The tab "Places" has no column named "${header}".`);
-      row[PI[header]] = value ?? "";
+      if (tab.map[header] === undefined) throw new Error(`The tab "${body.tab}" has no column named "${header}".`);
+      row[tab.map[header]] = value ?? "";
     }
-    applyDerived(row, isNew);
+    tab.derive(row, isNew);
     log.push([stamp(), body.tab, id, isNew ? "create" : "update", "ok"]);
-    return { id, row, headers: PLACES_HEADERS };
+    return { id, row, headers: tab.headers };
   }
 
   if (action === "deleteRow") {
-    const id = String(body.id || "").trim();
-    if (body.tab === "Trips") {
-      const tripRow = trips.find((r) => String(r[TI["Trip ID"]]).trim() === id);
-      // Soft delete, as everywhere else: the row stays, the flag changes.
-      if (!tripRow) { log.push([stamp(), body.tab, id, "delete", "missing"]); return { id, deleted: true, missing: true }; }
-      tripRow[TI["Deleted?"]] = "Yes";
-      applyTripDerived(tripRow, false);
-      log.push([stamp(), body.tab, id, "delete", "ok"]);
-      return { id, deleted: true, row: tripRow, headers: TRIP_HEADERS };
-    }
+    const tab = WRITABLE_TABS[body.tab];
+    if (!tab) throw new Error(`The tab "${body.tab}" is not one this app writes to.`);
 
-    const row = places.find((r) => String(r[PI["Place ID"]]).trim() === id);
+    const id = String(body.id || "").trim();
+    const row = tab.rows.find((r) => String(r[tab.map[tab.idColumn]]).trim() === id);
+    // Soft delete, as everywhere else: the row stays, the flag changes.
     if (!row) { log.push([stamp(), body.tab, id, "delete", "missing"]); return { id, deleted: true, missing: true }; }
-    row[PI["Deleted?"]] = "Yes";
-    applyDerived(row, false);
+    if (tab.map["Deleted?"] === undefined) {
+      throw new Error(`The tab "${body.tab}" has no "Deleted?" column, so nothing can be soft-deleted there.`);
+    }
+    row[tab.map["Deleted?"]] = "Yes";
+    tab.derive(row, false);
     log.push([stamp(), body.tab, id, "delete", "ok"]);
-    return { id, deleted: true, row, headers: PLACES_HEADERS };
+    return { id, deleted: true, row, headers: tab.headers };
   }
 
   if (action === "setSetting") { settings[body.key] = body.value; return { key: body.key, value: body.value }; }
@@ -342,6 +404,23 @@ createServer((req, res) => {
   };
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
+
+  // Uploaded photos are served straight back, the way a Drive link would be.
+  // No access code on purpose: the real link is an unauthenticated image URL.
+  if (req.method === "GET" && url.pathname.startsWith("/photo/")) {
+    const stored = photos.get(url.pathname.slice("/photo/".length));
+    if (!stored) {
+      res.writeHead(404, { "Access-Control-Allow-Origin": "*" });
+      res.end("gone");
+      return;
+    }
+    res.writeHead(200, {
+      "Content-Type": stored.mimeType,
+      "Access-Control-Allow-Origin": "*",
+    });
+    res.end(stored.bytes);
+    return;
+  }
 
   if (req.method === "GET") {
     try {

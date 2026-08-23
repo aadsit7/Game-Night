@@ -1,5 +1,13 @@
+import { derivedVisitCells } from "@/lib/places/visits";
 import { clampLatitude, isValidLatitude, isValidLongitude, normalizeLongitude } from "@/lib/utils/geo";
-import type { NewPlaceInput, PlaceChanges, VisitedPlace } from "@/types/place";
+import type {
+  NewPlaceInput,
+  NewVisitInput,
+  PlaceChanges,
+  PlaceVisit,
+  VisitChanges,
+  VisitedPlace,
+} from "@/types/place";
 import type { NewTripInput, Trip, TripChanges } from "@/types/trip";
 
 /**
@@ -15,6 +23,7 @@ import type { NewTripInput, Trip, TripChanges } from "@/types/trip";
 export const PLACES_TAB = "Places";
 export const VISITS_TAB = "Dates_Visits";
 export const TRIPS_TAB = "Trips";
+export const MEDIA_TAB = "Media_Links";
 
 /** The columns the app reads and writes. Every other column is left alone. */
 export const COLUMNS = {
@@ -31,6 +40,10 @@ export const COLUMNS = {
   longitude: "Longitude",
   visitedFrom: "First Visited Date",
   visitedTo: "Last Visited Date",
+  // Written whenever the visit rows change, so the spreadsheet's own summary
+  // columns tell the same story the app derives from Dates_Visits.
+  visitCount: "Visit Count",
+  daysTotal: "Days Spent Total",
   // Already in the sheet, and meant for exactly this. Reusing it is why trips
   // need no new column on a 78-column tab that other formulas read.
   tripId: "Trip ID / Collection",
@@ -61,13 +74,52 @@ export const TRIP_COLUMNS = {
   archived: "Archived?",
 } as const;
 
-/** Dates_Visits columns, used read-only to fold multiple visits into a span. */
+/**
+ * Dates_Visits columns. One row per stay; the tab was in the spreadsheet all
+ * along ("Repeat rows support multiple trips to the same place", says its own
+ * description) — the app now writes it as well as reads it.
+ */
 export const VISIT_COLUMNS = {
   placeId: "Place ID",
   visitId: "Visit ID",
   start: "Start Date",
   end: "End Date",
+  tripId: "Trip ID",
+  status: "Visit Status",
+  tripType: "Trip Type",
+  notes: "Highlights",
+  // Derived from the dates on the way out, so the spreadsheet's own columns
+  // stay filled in for anyone reading it as a spreadsheet.
+  days: "Days",
+  year: "Year",
+  month: "Month",
+  season: "Season",
+  createdAt: "Created At",
+  updatedAt: "Updated At",
+  deleted: "Deleted?",
+  archived: "Archived?",
 } as const;
+
+/**
+ * Media_Links columns. The tab stores URLs against a place; the app uses it
+ * for photos uploaded to Drive, which is what lets a photo taken on one phone
+ * appear on every device that opens the sheet.
+ */
+export const MEDIA_COLUMNS = {
+  id: "Media ID",
+  placeId: "Place ID",
+  type: "Media Type",
+  title: "Title",
+  url: "URL",
+  fileName: "File Name",
+  createdAt: "Created At",
+  updatedAt: "Updated At",
+  deleted: "Deleted?",
+  archived: "Archived?",
+} as const;
+
+/** The Media Type word this app writes and looks for. */
+export const MEDIA_TYPE_PHOTO = "Photo";
 
 /**
  * Exact spellings from the Lookups tab. "Been" and "Want to go" are the
@@ -271,6 +323,210 @@ export function applyVisitSpans(
       visitedFrom: place.visitedFrom ?? span.from,
       visitedTo: place.visitedTo ?? span.to ?? place.visitedTo,
     };
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * Visits
+ * ------------------------------------------------------------------ */
+
+/**
+ * One Dates_Visits row as the app understands it.
+ *
+ * A row with no visit id or no place id is skipped, same rule as everywhere:
+ * a row someone started by hand should not become a broken card.
+ */
+export function visitFromRow(
+  row: unknown[],
+  index: Map<string, number>,
+  fallbackTime: string,
+): PlaceVisit | null {
+  const id = text(cell(row, index, VISIT_COLUMNS.visitId));
+  const placeId = text(cell(row, index, VISIT_COLUMNS.placeId));
+  if (!id || !placeId) return null;
+
+  const deleted = isYes(cell(row, index, VISIT_COLUMNS.deleted));
+  const updatedAt = timestamp(cell(row, index, VISIT_COLUMNS.updatedAt), fallbackTime);
+  const start = calendarDate(cell(row, index, VISIT_COLUMNS.start));
+
+  return {
+    id,
+    placeId,
+    startDate: start,
+    endDate: calendarDate(cell(row, index, VISIT_COLUMNS.end)) ?? start,
+    tripId: text(cell(row, index, VISIT_COLUMNS.tripId)),
+    status: text(cell(row, index, VISIT_COLUMNS.status)),
+    tripType: text(cell(row, index, VISIT_COLUMNS.tripType)),
+    notes: text(cell(row, index, VISIT_COLUMNS.notes)),
+    createdAt: timestamp(cell(row, index, VISIT_COLUMNS.createdAt), fallbackTime),
+    updatedAt,
+    deletedAt: deleted ? updatedAt : undefined,
+  };
+}
+
+/**
+ * Every visit on the Dates_Visits tab. An absent tab is not an error — a
+ * sheet without one simply has no logged visits, and the Places dates still
+ * carry the history exactly as they always did.
+ */
+export function visitsFromTable(table: SheetTable | undefined, fallbackTime: string): PlaceVisit[] {
+  if (!table) return [];
+  const index = indexHeaders(table.headers);
+  if (!index.has(VISIT_COLUMNS.visitId) || !index.has(VISIT_COLUMNS.placeId)) return [];
+
+  const visits: PlaceVisit[] = [];
+  const seen = new Set<string>();
+
+  for (const row of table.rows) {
+    const visit = visitFromRow(row, index, fallbackTime);
+    if (visit && !seen.has(visit.id)) {
+      seen.add(visit.id);
+      visits.push(visit);
+    }
+  }
+  return visits;
+}
+
+/**
+ * The cells a visit save should change, keyed by header text.
+ *
+ * Whenever either date is touched the derived columns — Days, Year, Month,
+ * Season — are recomputed and sent along, so the spreadsheet's own view of a
+ * visit never drifts from the dates beside it. Timestamps stay the script's.
+ */
+export function fieldsFromVisitChanges(
+  changes: VisitChanges | (NewVisitInput & { placeId?: string }),
+  options: { isNew?: boolean; placeId?: string } = {},
+): Record<string, string> {
+  const fields: Record<string, string> = {};
+  const source = changes as Record<string, unknown>;
+  const has = (key: string) => key in source;
+  const put = (column: string, value: string | undefined) => {
+    fields[column] = value ?? "";
+  };
+
+  if (options.placeId) put(VISIT_COLUMNS.placeId, options.placeId);
+
+  if (has("startDate")) put(VISIT_COLUMNS.start, (changes as VisitChanges).startDate);
+  if (has("endDate")) put(VISIT_COLUMNS.end, (changes as VisitChanges).endDate);
+  if (has("tripId")) put(VISIT_COLUMNS.tripId, (changes as VisitChanges).tripId?.trim());
+  if (has("tripType")) put(VISIT_COLUMNS.tripType, (changes as VisitChanges).tripType?.trim());
+  if (has("status")) put(VISIT_COLUMNS.status, (changes as VisitChanges).status?.trim());
+  if (has("notes")) put(VISIT_COLUMNS.notes, (changes as VisitChanges).notes?.trim());
+
+  if (has("startDate") || has("endDate")) {
+    const derived = derivedVisitCells(
+      (changes as VisitChanges).startDate,
+      (changes as VisitChanges).endDate,
+    );
+    put(VISIT_COLUMNS.days, derived.days);
+    put(VISIT_COLUMNS.year, derived.year);
+    put(VISIT_COLUMNS.month, derived.month);
+    put(VISIT_COLUMNS.season, derived.season);
+  }
+
+  if (options.isNew) {
+    put(VISIT_COLUMNS.archived, "No");
+    put(VISIT_COLUMNS.deleted, "No");
+  }
+
+  return fields;
+}
+
+/**
+ * Keeps a write inside the columns the sheet actually has.
+ *
+ * The script refuses a field whose header it cannot find — rightly, for a
+ * typo — but a sheet whose Dates_Visits tab predates the bookkeeping columns
+ * is not a typo, it is an older sheet. Trimming to the headers seen at load
+ * time means the visit still saves there, just without the extras.
+ */
+export function restrictToHeaders(
+  fields: Record<string, string>,
+  headers: string[] | undefined,
+): Record<string, string> {
+  if (!headers || headers.length === 0) return fields;
+  const allowed = indexHeaders(headers);
+  const kept: Record<string, string> = {};
+  for (const [column, value] of Object.entries(fields)) {
+    if (allowed.has(column)) kept[column] = value;
+  }
+  return kept;
+}
+
+/* ------------------------------------------------------------------ *
+ * Media links — remote photos
+ * ------------------------------------------------------------------ */
+
+export type MediaLink = {
+  id: string;
+  placeId: string;
+  url: string;
+};
+
+/**
+ * The photo rows of Media_Links: one per uploaded picture, pointing at the
+ * place it belongs to. Rows whose type isn't a photo — websites, bookings,
+ * guides — are left for the spreadsheet's own use.
+ */
+export function mediaFromTable(table: SheetTable | undefined): MediaLink[] {
+  if (!table) return [];
+  const index = indexHeaders(table.headers);
+  if (!index.has(MEDIA_COLUMNS.id) || !index.has(MEDIA_COLUMNS.url)) return [];
+
+  const media: MediaLink[] = [];
+  const seen = new Set<string>();
+
+  for (const row of table.rows) {
+    const id = text(cell(row, index, MEDIA_COLUMNS.id));
+    const placeId = text(cell(row, index, MEDIA_COLUMNS.placeId));
+    const url = text(cell(row, index, MEDIA_COLUMNS.url));
+    const type = text(cell(row, index, MEDIA_COLUMNS.type));
+    if (!id || !placeId || !url || seen.has(id)) continue;
+    if (isYes(cell(row, index, MEDIA_COLUMNS.deleted))) continue;
+    if (type !== MEDIA_TYPE_PHOTO || !isRemotePhoto(url)) continue;
+
+    seen.add(id);
+    media.push({ id, placeId, url });
+  }
+  return media;
+}
+
+/**
+ * Attaches uploaded photos to their places.
+ *
+ * The Photo URL column stays the cover; Media_Links holds the rest. Anything
+ * already on the place — the cover, a link typed by hand — is not repeated.
+ */
+export function applyMediaPhotos(places: VisitedPlace[], media: MediaLink[]): VisitedPlace[] {
+  if (media.length === 0) return places;
+
+  const byPlace = new Map<string, string[]>();
+  for (const link of media) {
+    const list = byPlace.get(link.placeId) ?? [];
+    list.push(link.url);
+    byPlace.set(link.placeId, list);
+  }
+
+  return places.map((place) => {
+    const urls = byPlace.get(place.id);
+    if (!urls) return place;
+
+    const existing = new Set([place.coverImage, ...(place.photos ?? [])]);
+    const extra = urls.filter((url) => !existing.has(url));
+    if (extra.length === 0) return place;
+
+    // A place with no cover gets one from its uploads, so the card leads with
+    // a photograph on every device rather than only the one that took it.
+    if (!place.coverImage) {
+      const [cover, ...rest] = extra;
+      return {
+        ...place,
+        coverImage: cover,
+        photos: [...(place.photos ?? []), ...rest],
+      };
+    }
+    return { ...place, photos: [...(place.photos ?? []), ...extra] };
   });
 }
 
