@@ -22,6 +22,7 @@ import {
 } from "@/components/photos/DeviceMediaIntake";
 import { GooglePhotosFlowSheet } from "@/components/photos/GooglePhotosReviewSheet";
 import { MediaCodeSheet } from "@/components/photos/MediaCodeSheet";
+import { PlayerView } from "@/components/photos/PlayerView";
 import { TravelMediaPlayer } from "@/components/photos/TravelMediaPlayer";
 import { AdjustPinBar } from "@/components/place/AdjustPinBar";
 import { LocationSearchSheet } from "@/components/place/LocationSearchSheet";
@@ -1832,6 +1833,40 @@ export function AppShell() {
               bottomInset={tabBarHeight + 16}
               onOpenTrip={openTripDetail}
               onCreateTrip={startCreateTrip}
+            />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* The Player — everything with media attached, ready to watch — slides
+          over the globe the same way the other tabs do. */}
+      <AnimatePresence>
+        {mode === "player" ? (
+          <motion.div
+            key="player"
+            className="absolute inset-0 z-20"
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 22 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 22 }}
+            transition={
+              reduceMotion ? { duration: 0 } : { duration: 0.3, ease: [0.2, 0.8, 0.3, 1] }
+            }
+          >
+            <PlayerView
+              trips={trips}
+              places={places}
+              visits={visits}
+              travelPhotos={travelPhotos}
+              loading={status === "loading"}
+              photosEnabled={photosEnabled}
+              bottomInset={tabBarHeight + 16}
+              onPlayTrip={startTripMemories}
+              onPlayPlace={startPlaceMemories}
+              onOpenTrip={openTripDetail}
+              onOpenPlace={openDetail}
+              onBrowsePlaces={() => setMode("places")}
+              onNeedMediaCode={() => setMediaCodeOpen(true)}
+              galleryEpoch={galleryEpoch}
             />
           </motion.div>
         ) : null}
