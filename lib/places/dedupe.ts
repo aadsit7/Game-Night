@@ -17,11 +17,21 @@ import type { NewPlaceInput, VisitedPlace } from "@/types/place";
 const METERS_PER_DEGREE = 111_320;
 
 /**
- * Close enough to be the same answer from the same search. Two branches of a
- * coffee shop across a city are kilometres apart; two taps on the same search
- * result are metres apart.
+ * Close enough to be the same answer from the same search. Two taps on the
+ * same result land within GPS noise of each other; two different shops in
+ * the same block are already further apart than this. Tight on purpose —
+ * merging two genuinely different places loses a record, while missing a
+ * duplicate merely leaves things as they were.
  */
-const SAME_SPOT_METERS = 150;
+const SAME_SPOT_METERS = 60;
+
+/**
+ * How far apart two same-named places in one country can be and still be the
+ * same place. Kyoto re-added is metres from Kyoto; Springfield, Illinois is
+ * a thousand kilometres from Springfield, Massachusetts and must not merge
+ * into it just because both sit in the US.
+ */
+const SAME_NAME_MAX_METERS = 50_000;
 
 /**
  * Lowercased, accent-stripped, single-spaced — so "São Paulo" and "Sao Paulo"
@@ -58,11 +68,12 @@ function metersApart(a: NewPlaceInput, b: VisitedPlace): number {
 /**
  * The already-saved place this input duplicates, or null.
  *
- * Name matches only count within the same country — there is a Springfield
- * everywhere — and a coordinate match needs no name at all, because two pins
- * on the same rooftop are the same place whatever they were typed in as.
- * Tombstoned records never match: re-adding somewhere deleted should genuinely
- * re-add it.
+ * Name matches only count within the same country and within shouting
+ * distance — there is a Springfield everywhere, including several per
+ * country — and a coordinate match needs no name at all, because two pins on
+ * the same rooftop are the same place whatever they were typed in as.
+ * Tombstoned records never match: re-adding somewhere deleted should
+ * genuinely re-add it.
  */
 export function findDuplicatePlace(
   input: NewPlaceInput,
@@ -73,10 +84,16 @@ export function findDuplicatePlace(
   for (const place of places) {
     if (place.deletedAt) continue;
 
-    if (name && normalizePlaceName(place.name) === name && sameCountry(input, place)) {
+    const distance = metersApart(input, place);
+    if (
+      name &&
+      normalizePlaceName(place.name) === name &&
+      sameCountry(input, place) &&
+      distance <= SAME_NAME_MAX_METERS
+    ) {
       return place;
     }
-    if (metersApart(input, place) <= SAME_SPOT_METERS) {
+    if (distance <= SAME_SPOT_METERS) {
       return place;
     }
   }

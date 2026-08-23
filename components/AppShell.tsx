@@ -141,6 +141,7 @@ export function AppShell() {
     addVisit,
     updateVisit,
     deleteVisit,
+    clearImplicitVisit,
     movePlace,
     deletePlace,
     restorePlace,
@@ -190,6 +191,8 @@ export function AppShell() {
   const [tripFormError, setTripFormError] = useState<string | null>(null);
 
   const [visitDraft, setVisitDraft] = useState<VisitDraft>(emptyVisitDraft);
+  const [visitDraftBaseline, setVisitDraftBaseline] = useState<VisitDraft>(emptyVisitDraft);
+  const [discardVisitPrompt, setDiscardVisitPrompt] = useState(false);
   const [visitSaving, setVisitSaving] = useState(false);
   const [visitError, setVisitError] = useState<string | null>(null);
 
@@ -550,6 +553,11 @@ export function AppShell() {
           }
         }
       }
+      // Adding from inside a trip must actually put the place in the trip —
+      // the trip screen lists members by the place's own trip cell. A trip
+      // the place already belongs to is never overwritten.
+      if (input.tripId && !existing.tripId) additions.tripId = input.tripId;
+
       if (Object.keys(additions).length > 0) await updatePlace(existing.id, additions);
 
       let message: string;
@@ -655,23 +663,41 @@ export function AppShell() {
   /* ---------------------------------------------------------------------- */
 
   const startAddVisit = useCallback((placeId: string) => {
-    setVisitDraft(emptyVisitDraft());
+    const fresh = emptyVisitDraft();
+    setVisitDraft(fresh);
+    setVisitDraftBaseline(fresh);
     setVisitError(null);
     setOverlays((current) => [...current, { kind: "visitForm", placeId }]);
   }, []);
 
   const startEditVisit = useCallback((placeId: string, visit: PlaceVisit) => {
-    setVisitDraft({
+    const fresh: VisitDraft = {
       startDate: visit.startDate ?? "",
       endDate: visit.endDate ?? "",
       tripId: visit.tripId ?? "",
       tripType: visit.tripType ?? "",
       notes: visit.notes ?? "",
       lived: isResidenceStatus(visit.status),
-    });
+    };
+    setVisitDraft(fresh);
+    setVisitDraftBaseline(fresh);
     setVisitError(null);
     setOverlays((current) => [...current, { kind: "visitForm", placeId, visitId: visit.id }]);
   }, []);
+
+  /** The same rule as the place and trip forms: typed input never vanishes silently. */
+  const guardVisitFormClose = useCallback(() => {
+    const dirty =
+      visitDraft.startDate !== visitDraftBaseline.startDate ||
+      visitDraft.endDate !== visitDraftBaseline.endDate ||
+      visitDraft.tripId !== visitDraftBaseline.tripId ||
+      visitDraft.tripType !== visitDraftBaseline.tripType ||
+      visitDraft.notes !== visitDraftBaseline.notes ||
+      visitDraft.lived !== visitDraftBaseline.lived;
+    if (!dirty) return true;
+    setDiscardVisitPrompt(true);
+    return false;
+  }, [visitDraft, visitDraftBaseline]);
 
   const saveVisit = useCallback(async () => {
     const overlay = visitFormOverlay;
@@ -700,7 +726,14 @@ export function AppShell() {
         await addVisit(overlay.placeId, input, { materializeImplicit: false });
         showToast(whenOffline("Visit updated", "Updated here — it’ll sync when you’re back"));
       } else {
-        const existing = getVisits(overlay.placeId).find((v) => v.id === overlay.visitId);
+        // The overlay froze both ids when the form opened; if the visit's or
+        // the place's create landed meanwhile, the sheet renamed them.
+        // Follow the renames, or the status-preservation rules below would
+        // judge a blank. (resolveTripId is the store's generic id resolver.)
+        const targetVisitId = resolveTripId(overlay.visitId);
+        const existing = getVisits(resolveTripId(overlay.placeId)).find(
+          (v) => v.id === targetVisitId,
+        );
         const changes: VisitChanges = { ...input };
         if (visitDraft.lived) {
           changes.status = VISIT_STATUS_LIVED;
@@ -717,7 +750,7 @@ export function AppShell() {
             delete changes.status;
           }
         }
-        await updateVisit(overlay.visitId, changes);
+        await updateVisit(targetVisitId, changes);
         showToast(whenOffline("Visit updated", "Updated here — it’ll sync when you’re back"));
       }
       popOverlay();
@@ -726,7 +759,16 @@ export function AppShell() {
     } finally {
       setVisitSaving(false);
     }
-  }, [visitFormOverlay, visitDraft, addVisit, updateVisit, getVisits, popOverlay, showToast]);
+  }, [
+    visitFormOverlay,
+    visitDraft,
+    addVisit,
+    updateVisit,
+    getVisits,
+    resolveTripId,
+    popOverlay,
+    showToast,
+  ]);
 
   const performDeleteVisit = useCallback(async () => {
     const target = confirmDeleteVisit;
@@ -736,8 +778,8 @@ export function AppShell() {
     try {
       if (isImplicitVisitId(target.visitId)) {
         // The implied visit has no row of its own to remove — clearing the
-        // place's dates is the whole of removing it.
-        await updatePlace(target.placeId, { visitedFrom: undefined, visitedTo: undefined });
+        // place's dates (and the sheet's summary columns) is the whole of it.
+        await clearImplicitVisit(target.placeId);
       } else {
         await deleteVisit(target.visitId);
       }
@@ -748,7 +790,7 @@ export function AppShell() {
         tone: "error",
       });
     }
-  }, [confirmDeleteVisit, updatePlace, deleteVisit, showToast]);
+  }, [confirmDeleteVisit, clearImplicitVisit, deleteVisit, showToast]);
 
   /* ---------------------------------------------------------------------- */
   /* Photos                                                                   */
@@ -1705,6 +1747,7 @@ export function AppShell() {
         onChange={setVisitDraft}
         onSave={() => void saveVisit()}
         onClose={popOverlay}
+        onRequestClose={guardVisitFormClose}
         onDelete={
           visitFormOverlay?.kind === "visitForm" && visitFormOverlay.visitId
             ? () =>
@@ -1894,6 +1937,20 @@ export function AppShell() {
         confirmLabel="Delete"
         onCancel={() => setConfirmDeleteId(null)}
         onConfirm={() => confirmDeleteId && void performDelete(confirmDeleteId)}
+      />
+
+      <ConfirmDialog
+        open={discardVisitPrompt}
+        title="Discard changes?"
+        message="Your edits to this visit won’t be saved."
+        confirmLabel="Discard"
+        cancelLabel="Keep Editing"
+        onCancel={() => setDiscardVisitPrompt(false)}
+        onConfirm={() => {
+          setDiscardVisitPrompt(false);
+          setVisitDraft(visitDraftBaseline);
+          popOverlay();
+        }}
       />
 
       <ConfirmDialog

@@ -678,16 +678,43 @@ function photosFolder_() {
   var savedId = properties.getProperty(PHOTOS_FOLDER_PROPERTY);
   if (savedId) {
     try {
-      return DriveApp.getFolderById(savedId);
+      var saved = DriveApp.getFolderById(savedId);
+      // getFolderById happily returns a folder sitting in the trash, and a
+      // photo filed there vanishes with the trash. Treat it as gone.
+      if (!saved.isTrashed()) return saved;
     } catch (error) {
-      // The folder was deleted; fall through and make a fresh one.
+      // The folder was deleted outright; fall through and make a fresh one.
     }
   }
 
-  var existing = DriveApp.getFoldersByName(PHOTOS_FOLDER_NAME);
-  var folder = existing.hasNext() ? existing.next() : DriveApp.createFolder(PHOTOS_FOLDER_NAME);
-  properties.setProperty(PHOTOS_FOLDER_PROPERTY, folder.getId());
-  return folder;
+  // Uploads skip the write lock, so two first-ever uploads could race each
+  // other here and mint two folders. Creation alone takes the lock; once the
+  // property is set, this branch is never reached again.
+  var lock = LockService.getScriptLock();
+  var locked = lock.tryLock(10000);
+  try {
+    var refreshed = properties.getProperty(PHOTOS_FOLDER_PROPERTY);
+    if (refreshed && refreshed !== savedId) {
+      try {
+        var winner = DriveApp.getFolderById(refreshed);
+        if (!winner.isTrashed()) return winner;
+      } catch (error) {
+        // Fall through to creation.
+      }
+    }
+
+    var existing = DriveApp.getFoldersByName(PHOTOS_FOLDER_NAME);
+    var folder = null;
+    while (existing.hasNext()) {
+      var candidate = existing.next();
+      if (!candidate.isTrashed()) { folder = candidate; break; }
+    }
+    if (!folder) folder = DriveApp.createFolder(PHOTOS_FOLDER_NAME);
+    properties.setProperty(PHOTOS_FOLDER_PROPERTY, folder.getId());
+    return folder;
+  } finally {
+    if (locked) lock.releaseLock();
+  }
 }
 
 function uploadPhoto_(body) {
@@ -714,8 +741,23 @@ function uploadPhoto_(body) {
 
   var file = photosFolder_().createFile(blob);
   // Anyone with the link can view — the link lives in a spreadsheet cell and
-  // every device that reads the sheet has to be able to render it.
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  // every device that reads the sheet has to be able to render it. A
+  // Workspace domain can forbid link sharing; an unshareable photo is useless
+  // to the other devices, so the file is withdrawn rather than orphaned and
+  // the app is told plainly why.
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (sharingError) {
+    try {
+      file.setTrashed(true);
+    } catch (cleanupError) {
+      // The upload already failed; the trash attempt was best effort.
+    }
+    throw new Error(
+      'Drive refused to share the photo by link, so other devices could never load it. ' +
+      'Check the Google account\'s sharing settings.'
+    );
+  }
 
   // lh3.googleusercontent.com serves the raw image bytes for a shared Drive
   // file, which is what an <img> tag needs; the drive.google.com viewer URL

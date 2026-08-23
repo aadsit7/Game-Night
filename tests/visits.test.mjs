@@ -149,6 +149,20 @@ test("an absent tab reads as no visits, not a failure", () => {
   assert.deepEqual(visitsFromTable(undefined, NOW), []);
 });
 
+test("a hand-edited row that ends before it starts cannot invert the span", () => {
+  const table = {
+    headers: VISIT_HEADERS,
+    rows: [
+      row(VISIT_HEADERS, {
+        "Place ID": "PL-0001", "Visit ID": "VIS-0001",
+        "Start Date": "2024-02-10", "End Date": "2024-02-07",
+      }),
+    ],
+  };
+  const [visit] = visitsFromTable(table, NOW);
+  assert.equal(visit.endDate, "2024-02-10", "the start wins over an inverted end");
+});
+
 /* ------------------------------------------------------------------ *
  * Writing visits
  * ------------------------------------------------------------------ */
@@ -289,10 +303,20 @@ test("accents don't hide a duplicate", () => {
   assert.equal(normalizePlaceName("São  Paulo"), "sao paulo");
   const existing = place({ name: "São Paulo", country: "Brazil", countryCode: "BR", latitude: -23.55, longitude: -46.63 });
   const match = findDuplicatePlace(
-    { name: "Sao Paulo", country: "Brazil", countryCode: "BR", latitude: -20, longitude: -40 },
+    { name: "Sao Paulo", country: "Brazil", countryCode: "BR", latitude: -23.5, longitude: -46.6 },
     [existing],
   );
   assert.equal(match, existing);
+});
+
+test("the same name far away in the same country stays separate", () => {
+  // Springfield, Massachusetts is not Springfield, Illinois.
+  const existing = place({ name: "Springfield", countryCode: "US", latitude: 42.1, longitude: -72.59 });
+  const match = findDuplicatePlace(
+    { name: "Springfield", country: "United States", countryCode: "US", latitude: 39.78, longitude: -89.65 },
+    [existing],
+  );
+  assert.equal(match, null);
 });
 
 test("the same name in a different country is a different place", () => {

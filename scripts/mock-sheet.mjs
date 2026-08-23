@@ -527,6 +527,11 @@ function handle(action, body) {
     } catch {
       throw new Error("The photo data was not readable.");
     }
+    // Same cap as MAX_PHOTO_BYTES in Code.gs — an oversized photo must be
+    // refused here exactly as it would be in production.
+    if (bytes.length > 8 * 1024 * 1024) {
+      throw new Error("That photo is too large to upload.");
+    }
     const id = `mockphoto-${nextPhotoNumber++}`;
     photos.set(id, { bytes, mimeType });
     return { url: `http://localhost:${PORT}/photo/${id}`, fileId: id };

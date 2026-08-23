@@ -121,6 +121,11 @@ export function PlaceDetailSheet({
 
   const been = Boolean(place && !place.wantToGo);
   const stats = visitStats(visits);
+  // The pill claims you've BEEN — a stay still ahead on the calendar hasn't
+  // happened yet, however firmly it is planned.
+  const beenCount = visits.filter(
+    (visit) => !isUpcomingVisit(visit) && !isResidenceVisit(visit),
+  ).length;
   const photoCount = extraPhotos.length + (hasCover ? 1 : 0);
   const placePhotos = place ? photosForPlace(travelPhotos, place.id) : [];
   /** More than one gallery worth combining — the "All photos" strip. */
@@ -222,18 +227,18 @@ export function PlaceDetailSheet({
                   Want to go
                 </Badge>
               </div>
-            ) : stats.hasResidence || stats.count > 0 ? (
+            ) : stats.hasResidence || beenCount > 0 ? (
               <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                 {stats.hasResidence ? (
                   <Badge icon={<Home size={13} aria-hidden="true" />} tone="accent">
                     Lived here
                   </Badge>
                 ) : null}
-                {stats.count > 0 ? (
+                {beenCount > 0 ? (
                   <Badge icon={<Plane size={13} aria-hidden="true" />} tone="accent">
-                    {stats.count === 1
+                    {beenCount === 1
                       ? "You’ve been here once"
-                      : `You’ve been here ${stats.count} times`}
+                      : `You’ve been here ${beenCount} times`}
                   </Badge>
                 ) : null}
               </div>

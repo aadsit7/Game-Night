@@ -39,6 +39,7 @@ import {
 import {
   implicitVisit,
   isImplicitVisitId,
+  isUpcomingVisit,
   visitSpan,
   visitStats,
   visitStatusFor,
@@ -231,6 +232,20 @@ class SheetPlaceRepository implements PlaceRepository {
 
   /** One Drive sweep at a time; a second request just waits for the next one. */
   private photoSweepRunning = false;
+
+  /**
+   * Local refs the script refused outright — too large, not an image, a
+   * sharing policy. Retrying such an upload would fail identically and block
+   * every photo behind it, so the sweep skips them for this session.
+   */
+  private refusedPhotoRefs = new Set<string>();
+
+  /**
+   * Local ref to the link it was uploaded as. An edit form opened before the
+   * sweep still holds the ref; without this, saving that form would put the
+   * blob reference back over the link and tear down the Media_Links row.
+   */
+  private uploadedPhotoUrls = new Map<string, string>();
 
   private lookups: Record<string, string[]> = {};
   private settings: Record<string, string> = {};
@@ -471,7 +486,13 @@ class SheetPlaceRepository implements PlaceRepository {
       const withSpans = applyVisitSpans(fromSheet, spans);
 
       const mediaTable = snapshot.tabs[MEDIA_TAB];
-      this.media = mediaFromTable(mediaTable);
+      // Media rows still queued locally survive the reload the same way
+      // pending places do — the sheet hasn't been told about them yet.
+      const pendingWrites = pendingKeys(this.queue);
+      this.media = [
+        ...mediaFromTable(mediaTable),
+        ...this.media.filter((link) => pendingWrites.has(link.id)),
+      ];
       this.mediaHeaders = mediaTable?.headers ?? [];
       const withMedia = applyMediaPhotos(withSpans, this.media);
 
@@ -849,6 +870,24 @@ class SheetPlaceRepository implements PlaceRepository {
       throw new PersistenceError("That place no longer exists.");
     }
 
+    // A form opened before the Drive sweep ran still holds local blob refs
+    // for photos that have since been uploaded. Saving those refs as-is would
+    // revert the link swap — and the blob behind them is already gone — so
+    // they are translated to their uploaded links on the way in.
+    if (this.uploadedPhotoUrls.size > 0) {
+      const translate = (ref: string | undefined) =>
+        ref ? (this.uploadedPhotoUrls.get(ref) ?? ref) : ref;
+      if ("coverImage" in changes) changes = { ...changes, coverImage: translate(changes.coverImage) };
+      if ("photos" in changes && changes.photos) {
+        // De-duped: the translated ref and the already-swapped link are the
+        // same picture, and it should not appear twice.
+        changes = {
+          ...changes,
+          photos: [...new Set(changes.photos.map((photo) => translate(photo) as string))],
+        };
+      }
+    }
+
     const previous = this.places[index];
     const merged: VisitedPlace = {
       ...previous,
@@ -924,8 +963,27 @@ class SheetPlaceRepository implements PlaceRepository {
     this.persist();
 
     // A record the sheet has never seen has nothing to soft-delete; the queue
-    // drops its create instead, and the local photo record goes with it.
-    if (isLocalId(id)) forgetLocalPhotos(id);
+    // drops its create instead, and the local photo record goes with it. So
+    // do the visit and photo rows queued against it — flushed, they would
+    // land in the sheet pointing at a place id that never existed there.
+    if (isLocalId(id)) {
+      forgetLocalPhotos(id);
+      this.queue = this.queue.filter(
+        (write) => !(write.kind === "upsert" && write.fields[VISIT_COLUMNS.placeId] === id),
+      );
+      saveQueue(this.queue);
+      if (this.visits.some((visit) => visit.placeId === id && !visit.deletedAt)) {
+        this.commitVisits(
+          this.visits.map((visit) =>
+            visit.placeId === id && !visit.deletedAt
+              ? { ...visit, deletedAt: now, updatedAt: now }
+              : visit,
+          ),
+        );
+      }
+      this.media = this.media.filter((link) => link.placeId !== id);
+      this.persist();
+    }
 
     this.push({ kind: "delete", key: id, id, tab: PLACES_TAB, queuedAt: now });
   }
@@ -975,6 +1033,12 @@ class SheetPlaceRepository implements PlaceRepository {
    * groups on one date range keeps working untouched.
    * ---------------------------------------------------------------- */
 
+  /** A trimmed id, followed through any adoption it has been through. */
+  private resolveTrimmed(value: string | undefined): string | undefined {
+    const cleaned = trimmed(value);
+    return cleaned ? this.resolveId(cleaned) : undefined;
+  }
+
   /** Trimmed to the columns this sheet's Dates_Visits tab actually has. */
   private visitFields(
     changes: VisitChanges | NewVisitInput,
@@ -1010,7 +1074,9 @@ class SheetPlaceRepository implements PlaceRepository {
     const place = this.places.find((candidate) => candidate.id === id);
     if (!place || place.deletedAt) throw new PersistenceError("That place no longer exists.");
 
-    const startDate = trimmed(input.startDate);
+    // An end date with no start still names when the stay was; it becomes the
+    // start rather than an orphaned Last Visited Date.
+    const startDate = trimmed(input.startDate) ?? trimmed(input.endDate);
     const endDate = trimmed(input.endDate) ?? startDate;
     if (startDate && endDate && endDate < startDate) {
       throw new PersistenceError("A visit can’t end before it starts.");
@@ -1039,7 +1105,9 @@ class SheetPlaceRepository implements PlaceRepository {
       placeId: id,
       startDate,
       endDate,
-      tripId: trimmed(input.tripId),
+      // Resolved: a form can hold a trip's temporary id after the trip's
+      // create has landed and renamed it.
+      tripId: this.resolveTrimmed(input.tripId),
       tripType: trimmed(input.tripType),
       status: trimmed(input.status) ?? visitStatusFor(startDate),
       notes: trimmed(input.notes),
@@ -1065,9 +1133,12 @@ class SheetPlaceRepository implements PlaceRepository {
     return visit;
   }
 
-  async updateVisit(id: string, changes: VisitChanges): Promise<PlaceVisit> {
+  async updateVisit(visitId: string, changes: VisitChanges): Promise<PlaceVisit> {
     this.requireConnection();
 
+    // The caller may hold the id a form froze before the visit's create
+    // landed; resolveId follows it to the row that actually exists.
+    const id = this.resolveId(visitId);
     const index = this.visits.findIndex((visit) => visit.id === id);
     if (index === -1 || this.visits[index].deletedAt) {
       throw new PersistenceError("That visit no longer exists.");
@@ -1081,13 +1152,16 @@ class SheetPlaceRepository implements PlaceRepository {
       placeId: previous.placeId,
       startDate: "startDate" in changes ? trimmed(changes.startDate) : previous.startDate,
       endDate: "endDate" in changes ? trimmed(changes.endDate) : previous.endDate,
-      tripId: "tripId" in changes ? trimmed(changes.tripId) : previous.tripId,
+      tripId: "tripId" in changes ? this.resolveTrimmed(changes.tripId) : previous.tripId,
       tripType: "tripType" in changes ? trimmed(changes.tripType) : previous.tripType,
       status: "status" in changes ? trimmed(changes.status) : previous.status,
       notes: "notes" in changes ? trimmed(changes.notes) : previous.notes,
       createdAt: previous.createdAt,
       updatedAt: new Date().toISOString(),
     };
+    if (!merged.startDate && merged.endDate) {
+      merged.startDate = merged.endDate;
+    }
     if (merged.startDate && merged.endDate && merged.endDate < merged.startDate) {
       throw new PersistenceError("A visit can’t end before it starts.");
     }
@@ -1099,13 +1173,20 @@ class SheetPlaceRepository implements PlaceRepository {
 
     // Both dates always travel together, so the derived cells — Days, Year,
     // Month, Season — are computed from the pair the row will actually hold.
+    // The merged values travel rather than the raw changes, so a resolved
+    // trip id is what lands in the cell.
     this.push({
       kind: "upsert",
       key: id,
       id: isLocalId(id) ? undefined : id,
       tab: VISITS_TAB,
       fields: this.visitFields(
-        { ...changes, startDate: merged.startDate, endDate: merged.endDate },
+        {
+          ...changes,
+          startDate: merged.startDate,
+          endDate: merged.endDate,
+          ...("tripId" in changes ? { tripId: merged.tripId } : {}),
+        },
         {},
       ),
       queuedAt: merged.updatedAt,
@@ -1115,9 +1196,12 @@ class SheetPlaceRepository implements PlaceRepository {
     return merged;
   }
 
-  async deleteVisit(id: string): Promise<void> {
+  async deleteVisit(visitId: string): Promise<void> {
     this.requireConnection();
 
+    // Resolved for the same reason as updateVisit — a silent no-op here
+    // would leave the row alive under a success toast.
+    const id = this.resolveId(visitId);
     const index = this.visits.findIndex((visit) => visit.id === id);
     if (index === -1 || this.visits[index].deletedAt) return;
 
@@ -1130,6 +1214,32 @@ class SheetPlaceRepository implements PlaceRepository {
     this.push({ kind: "delete", key: id, id, tab: VISITS_TAB, queuedAt: now });
 
     await this.syncVisitDerived(next[index].placeId);
+  }
+
+  /**
+   * Removes the implicit visit — the one that exists only as dates on the
+   * Places row. Clearing the dates is most of it; the summary columns are
+   * zeroed too, so the sheet doesn't keep counting a visit the card no
+   * longer shows.
+   */
+  async clearImplicitVisit(placeId: string): Promise<void> {
+    this.requireConnection();
+
+    const id = this.resolveId(placeId);
+    const place = this.places.find((candidate) => candidate.id === id);
+    if (!place || place.deletedAt) return;
+
+    await this.update(id, { visitedFrom: undefined, visitedTo: undefined });
+
+    if (this.visits.some((visit) => visit.placeId === id && !visit.deletedAt)) return;
+    this.push({
+      kind: "upsert",
+      key: id,
+      id: isLocalId(id) ? undefined : id,
+      tab: PLACES_TAB,
+      fields: { [COLUMNS.visitCount]: "0", [COLUMNS.daysTotal]: "0" },
+      queuedAt: new Date().toISOString(),
+    });
   }
 
   /**
@@ -1146,9 +1256,54 @@ class SheetPlaceRepository implements PlaceRepository {
     const place = this.places.find((candidate) => candidate.id === id);
     if (!place || place.deletedAt) return;
 
-    const own = this.visits.filter((visit) => visit.placeId === id && !visit.deletedAt);
-    const span = visitSpan(own);
-    const stats = visitStats(own);
+    let own = this.visits.filter((visit) => visit.placeId === id && !visit.deletedAt);
+
+    /*
+     * History that lives only on the Places row — a First Visited Date
+     * earlier than any visit row — is written down before it can be
+     * overwritten, or re-deriving the columns would erase a trip no row ever
+     * recorded. Guarded against resurrection: a date any row (deleted ones
+     * included) already reaches is known history, not missing history.
+     */
+    const rowSpan = visitSpan(own);
+    const earliest = place.visitedFrom;
+    if (
+      earliest &&
+      rowSpan.from &&
+      earliest < rowSpan.from &&
+      !this.visits.some(
+        (visit) => visit.placeId === id && visit.startDate && visit.startDate <= earliest,
+      )
+    ) {
+      const now = new Date().toISOString();
+      const early: PlaceVisit = {
+        id: `${LOCAL_ID_PREFIX}${createId()}`,
+        placeId: id,
+        startDate: earliest,
+        endDate:
+          place.visitedTo && place.visitedTo < rowSpan.from ? place.visitedTo : earliest,
+        status: visitStatusFor(earliest),
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.commitVisits([early, ...this.visits]);
+      this.persist();
+      this.push({
+        kind: "upsert",
+        key: early.id,
+        tab: VISITS_TAB,
+        fields: this.visitFields(early, { isNew: true, placeId: id }),
+        queuedAt: now,
+      });
+      own = [early, ...own];
+    }
+
+    // Only stays that have happened count. A "Planned" trip next spring is
+    // not a visit yet: it must not flip a wishlist place to been, extend the
+    // visited span, or pad Days Spent Total.
+    const happened = own.filter((visit) => !isUpcomingVisit(visit));
+    const span = visitSpan(happened);
+    const stats = visitStats(happened);
 
     const changes: PlaceChanges = {};
     if (place.visitedFrom !== span.from) changes.visitedFrom = span.from;
@@ -1310,6 +1465,10 @@ class SheetPlaceRepository implements PlaceRepository {
           (ref): ref is string => typeof ref === "string" && isLocalPhotoRef(ref),
         );
         for (const ref of refs) {
+          // A photo the script has permanently refused would fail identically
+          // every time; re-sending megabytes to hear "no" again would also
+          // wedge every photo queued behind it.
+          if (this.refusedPhotoRefs.has(ref)) continue;
           const ok = await this.uploadOnePhoto(place.id, ref);
           // Network trouble ends the sweep; the next load or save retries.
           if (!ok) return;
@@ -1346,25 +1505,48 @@ class SheetPlaceRepository implements PlaceRepository {
         data,
       });
 
-      await this.adoptRemotePhoto(current.id, ref, upload.url);
-      void deletePhoto(ref);
+      // The upload can take seconds, and the place's queued create may land
+      // meanwhile — adoptRemotePhoto re-resolves the id itself. The blob is
+      // only ever deleted once the swap has actually been recorded; deleting
+      // it on a miss would destroy the one copy of the photo.
+      const swapped = await this.adoptRemotePhoto(current.id, ref, upload.url);
+      if (swapped) void deletePhoto(ref);
       return true;
-    } catch {
+    } catch (error) {
+      // Only a network that went away or a request that timed out is worth
+      // stopping the sweep for — those heal on their own. Anything the script
+      // actually answered — "too large", "not an image", a sharing policy —
+      // would be refused identically on every retry, so the photo stays
+      // local, is skipped for the rest of this session, and the photos
+      // queued behind it still get their turn.
+      if (error instanceof SheetError && error.kind !== "network" && error.kind !== "timeout") {
+        this.refusedPhotoRefs.add(ref);
+        return true;
+      }
       return false;
     }
   }
 
-  /** Swaps a local reference for its uploaded link, and records the upload. */
-  private async adoptRemotePhoto(placeId: string, ref: string, url: string): Promise<void> {
-    const place = this.places.find((p) => p.id === placeId);
-    if (!place || place.deletedAt) return;
+  /**
+   * Swaps a local reference for its uploaded link, and records the upload.
+   * Answers whether the swap was actually written — the caller must not
+   * delete the local blob otherwise.
+   */
+  private async adoptRemotePhoto(placeId: string, ref: string, url: string): Promise<boolean> {
+    const place = this.places.find((p) => p.id === this.resolveId(placeId));
+    if (!place || place.deletedAt) return false;
+
+    // Remembered before the update: an edit form opened earlier still holds
+    // the local ref, and saving it would otherwise put the blob reference
+    // back over the link. `update` translates through this map instead.
+    this.uploadedPhotoUrls.set(ref, url);
 
     const changes: PlaceChanges = {};
     if (place.coverImage === ref) changes.coverImage = url;
     if (place.photos?.includes(ref)) {
       changes.photos = place.photos.map((photo) => (photo === ref ? url : photo));
     }
-    if (Object.keys(changes).length === 0) return;
+    if (Object.keys(changes).length === 0) return false;
 
     await this.update(place.id, changes);
 
@@ -1391,6 +1573,7 @@ class SheetPlaceRepository implements PlaceRepository {
       queuedAt: now,
     });
     this.persist();
+    return true;
   }
 
   /* ---------------------------------------------------------------- *
