@@ -8,7 +8,15 @@ import { sortTrips } from "@/lib/trips/tripDays";
 import { deletePhotos } from "@/lib/storage/photoStore";
 import { PersistenceError } from "@/lib/storage/placeRepository";
 import { sheetPlaceRepository, type SheetStatus } from "@/lib/storage/sheetPlaceRepository";
-import type { NewPlaceInput, PlaceChanges, VisitedPlace } from "@/types/place";
+import { findDuplicatePlace } from "@/lib/places/dedupe";
+import type {
+  NewPlaceInput,
+  NewVisitInput,
+  PlaceChanges,
+  PlaceVisit,
+  VisitChanges,
+  VisitedPlace,
+} from "@/types/place";
 import type { NewTripInput, Trip, TripChanges } from "@/types/trip";
 
 /**
@@ -40,6 +48,22 @@ type PlacesContextValue = {
   countries: Array<{ key: string; label: string; code?: string; count: number }>;
   createPlace: (input: NewPlaceInput) => Promise<VisitedPlace>;
   updatePlace: (id: string, changes: PlaceChanges) => Promise<VisitedPlace>;
+  /**
+   * The already-saved place a new entry would duplicate, or undefined. What
+   * turns "add Salt Lake City again" into "log another visit to Salt Lake
+   * City" instead of a second pin.
+   */
+  findExistingPlace: (input: NewPlaceInput) => VisitedPlace | undefined;
+  /** Every logged visit, all places. Use getVisits for one place's. */
+  visits: PlaceVisit[];
+  getVisits: (placeId: string | null | undefined) => PlaceVisit[];
+  addVisit: (
+    placeId: string,
+    input: NewVisitInput,
+    options?: { materializeImplicit?: boolean },
+  ) => Promise<PlaceVisit>;
+  updateVisit: (id: string, changes: VisitChanges) => Promise<PlaceVisit>;
+  deleteVisit: (id: string) => Promise<void>;
   movePlace: (id: string, latitude: number, longitude: number) => Promise<VisitedPlace>;
   /** Removes the place and hands back the record so it can be restored. */
   deletePlace: (id: string) => Promise<VisitedPlace | null>;
@@ -156,6 +180,42 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
     void deletePhotos(photoRefs(place));
   }, []);
 
+  const findExistingPlace = useCallback(
+    (input: NewPlaceInput) => findDuplicatePlace(input, places) ?? undefined,
+    [places],
+  );
+
+  const addVisit = useCallback(
+    async (
+      placeId: string,
+      input: NewVisitInput,
+      options?: { materializeImplicit?: boolean },
+    ) => {
+      try {
+        return await sheetPlaceRepository.addVisit(placeId, input, options);
+      } catch (error) {
+        throw new Error(friendlyMessage(error, "That visit couldn’t be saved."));
+      }
+    },
+    [],
+  );
+
+  const updateVisit = useCallback(async (id: string, changes: VisitChanges) => {
+    try {
+      return await sheetPlaceRepository.updateVisit(id, changes);
+    } catch (error) {
+      throw new Error(friendlyMessage(error, "Those changes couldn’t be saved."));
+    }
+  }, []);
+
+  const deleteVisit = useCallback(async (id: string) => {
+    try {
+      await sheetPlaceRepository.deleteVisit(id);
+    } catch (error) {
+      throw new Error(friendlyMessage(error, "That visit couldn’t be removed."));
+    }
+  }, []);
+
   const createTrip = useCallback(async (input: NewTripInput) => {
     try {
       return await sheetPlaceRepository.createTrip(input);
@@ -195,6 +255,23 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
   const getPlace = useCallback(
     (id: string | null | undefined) => (id ? byId.get(id) : undefined),
     [byId],
+  );
+
+  const visitsByPlace = useMemo(() => {
+    const map = new Map<string, PlaceVisit[]>();
+    for (const visit of sync.visits) {
+      const list = map.get(visit.placeId);
+      if (list) list.push(visit);
+      else map.set(visit.placeId, [visit]);
+    }
+    return map;
+  }, [sync.visits]);
+
+  const NO_PLACE_VISITS = useMemo<PlaceVisit[]>(() => [], []);
+  const getVisits = useCallback(
+    (placeId: string | null | undefined) =>
+      (placeId ? visitsByPlace.get(placeId) : undefined) ?? NO_PLACE_VISITS,
+    [visitsByPlace, NO_PLACE_VISITS],
   );
 
   const tripsById = useMemo(() => {
@@ -257,6 +334,12 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       countries,
       createPlace,
       updatePlace,
+      findExistingPlace,
+      visits: sync.visits,
+      getVisits,
+      addVisit,
+      updateVisit,
+      deleteVisit,
       movePlace,
       deletePlace,
       restorePlace,
@@ -285,6 +368,11 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       countries,
       createPlace,
       updatePlace,
+      findExistingPlace,
+      getVisits,
+      addVisit,
+      updateVisit,
+      deleteVisit,
       movePlace,
       deletePlace,
       restorePlace,

@@ -19,6 +19,11 @@ import { AdjustPinBar } from "@/components/place/AdjustPinBar";
 import { LocationSearchSheet } from "@/components/place/LocationSearchSheet";
 import { PlaceDetailSheet } from "@/components/place/PlaceDetailSheet";
 import { PlaceFormSheet } from "@/components/place/PlaceFormSheet";
+import {
+  VisitFormSheet,
+  emptyVisitDraft,
+  type VisitDraft,
+} from "@/components/place/VisitFormSheet";
 import { PlacesView } from "@/components/places/PlacesView";
 import { SheetSetupScreen } from "@/components/sync/SheetSetupScreen";
 import { SyncSettingsSheet } from "@/components/sync/SyncSettingsSheet";
@@ -47,11 +52,25 @@ import {
   withTrip,
   type PlaceDraft,
 } from "@/lib/store/draft";
+import {
+  isImplicitVisitId,
+  isPlannedStatus,
+  visitStatusFor,
+  visitsForPlace,
+} from "@/lib/places/visits";
 import { alreadyTaggedMessage, placesToRetag, tagSummary } from "@/lib/trips/tagging";
 import { sheetDepth } from "@/lib/ui/sheetStack";
 import { hasValidCoordinates } from "@/lib/utils/geo";
 import { createId } from "@/lib/utils/id";
-import type { LocationResult, VisitedPlace } from "@/types/place";
+import type {
+  LocationResult,
+  NewPlaceInput,
+  NewVisitInput,
+  PlaceChanges,
+  PlaceVisit,
+  VisitChanges,
+  VisitedPlace,
+} from "@/types/place";
 import type { Trip } from "@/types/trip";
 
 /**
@@ -68,7 +87,9 @@ type Overlay =
   | { kind: "form"; mode: "create" | "edit" }
   | { kind: "search"; purpose: "create" | "replace" }
   | { kind: "trip"; id: string }
-  | { kind: "tripForm"; mode: "create" | "edit"; id?: string };
+  | { kind: "tripForm"; mode: "create" | "edit"; id?: string }
+  /** Logging or editing one stay; `visitId` may name the implicit visit. */
+  | { kind: "visitForm"; placeId: string; visitId?: string };
 
 type PinSession = {
   mode: "create" | "adjust";
@@ -105,6 +126,11 @@ export function AppShell() {
     countries,
     createPlace,
     updatePlace,
+    findExistingPlace,
+    getVisits,
+    addVisit,
+    updateVisit,
+    deleteVisit,
     movePlace,
     deletePlace,
     restorePlace,
@@ -148,6 +174,14 @@ export function AppShell() {
   const [tripDraftBaseline, setTripDraftBaseline] = useState<TripDraft>(emptyTripDraft);
   const [tripSaving, setTripSaving] = useState(false);
   const [tripFormError, setTripFormError] = useState<string | null>(null);
+
+  const [visitDraft, setVisitDraft] = useState<VisitDraft>(emptyVisitDraft);
+  const [visitSaving, setVisitSaving] = useState(false);
+  const [visitError, setVisitError] = useState<string | null>(null);
+  const [confirmDeleteVisit, setConfirmDeleteVisit] = useState<{
+    placeId: string;
+    visitId: string;
+  } | null>(null);
   const [discardTripPrompt, setDiscardTripPrompt] = useState(false);
   const [confirmDeleteTripId, setConfirmDeleteTripId] = useState<string | null>(null);
 
@@ -202,6 +236,13 @@ export function AppShell() {
   const tripOverlay = overlays.find((overlay) => overlay.kind === "trip");
   const openTrip = getTrip(tripOverlay?.kind === "trip" ? tripOverlay.id : null);
   const tripFormOverlay = overlays.find((overlay) => overlay.kind === "tripForm");
+  const visitFormOverlay = overlays.find((overlay) => overlay.kind === "visitForm");
+
+  /** The stays the open card shows: real rows, or the one the dates imply. */
+  const detailVisits = useMemo(
+    () => (detailPlace ? visitsForPlace(detailPlace, getVisits(detailPlace.id)) : []),
+    [detailPlace, getVisits],
+  );
 
   /**
    * How far back in the stack a sheet sits — 0 for the one in front.
@@ -457,6 +498,70 @@ export function AppShell() {
     [draft.id],
   );
 
+  /**
+   * The already-been-here save: no second pin, the existing record grows.
+   *
+   * The dates become another visit, anything the form carried that the record
+   * lacked — notes, photos, a favourite mark — is kept rather than thrown
+   * away, and the card opens on the place so the new visit is right there in
+   * the list. Adding a visit to a wishlist entry is the moment it stops being
+   * a wish, and the repository flips that flag as part of the same save.
+   */
+  const mergeIntoExisting = useCallback(
+    async (existing: VisitedPlace, input: NewPlaceInput) => {
+      const additions: PlaceChanges = {};
+      if (input.notes && !existing.notes) additions.notes = input.notes;
+      if (input.favorite && !existing.favorite) additions.favorite = true;
+
+      const incoming = [input.coverImage, ...(input.photos ?? [])].filter(
+        (photo): photo is string => Boolean(photo),
+      );
+      if (incoming.length > 0) {
+        const have = new Set([existing.coverImage, ...(existing.photos ?? [])]);
+        const extra = incoming.filter((photo) => !have.has(photo));
+        if (extra.length > 0) {
+          if (!existing.coverImage) {
+            additions.coverImage = extra[0];
+            if (extra.length > 1) {
+              additions.photos = [...(existing.photos ?? []), ...extra.slice(1)];
+            }
+          } else {
+            additions.photos = [...(existing.photos ?? []), ...extra];
+          }
+        }
+      }
+      if (Object.keys(additions).length > 0) await updatePlace(existing.id, additions);
+
+      let message: string;
+      if (!input.wantToGo && input.visitedFrom) {
+        await addVisit(existing.id, {
+          startDate: input.visitedFrom,
+          endDate: input.visitedTo,
+          tripId: input.tripId,
+        });
+        // A wishlist entry gaining its first dates is an arrival, not a repeat.
+        message = existing.wantToGo
+          ? `${existing.name} visited — moved off your wishlist`
+          : `Added another visit to ${existing.name}`;
+      } else if (!input.wantToGo && existing.wantToGo) {
+        await updatePlace(existing.id, { wantToGo: false });
+        message = `${existing.name} moved off your wishlist`;
+      } else {
+        message = `${existing.name} is already on your globe`;
+      }
+
+      setDraft(resolvedDraft);
+      setDraftBaseline(resolvedDraft);
+      // The card is the proof: open it where the visit just appeared.
+      setOverlays((current) => [
+        ...current.filter((overlay) => overlay.kind === "trip"),
+        { kind: "detail", id: existing.id },
+      ]);
+      showToast(whenOffline(message, `${message} — it’ll sync when you’re back`));
+    },
+    [updatePlace, addVisit, showToast, resolvedDraft],
+  );
+
   const saveForm = useCallback(async () => {
     setSaving(true);
     setFormError(null);
@@ -470,6 +575,13 @@ export function AppShell() {
         showToast(whenOffline("Changes saved", "Saved here — it’ll sync when you’re back"));
         if (selectedId === updated.id) flyTo(updated, 7.5);
       } else {
+        // Somewhere already saved doesn't get a twin — it gets another visit.
+        const existing = findExistingPlace(input);
+        if (existing) {
+          await mergeIntoExisting(existing, input);
+          return;
+        }
+
         const created = await createPlace(input);
         setDraft(resolvedDraft);
         setDraftBaseline(resolvedDraft);
@@ -509,12 +621,101 @@ export function AppShell() {
     overlays,
     updatePlace,
     createPlace,
+    findExistingPlace,
+    mergeIntoExisting,
     popOverlay,
     showToast,
     selectedId,
     flyTo,
     reduceMotion,
   ]);
+
+  /* ---------------------------------------------------------------------- */
+  /* Visits                                                                   */
+  /* ---------------------------------------------------------------------- */
+
+  const startAddVisit = useCallback((placeId: string) => {
+    setVisitDraft(emptyVisitDraft());
+    setVisitError(null);
+    setOverlays((current) => [...current, { kind: "visitForm", placeId }]);
+  }, []);
+
+  const startEditVisit = useCallback((placeId: string, visit: PlaceVisit) => {
+    setVisitDraft({
+      startDate: visit.startDate ?? "",
+      endDate: visit.endDate ?? "",
+      tripId: visit.tripId ?? "",
+      tripType: visit.tripType ?? "",
+      notes: visit.notes ?? "",
+    });
+    setVisitError(null);
+    setOverlays((current) => [...current, { kind: "visitForm", placeId, visitId: visit.id }]);
+  }, []);
+
+  const saveVisit = useCallback(async () => {
+    const overlay = visitFormOverlay;
+    if (!overlay || overlay.kind !== "visitForm") return;
+
+    setVisitSaving(true);
+    setVisitError(null);
+    try {
+      const input: NewVisitInput = {
+        startDate: visitDraft.startDate || undefined,
+        endDate: visitDraft.endDate || undefined,
+        tripId: visitDraft.tripId || undefined,
+        tripType: visitDraft.tripType || undefined,
+        notes: visitDraft.notes || undefined,
+      };
+
+      if (!overlay.visitId) {
+        await addVisit(overlay.placeId, input);
+        showToast(whenOffline("Visit added", "Visit added — it’ll sync when you’re back"));
+      } else if (isImplicitVisitId(overlay.visitId)) {
+        // Editing the visit the old dates implied writes it down for real,
+        // corrected — one row, not the original plus the correction.
+        await addVisit(overlay.placeId, input, { materializeImplicit: false });
+        showToast(whenOffline("Visit updated", "Updated here — it’ll sync when you’re back"));
+      } else {
+        const existing = getVisits(overlay.placeId).find((v) => v.id === overlay.visitId);
+        const changes: VisitChanges = { ...input };
+        // Status is written only when the answer to "has this happened?"
+        // actually changes — a "Booked" stay stays "Booked" until it has.
+        const nextPlanned = isPlannedStatus(visitStatusFor(input.startDate));
+        if (!existing?.status || isPlannedStatus(existing.status) !== nextPlanned) {
+          changes.status = visitStatusFor(input.startDate);
+        }
+        await updateVisit(overlay.visitId, changes);
+        showToast(whenOffline("Visit updated", "Updated here — it’ll sync when you’re back"));
+      }
+      popOverlay();
+    } catch (error) {
+      setVisitError(error instanceof Error ? error.message : "That visit couldn’t be saved.");
+    } finally {
+      setVisitSaving(false);
+    }
+  }, [visitFormOverlay, visitDraft, addVisit, updateVisit, getVisits, popOverlay, showToast]);
+
+  const performDeleteVisit = useCallback(async () => {
+    const target = confirmDeleteVisit;
+    setConfirmDeleteVisit(null);
+    if (!target) return;
+
+    try {
+      if (isImplicitVisitId(target.visitId)) {
+        // The implied visit has no row of its own to remove — clearing the
+        // place's dates is the whole of removing it.
+        await updatePlace(target.placeId, { visitedFrom: undefined, visitedTo: undefined });
+      } else {
+        await deleteVisit(target.visitId);
+      }
+      setOverlays((current) => current.filter((overlay) => overlay.kind !== "visitForm"));
+      showToast(whenOffline("Visit removed", "Removed here — it’ll sync when you’re back"));
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "That visit couldn’t be removed.", {
+        tone: "error",
+      });
+    }
+  }, [confirmDeleteVisit, updatePlace, deleteVisit, showToast]);
 
   /* ---------------------------------------------------------------------- */
   /* Trips                                                                    */
@@ -1369,6 +1570,37 @@ export function AppShell() {
         onDelete={() =>
           detailOverlay?.kind === "detail" && setConfirmDeleteId(detailOverlay.id)
         }
+        visits={detailVisits}
+        onAddVisit={() => detailPlace && startAddVisit(detailPlace.id)}
+        onEditVisit={(visit) => detailPlace && startEditVisit(detailPlace.id, visit)}
+        tripNameFor={(tripId) => (tripId ? getTrip(tripId)?.name : undefined)}
+      />
+
+      <VisitFormSheet
+        open={Boolean(visitFormOverlay)}
+        mode={visitFormOverlay?.kind === "visitForm" && visitFormOverlay.visitId ? "edit" : "add"}
+        placeName={
+          getPlace(visitFormOverlay?.kind === "visitForm" ? visitFormOverlay.placeId : null)
+            ?.name ?? "this place"
+        }
+        depth={depthOf("visitForm")}
+        draft={visitDraft}
+        onChange={setVisitDraft}
+        onSave={() => void saveVisit()}
+        onClose={popOverlay}
+        onDelete={
+          visitFormOverlay?.kind === "visitForm" && visitFormOverlay.visitId
+            ? () =>
+                setConfirmDeleteVisit({
+                  placeId: visitFormOverlay.placeId,
+                  visitId: visitFormOverlay.visitId as string,
+                })
+            : undefined
+        }
+        saving={visitSaving}
+        error={visitError}
+        trips={trips}
+        tripTypes={sync.lookups["Trip Type"] ?? []}
       />
 
       <PlaceFormSheet
@@ -1400,6 +1632,7 @@ export function AppShell() {
         error={formError}
         trips={trips}
         onCreateTrip={startCreateTrip}
+        visitCount={draft.id ? getVisits(draft.id).length : 0}
       />
 
       <TripDetailSheet
@@ -1537,6 +1770,15 @@ export function AppShell() {
         confirmLabel="Delete"
         onCancel={() => setConfirmDeleteId(null)}
         onConfirm={() => confirmDeleteId && void performDelete(confirmDeleteId)}
+      />
+
+      <ConfirmDialog
+        open={Boolean(confirmDeleteVisit)}
+        title="Remove this visit?"
+        message="Only this stay is removed — the place keeps its card and photos."
+        confirmLabel="Remove Visit"
+        onCancel={() => setConfirmDeleteVisit(null)}
+        onConfirm={() => void performDeleteVisit()}
       />
 
       <ConfirmDialog

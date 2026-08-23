@@ -175,6 +175,11 @@ function doPost(e) {
 
     authorize_(body.code);
 
+    // Uploads run outside the write lock on purpose: a photo takes seconds on
+    // a slow uplink, touches Drive rather than the spreadsheet, and holding
+    // the lock for it would starve every row save queued behind it.
+    if (body.action === 'uploadPhoto') return uploadPhoto_(body);
+
     // One lock around every write. Two saves racing would otherwise both read
     // the same last row and one would overwrite the other.
     var lock = LockService.getScriptLock();
@@ -188,7 +193,7 @@ function doPost(e) {
         case 'deleteRow':    return deleteRow_(body);
         case 'setSetting':   return setSetting_(body);
         default:
-          throw new Error('Unknown action "' + (body.action || '') + '". Expected upsertRow, deleteRow or setSetting.');
+          throw new Error('Unknown action "' + (body.action || '') + '". Expected upsertRow, deleteRow, setSetting or uploadPhoto.');
       }
     } finally {
       lock.releaseLock();
@@ -347,10 +352,43 @@ function timezone_() {
   return TIMEZONE_CACHE;
 }
 
+/**
+ * The bookkeeping columns every writable tab needs — the script's derived
+ * timestamps, and the Deleted? flag a soft delete sets. The original
+ * spreadsheet shipped Dates_Visits and Media_Links without them, because
+ * nothing wrote there; now the app does, missing ones are appended after the
+ * last existing column, headers only, touching nothing else.
+ */
+var BOOKKEEPING_COLUMNS = [
+  'Created At', 'Updated At', 'Last Synced At', 'Sync Version', 'Archived?', 'Deleted?'
+];
+
+function ensureBookkeepingColumns_() {
+  var names = ['Dates_Visits', 'Media_Links'];
+  for (var i = 0; i < names.length; i++) {
+    var sheet = book_().getSheetByName(names[i]);
+    if (!sheet) continue;
+
+    var headerRow = TABS[names[i]].header;
+    var index = headerIndex_(sheet, headerRow);
+    var missing = [];
+    for (var j = 0; j < BOOKKEEPING_COLUMNS.length; j++) {
+      if (index.map[BOOKKEEPING_COLUMNS[j]] === undefined) missing.push(BOOKKEEPING_COLUMNS[j]);
+    }
+    if (missing.length === 0) continue;
+
+    var start = Math.max(sheet.getLastColumn(), 1) + 1;
+    var needed = start + missing.length - 1 - sheet.getMaxColumns();
+    if (needed > 0) sheet.insertColumnsAfter(sheet.getMaxColumns(), needed);
+    sheet.getRange(headerRow, start, 1, missing.length).setValues([missing]).setFontWeight('bold');
+  }
+}
+
 /** One request, every data tab. Startup makes exactly this call. */
 function getAll_() {
   // Before the loop, because the loop reads Trips and a missing tab throws.
   ensureTripsTab_();
+  ensureBookkeepingColumns_();
 
   var tabs = {};
   for (var name in TABS) {
@@ -373,9 +411,11 @@ function getAll_() {
 /**
  * What this deployment can do beyond reading and writing rows, so the app can
  * offer a better search when there is one and never advertise one there isn't.
+ * photoUpload is a fact about this version of the script rather than a key:
+ * an older deployment simply never says it, and photos stay in the browser.
  */
 function capabilities_() {
-  return { placesSearch: Boolean(placesKey_()) };
+  return { placesSearch: Boolean(placesKey_()), photoUpload: true };
 }
 
 /**
@@ -527,6 +567,80 @@ function toPlaceResult_(place) {
     country: addressPart_(components, 'country', false),
     countryCode: addressPart_(components, 'country', true),
     types: place.types || []
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Photo upload — the browser's photos, filed in the owner's Drive
+ *
+ * A static site cannot hold files and a spreadsheet cell cannot hold an
+ * image, so photos go to the one place this script can put them that every
+ * device can read back: a folder in the sheet owner's Drive. The app sends
+ * the photo as base64, this script files it and answers with a link, and the
+ * link goes into the sheet like any other cell.
+ *
+ * NOTE: this is the script's first use of DriveApp, so publishing this
+ * version asks the owner to authorize Drive access once. The files it
+ * creates are shared "anyone with the link, view only" — the same standing
+ * the sheet's own access model already accepts for the data itself.
+ * ------------------------------------------------------------------ */
+
+var PHOTOS_FOLDER_PROPERTY = 'PHOTOS_FOLDER_ID';
+var PHOTOS_FOLDER_NAME = 'Travel Globe Photos';
+/** On the decoded bytes. The app downsizes to ~1600px first, so a photo that
+ * still exceeds this is not a photo the app sent. */
+var MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+
+function photosFolder_() {
+  var properties = PropertiesService.getScriptProperties();
+  var savedId = properties.getProperty(PHOTOS_FOLDER_PROPERTY);
+  if (savedId) {
+    try {
+      return DriveApp.getFolderById(savedId);
+    } catch (error) {
+      // The folder was deleted; fall through and make a fresh one.
+    }
+  }
+
+  var existing = DriveApp.getFoldersByName(PHOTOS_FOLDER_NAME);
+  var folder = existing.hasNext() ? existing.next() : DriveApp.createFolder(PHOTOS_FOLDER_NAME);
+  properties.setProperty(PHOTOS_FOLDER_PROPERTY, folder.getId());
+  return folder;
+}
+
+function uploadPhoto_(body) {
+  var mimeType = String(body.mimeType || 'image/jpeg');
+  if (mimeType.indexOf('image/') !== 0) {
+    throw new Error('Only images can be uploaded.');
+  }
+
+  var data = String(body.data || '');
+  if (!data) throw new Error('The upload carried no photo data.');
+
+  var bytes;
+  try {
+    bytes = Utilities.base64Decode(data);
+  } catch (error) {
+    throw new Error('The photo data was not readable.');
+  }
+  if (bytes.length > MAX_PHOTO_BYTES) {
+    throw new Error('That photo is too large to upload.');
+  }
+
+  var name = String(body.name || 'photo.jpg').replace(/[\\\/:*?"<>|]/g, ' ').slice(0, 100).trim();
+  var blob = Utilities.newBlob(bytes, mimeType, name || 'photo.jpg');
+
+  var file = photosFolder_().createFile(blob);
+  // Anyone with the link can view — the link lives in a spreadsheet cell and
+  // every device that reads the sheet has to be able to render it.
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+  // lh3.googleusercontent.com serves the raw image bytes for a shared Drive
+  // file, which is what an <img> tag needs; the drive.google.com viewer URL
+  // serves a web page instead.
+  return {
+    url: 'https://lh3.googleusercontent.com/d/' + file.getId(),
+    fileId: file.getId()
   };
 }
 

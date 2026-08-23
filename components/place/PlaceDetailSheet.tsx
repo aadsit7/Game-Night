@@ -4,7 +4,6 @@ import { useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Bookmark,
-  CalendarRange,
   ChevronLeft,
   ChevronRight,
   Globe2,
@@ -12,6 +11,8 @@ import {
   Luggage,
   MapPin,
   Pencil,
+  Plane,
+  Plus,
   Trash2,
   X,
 } from "lucide-react";
@@ -20,10 +21,11 @@ import { BottomSheet } from "@/components/ui/BottomSheet";
 import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
 import { formatDays } from "@/lib/timeline/buildTimeline";
+import { isUpcomingVisit, visitStats } from "@/lib/places/visits";
 import { formatVisitRange, inclusiveDayCount } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
 import { countryFlag, formatCoordinates, placeSubtitle } from "@/lib/utils/geo";
-import type { VisitedPlace } from "@/types/place";
+import type { PlaceVisit, VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
 
 /**
@@ -48,6 +50,10 @@ export function PlaceDetailSheet({
   trip,
   onOpenTrip,
   onToggleFavorite,
+  visits,
+  onAddVisit,
+  onEditVisit,
+  tripNameFor,
 }: {
   place: VisitedPlace | null;
   open: boolean;
@@ -68,6 +74,15 @@ export function PlaceDetailSheet({
   onOpenTrip?: () => void;
   /** Saving a favourite is one tap from here, not a trip through the form. */
   onToggleFavorite?: () => void;
+  /**
+   * Every stay at this place, newest first — real Dates_Visits rows, or the
+   * one implied by the dates recorded before visits existed.
+   */
+  visits: PlaceVisit[];
+  onAddVisit: () => void;
+  onEditVisit: (visit: PlaceVisit) => void;
+  /** The name a visit's trip chip should carry, when it belongs to one. */
+  tripNameFor: (tripId: string | undefined) => string | undefined;
 }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const reduceMotion = useReducedMotion();
@@ -79,12 +94,14 @@ export function PlaceDetailSheet({
     if (!open && lightbox) setLightbox(null);
   }
 
-  const when = place ? formatVisitRange(place.visitedFrom, place.visitedTo) : null;
-  const days = place ? inclusiveDayCount(place.visitedFrom, place.visitedTo) : null;
   const subtitle = place ? placeSubtitle(place) : "";
   const hasFlag = Boolean(place && countryFlag(place.countryCode));
   const extraPhotos = place?.photos ?? [];
   const hasCover = Boolean(place?.coverImage);
+
+  const been = Boolean(place && !place.wantToGo);
+  const stats = visitStats(visits);
+  const photoCount = extraPhotos.length + (hasCover ? 1 : 0);
 
   return (
     <>
@@ -171,7 +188,8 @@ export function PlaceDetailSheet({
               nothing else is already saying it. The favourite control in the
               header is a filled red heart when it is on, three centimetres
               above where a pill reading "Favorite" used to repeat it; a wish,
-              which has no control of its own here, still needs saying.
+              which has no control of its own here, still needs saying. A place
+              that has been visited says how many times, in one warm line.
             */}
             {place.wantToGo ? (
               <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
@@ -179,18 +197,61 @@ export function PlaceDetailSheet({
                   Want to go
                 </Badge>
               </div>
+            ) : stats.count > 0 ? (
+              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                <Badge icon={<Plane size={13} aria-hidden="true" />} tone="accent">
+                  {stats.count === 1
+                    ? "You’ve been here once"
+                    : `You’ve been here ${stats.count} times`}
+                </Badge>
+              </div>
             ) : null}
 
-            {/* The facts, grouped — the dates, the trip, the coordinates. */}
-            <div className="mt-4 divide-y divide-separator overflow-hidden rounded-[18px] bg-fill/60">
-              {when ? (
-                <Fact
-                  icon={<CalendarRange size={16} aria-hidden="true" />}
-                  label="Visited"
-                  value={days && days > 1 ? `${when} · ${formatDays(days)}` : when}
+            {/* The numbers at a glance: how often, how long, when it started. */}
+            {been && stats.count > 0 ? (
+              <div className="mt-4 grid grid-cols-4 divide-x divide-separator rounded-[18px] bg-fill/60 py-3.5">
+                <Stat value={String(stats.count)} label={stats.count === 1 ? "visit" : "visits"} />
+                <Stat
+                  value={stats.daysTotal > 0 ? String(stats.daysTotal) : "—"}
+                  label="days total"
                 />
-              ) : null}
+                <Stat value={stats.firstYear ?? "—"} label="first visit" />
+                <Stat value={stats.lastLabel ?? "—"} label="last visit" />
+              </div>
+            ) : null}
 
+            {/* Every stay, newest first — the heart of the card. */}
+            {been ? (
+              <Section title="Your visits">
+                <div className="overflow-hidden rounded-[18px] bg-fill/60">
+                  <div className="divide-y divide-separator">
+                    {visits.map((visit, index) => (
+                      <VisitRow
+                        key={visit.id}
+                        visit={visit}
+                        index={index}
+                        tripName={visit.tripType ?? tripNameFor(visit.tripId)}
+                        onPress={() => onEditVisit(visit)}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onAddVisit}
+                    className={cn(
+                      "pressable flex min-h-[48px] w-full items-center justify-center gap-1.5 text-[16px] font-medium text-accent",
+                      visits.length > 0 && "border-t border-separator",
+                    )}
+                  >
+                    <Plus size={17} aria-hidden="true" />
+                    Add visit
+                  </button>
+                </div>
+              </Section>
+            ) : null}
+
+            {/* The facts, grouped — the trip, the coordinates. */}
+            <div className="mt-6 divide-y divide-separator overflow-hidden rounded-[18px] bg-fill/60">
               {trip && onOpenTrip ? (
                 <Fact
                   icon={<Luggage size={16} aria-hidden="true" />}
@@ -202,14 +263,25 @@ export function PlaceDetailSheet({
 
               <Fact
                 icon={<MapPin size={16} aria-hidden="true" />}
-                label="Coordinates"
+                label="Location details"
                 value={formatCoordinates(place.latitude, place.longitude)}
                 tabular
               />
             </div>
 
             {place.notes ? (
-              <Section title="Notes">
+              <Section
+                title="Notes"
+                aside={
+                  <button
+                    type="button"
+                    onClick={onEdit}
+                    className="pressable rounded-pill text-[15px] font-medium text-accent"
+                  >
+                    Edit
+                  </button>
+                }
+              >
                 <p className="whitespace-pre-wrap text-[16px] leading-relaxed text-ink">
                   {place.notes}
                 </p>
@@ -217,7 +289,14 @@ export function PlaceDetailSheet({
             ) : null}
 
             {extraPhotos.length > 0 ? (
-              <Section title="Photos">
+              <Section
+                title="Memories"
+                aside={
+                  <span className="text-[14px] text-ink-3">
+                    {photoCount === 1 ? "1 photo" : `${photoCount} photos`}
+                  </span>
+                }
+              >
                 <div className="-mx-5 flex gap-2.5 overflow-x-auto scrollbar-none px-5 pb-1">
                   {extraPhotos.map((photo, index) => (
                     <button
@@ -383,11 +462,94 @@ function Badge({
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({
+  title,
+  aside,
+  children,
+}: {
+  title: string;
+  /** A quiet fact or a small action, right-aligned against the heading. */
+  aside?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <section className="mt-6">
-      <h3 className="pb-2 text-[15px] font-semibold tracking-[-0.01em] text-ink">{title}</h3>
+      <div className="flex items-baseline justify-between gap-3 pb-2">
+        <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">{title}</h3>
+        {aside}
+      </div>
       {children}
     </section>
+  );
+}
+
+/** One cell of the stats row: the number, then what it counts. */
+function Stat({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="flex min-w-0 flex-col items-center gap-0.5 px-1 text-center">
+      <span className="w-full truncate text-[17px] font-semibold tabular-nums tracking-[-0.01em] text-ink">
+        {value}
+      </span>
+      <span className="w-full truncate text-[11px] font-medium uppercase tracking-[0.04em] text-ink-3">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The visit dots cycle through a small fixed palette, so four stays read as
+ * four distinct entries the way a metro map reads as lines — colour as
+ * identity, not as meaning.
+ */
+const VISIT_DOT_COLORS = ["#8b7cf0", "#0fa89a", "#ef9440", "#4b96f0"];
+
+function VisitRow({
+  visit,
+  index,
+  tripName,
+  onPress,
+}: {
+  visit: PlaceVisit;
+  index: number;
+  /** The chip text: the visit's own type, or the trip it belonged to. */
+  tripName?: string;
+  onPress: () => void;
+}) {
+  const range = formatVisitRange(visit.startDate, visit.endDate);
+  const days = inclusiveDayCount(visit.startDate, visit.endDate);
+  const upcoming = isUpcomingVisit(visit);
+
+  return (
+    <button
+      type="button"
+      onClick={onPress}
+      className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors active:bg-fill-strong"
+    >
+      <span
+        aria-hidden="true"
+        className="size-[9px] shrink-0 rounded-full"
+        style={{ background: VISIT_DOT_COLORS[index % VISIT_DOT_COLORS.length] }}
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[16px] leading-tight text-ink">
+          {range ?? "No date"}
+        </span>
+        {days ? (
+          <span className="mt-[3px] block text-[13px] leading-tight text-ink-3">
+            {formatDays(days)}
+            {upcoming ? " · upcoming" : ""}
+          </span>
+        ) : upcoming ? (
+          <span className="mt-[3px] block text-[13px] leading-tight text-ink-3">upcoming</span>
+        ) : null}
+      </span>
+      {tripName ? (
+        <span className="max-w-[38%] truncate rounded-pill bg-accent-soft px-2.5 py-[4px] text-[13px] font-medium text-accent">
+          {tripName}
+        </span>
+      ) : null}
+      <ChevronRight size={17} aria-hidden="true" className="shrink-0 text-ink-3" />
+    </button>
   );
 }

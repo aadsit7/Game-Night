@@ -14,6 +14,7 @@ const suites = [
   "paint-expressions.test.mjs",
   "sheet-mapping.test.mjs",
   "sheet-queue.test.mjs",
+  "visits.test.mjs",
   "sheet-connection.test.mjs",
   "timeline.test.mjs",
   "draft-dates.test.mjs",

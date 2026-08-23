@@ -45,6 +45,7 @@ export function PlaceFormSheet({
   onRequestClose,
   trips,
   onCreateTrip,
+  visitCount = 0,
 }: {
   open: boolean;
   mode: "create" | "edit";
@@ -64,6 +65,12 @@ export function PlaceFormSheet({
   trips: Trip[];
   /** Opens the new-trip form. The draft here is untouched and comes back. */
   onCreateTrip: () => void;
+  /**
+   * How many logged visits the place being edited has. Once visits exist,
+   * the place's dates are derived from them, so this form stops offering the
+   * fields — editing them here would be overwritten by the next visit change.
+   */
+  visitCount?: number;
 }) {
   const [showEndDate, setShowEndDate] = useState(Boolean(draft.visitedTo));
   const [showCoordinates, setShowCoordinates] = useState(false);
@@ -314,6 +321,15 @@ export function PlaceFormSheet({
         </Section>
 
         {/* A heading that stays put as the answer changes underneath it. */}
+        {mode === "edit" && visitCount > 0 ? (
+          <Section title="Your visits">
+            <p className="px-4 py-3.5 text-[14px] leading-relaxed text-ink-2">
+              {visitCount === 1 ? "One visit is" : `${visitCount} visits are`} logged for this
+              place, and its dates come from them. Add, edit or remove visits from the place
+              card.
+            </p>
+          </Section>
+        ) : (
         <Section title="Have you been?">
           <div className="space-y-3 px-4 py-3.5">
             {/*
@@ -379,6 +395,7 @@ export function PlaceFormSheet({
             )}
           </div>
         </Section>
+        )}
 
         <Section title="Trip">
           <div className="space-y-2 px-4 py-3.5">

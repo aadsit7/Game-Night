@@ -7,10 +7,11 @@ import {
   INITIAL_STATUS,
   NO_PLACES,
   NO_TRIPS,
+  NO_VISITS,
   sheetPlaceRepository,
   type SheetStatus,
 } from "@/lib/storage/sheetPlaceRepository";
-import type { VisitedPlace } from "@/types/place";
+import type { PlaceVisit, VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
 
 /**
@@ -26,6 +27,7 @@ import type { Trip } from "@/types/trip";
 export type SheetSync = {
   places: VisitedPlace[];
   trips: Trip[];
+  visits: PlaceVisit[];
   state: SheetStatus;
   connection: SheetConnection | null;
   lookups: Record<string, string[]>;
@@ -50,6 +52,11 @@ export function useSheetSync(): SheetSync {
     subscribe,
     () => sheetPlaceRepository.getVisibleTrips(),
     () => NO_TRIPS,
+  );
+  const visits = useSyncExternalStore(
+    subscribe,
+    () => sheetPlaceRepository.getVisibleVisits(),
+    () => NO_VISITS,
   );
   const state = useSyncExternalStore(
     subscribe,
@@ -111,5 +118,5 @@ export function useSheetSync(): SheetSync {
     void sheetPlaceRepository.load();
   }, []);
 
-  return { places, trips, state, connection, lookups, connect, disconnect, syncNow };
+  return { places, trips, visits, state, connection, lookups, connect, disconnect, syncNow };
 }

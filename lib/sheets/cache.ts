@@ -1,5 +1,6 @@
-import type { VisitedPlace } from "@/types/place";
+import type { PlaceVisit, VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
+import type { MediaLink } from "@/lib/sheets/mapping";
 
 /**
  * A copy of the last good load from the sheet.
@@ -20,6 +21,15 @@ export type CachedSnapshot = {
    * should still open on its travel history, not on a blank screen.
    */
   trips: Trip[];
+  /** Absent from older caches, read defensively for the same reason as trips. */
+  visits: PlaceVisit[];
+  /** Photo rows from Media_Links, so uploads still show offline. */
+  media: MediaLink[];
+  /**
+   * The Dates_Visits headers seen at the last load, so a visit queued offline
+   * is still trimmed to the columns this particular sheet actually has.
+   */
+  visitHeaders: string[];
   lookups: Record<string, string[]>;
   settings: Record<string, string>;
   cachedAt: string;
@@ -37,6 +47,11 @@ export function loadCache(): CachedSnapshot | null {
     return {
       places: parsed.places as VisitedPlace[],
       trips: Array.isArray(parsed.trips) ? (parsed.trips as Trip[]) : [],
+      visits: Array.isArray(parsed.visits) ? (parsed.visits as PlaceVisit[]) : [],
+      media: Array.isArray(parsed.media) ? (parsed.media as MediaLink[]) : [],
+      visitHeaders: Array.isArray(parsed.visitHeaders)
+        ? (parsed.visitHeaders as string[])
+        : [],
       lookups: (parsed.lookups ?? {}) as Record<string, string[]>,
       settings: (parsed.settings ?? {}) as Record<string, string>,
       cachedAt: typeof parsed.cachedAt === "string" ? parsed.cachedAt : "",

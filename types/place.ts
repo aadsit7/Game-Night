@@ -55,6 +55,42 @@ export type VisitedPlace = {
 /** Fields a caller supplies when creating a place; the rest is generated. */
 export type NewPlaceInput = Omit<VisitedPlace, "id" | "createdAt" | "updatedAt">;
 
+/**
+ * One stay at a place — a row of the sheet's Dates_Visits tab.
+ *
+ * A place is somewhere; a visit is a time you were there. Keeping them apart
+ * is what lets Salt Lake City be one pin with four date ranges instead of four
+ * pins, and it is why adding somewhere you have already been can mean "log
+ * another visit" rather than "make a duplicate".
+ */
+export type PlaceVisit = {
+  /** The sheet's own id, e.g. `VIS-0001`. Local until the create lands. */
+  id: string;
+  placeId: string;
+  /** ISO calendar date, `YYYY-MM-DD`. */
+  startDate?: string;
+  /** ISO calendar date, `YYYY-MM-DD`. Only meaningful alongside `startDate`. */
+  endDate?: string;
+  /** The trip this particular visit belonged to, if any. */
+  tripId?: string;
+  /** The sheet's own vocabulary — "Family", "Solo", "Study"… Free text is fine. */
+  tripType?: string;
+  /** The sheet's Visit Status word — "Been", "Planned"… Never invented here. */
+  status?: string;
+  /** The Highlights cell: what made this stay this stay. */
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Tombstone, for the same reason places have one. */
+  deletedAt?: string;
+};
+
+/** Fields a caller supplies when logging a visit; the rest is generated. */
+export type NewVisitInput = Omit<PlaceVisit, "id" | "placeId" | "createdAt" | "updatedAt">;
+
+/** A partial patch. `id`, `placeId` and `createdAt` are immutable once assigned. */
+export type VisitChanges = Partial<Omit<PlaceVisit, "id" | "placeId" | "createdAt">>;
+
 /** A partial patch. `id` and `createdAt` are immutable once assigned. */
 export type PlaceChanges = Partial<Omit<VisitedPlace, "id" | "createdAt">>;
 
