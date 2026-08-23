@@ -428,6 +428,17 @@ with a small pin mark. The gradient sits underneath the image at all times, so
 a slow or failed load reveals something intentional — no card ever shows a
 broken-image icon.
 
+**Adding media asks where from.** The same Add button reaches both places
+photos live: the Google Photos picker, and the files on the device itself —
+the photo library, the Files app, a Drive folder. Both routes take photos
+*and videos*, and both end in the same Travel_Photos rows, so a clip picked
+from a Drive folder plays exactly like one imported from Google Photos. A
+device file is rendered down to gallery sizes in the browser (the script
+cannot decode an arbitrary video), a clip up to 25 MB travels whole, and a
+larger one honestly becomes its labelled poster frame. The picker in the
+place form takes videos too — they join the place's memories, held until a
+brand-new place is saved so they have a record to attach to.
+
 **Play Memories** turns any place's or trip's media into a full-screen show:
 photos hold for four seconds and dissolve into each other, videos play inline
 with their own sound and yield on their `ended` event, and one pause button

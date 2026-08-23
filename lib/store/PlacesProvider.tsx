@@ -19,6 +19,7 @@ import type {
   VisitedPlace,
 } from "@/types/place";
 import type { NewTripInput, Trip, TripChanges } from "@/types/trip";
+import type { PreparedDeviceMedia } from "@/lib/photos/deviceMedia";
 import type { GooglePickedMedia, TravelPhoto } from "@/types/travelPhoto";
 
 /**
@@ -106,6 +107,13 @@ type PlacesContextValue = {
     visitId?: string;
     tripId?: string;
   }) => Promise<ImportItemResult[]>;
+  /** One prepared device photo or video, into Travel_Photos. */
+  addDeviceMedia: (request: {
+    placeId?: string;
+    visitId?: string;
+    tripId?: string;
+    media: PreparedDeviceMedia;
+  }) => Promise<{ status: "imported" | "duplicate"; clipStored: boolean }>;
   removeTravelPhoto: (id: string) => Promise<void>;
   reload: () => Promise<void>;
   /** The Google Sheet this browser is pointed at. */
@@ -296,6 +304,22 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const addDeviceMedia = useCallback(
+    async (request: {
+      placeId?: string;
+      visitId?: string;
+      tripId?: string;
+      media: PreparedDeviceMedia;
+    }) => {
+      try {
+        return await sheetPlaceRepository.addDeviceTravelMedia(request);
+      } catch (error) {
+        throw new Error(friendlyMessage(error, "That couldn’t be added."));
+      }
+    },
+    [],
+  );
+
   const removeTravelPhoto = useCallback(async (id: string) => {
     try {
       await sheetPlaceRepository.removeTravelPhoto(id);
@@ -417,6 +441,7 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       capabilities: sync.capabilities,
       ensureRealVisit,
       importGooglePhotos,
+      addDeviceMedia,
       removeTravelPhoto,
       reload,
       sync: {
@@ -454,6 +479,7 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       resolveTripId,
       ensureRealVisit,
       importGooglePhotos,
+      addDeviceMedia,
       removeTravelPhoto,
       reload,
       sync,

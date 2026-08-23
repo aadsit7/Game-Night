@@ -63,10 +63,12 @@ import {
   getAll,
   importPickedPhotos,
   uploadPhoto,
+  uploadTravelMedia,
   upsertRow,
   type ImportItemResult,
   type SheetCapabilities,
 } from "@/lib/sheets/sheetsClient";
+import type { PreparedDeviceMedia } from "@/lib/photos/deviceMedia";
 import { forgetCachedPhoto } from "@/lib/storage/cloudPhotoCache";
 import { PersistenceError, type PlaceRepository } from "@/lib/storage/placeRepository";
 import { deletePhoto, getPhoto, isLocalPhotoRef } from "@/lib/storage/photoStore";
@@ -155,6 +157,7 @@ export const NO_CAPABILITIES: SheetCapabilities = {
   travelPhotos: false,
   googlePhotosPicker: false,
   googlePhotosConnected: false,
+  deviceMediaUpload: false,
 };
 
 /** What one photo-import run did, item by item plus the running totals. */
@@ -1405,6 +1408,66 @@ class SheetPlaceRepository implements PlaceRepository {
       this.persist();
     }
     return result.results;
+  }
+
+  /**
+   * One photo or video from the device, into Travel_Photos — the same tab,
+   * association rules and renditions as a Google Photos import, with the
+   * bytes coming from a picked file instead of a picking session. Online
+   * only, like every other action that moves media: megabytes of clip have
+   * no business in the localStorage write queue.
+   */
+  async addDeviceTravelMedia(request: {
+    placeId?: string;
+    visitId?: string;
+    tripId?: string;
+    media: PreparedDeviceMedia;
+  }): Promise<{ status: "imported" | "duplicate"; clipStored: boolean }> {
+    this.requireConnection();
+    const connection = this.connection;
+    if (!connection) throw new PersistenceError("Connect the app to your sheet first.");
+
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      throw new PersistenceError("Adding photos and videos needs a connection. Try again when you’re back online.");
+    }
+
+    const resolvedOrFail = (id: string | undefined, what: string): string | undefined => {
+      if (!id) return undefined;
+      const resolved = this.resolveId(id);
+      if (isLocalId(resolved)) {
+        throw new PersistenceError(
+          `That ${what} hasn’t reached the sheet yet. Give it a moment to sync, then try again.`,
+        );
+      }
+      return resolved;
+    };
+
+    const media = request.media;
+    const result = await uploadTravelMedia(connection, {
+      placeId: resolvedOrFail(request.placeId, "place"),
+      visitId: resolvedOrFail(request.visitId, "visit"),
+      tripId: resolvedOrFail(request.tripId, "trip"),
+      itemId: media.itemId,
+      filename: media.filename,
+      mimeType: media.mimeType,
+      takenAt: media.takenAt,
+      width: media.width,
+      height: media.height,
+      thumbData: await blobToBase64(media.thumb),
+      displayData: await blobToBase64(media.display),
+      videoData: media.clip ? await blobToBase64(media.clip) : undefined,
+    });
+
+    const created = travelPhotosFromTable(result.photos, new Date().toISOString());
+    if (created.length > 0) {
+      const known = new Set(created.map((photo) => photo.id));
+      this.commitTravelPhotos([
+        ...this.travelPhotos.filter((photo) => !known.has(photo.id)),
+        ...created,
+      ]);
+      this.persist();
+    }
+    return { status: result.status, clipStored: result.clipStored };
   }
 
   /**

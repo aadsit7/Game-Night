@@ -5,7 +5,7 @@ import { KeyRound } from "lucide-react";
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { Button } from "@/components/ui/Button";
-import { loadMediaCode, saveMediaCode } from "@/lib/photos/mediaCode";
+import { DEFAULT_MEDIA_CODE, saveMediaCode, storedMediaCode } from "@/lib/photos/mediaCode";
 
 /**
  * Typing the private media access code, once per device.
@@ -28,11 +28,12 @@ export function MediaCodeSheet({
 }) {
   const [code, setCode] = useState("");
 
-  // Re-opening starts from what this device already has.
+  // Re-opening starts from what this device was actually given — the field
+  // stays empty while the standard default is doing the work.
   const [wasOpen, setWasOpen] = useState(open);
   if (wasOpen !== open) {
     setWasOpen(open);
-    if (open) setCode(loadMediaCode());
+    if (open) setCode(storedMediaCode());
   }
 
   return (
@@ -74,9 +75,10 @@ export function MediaCodeSheet({
       <div className="space-y-4 pb-4">
         <p className="flex items-start gap-2 text-[14.5px] leading-relaxed text-ink-2">
           <KeyRound size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
-          Your photos live in a private Drive folder. This code — the
-          MEDIA_ACCESS_CODE you set in the Apps Script — is what lets this
-          device fetch them. Enter it once; it stays in this browser only.
+          Your photos live in a private Drive folder, behind this code. Out of
+          the box it is simply {DEFAULT_MEDIA_CODE} and nothing needs entering —
+          this sheet is for a script whose owner set their own
+          MEDIA_ACCESS_CODE. Enter it once; it stays in this browser only.
         </p>
         <input
           type="password"

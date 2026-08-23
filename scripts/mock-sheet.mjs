@@ -164,7 +164,9 @@ let nextPhotoNumber = 1;
  * mock picker page is opened, and hands back a handful of generated images.
  * The media access code below matches what you enter in the app to view.
  */
-const MOCK_MEDIA_CODE = "mock-media-code";
+// Matches the app's built-in default, so photos view with nothing to type —
+// the same out-of-the-box behaviour the real script now has.
+const MOCK_MEDIA_CODE = "2026";
 const pickerSessions = new Map();
 let nextSessionNumber = 1;
 
@@ -197,6 +199,7 @@ const CAPABILITIES = {
   travelPhotos: true,
   googlePhotosPicker: true,
   googlePhotosConnected: true,
+  deviceMediaUpload: true,
 };
 
 /** A few results shaped exactly like the script's, for the on case. */
@@ -485,6 +488,101 @@ function handle(action, body) {
       results.push({ id: googleId, status: "imported", photoId: id });
     }
     return { results, photos: { headers: TRAVEL_PHOTO_HEADERS, rows: savedRows } };
+  }
+  // Photos and videos straight from a device, stored with their real bytes so
+  // galleries and the player can be exercised against what was actually sent.
+  if (action === "uploadTravelMedia") {
+    const mimeType = String(body.mimeType || "").trim();
+    const isVideo = mimeType.startsWith("video/");
+    if (!isVideo && !mimeType.startsWith("image/")) throw new Error("Only photos and videos can be added.");
+
+    let placeId = String(body.placeId || "").trim();
+    let tripId = String(body.tripId || "").trim();
+    const visitId = String(body.visitId || "").trim();
+    if (!placeId && !tripId && !visitId) {
+      throw new Error("These photos have nothing to attach to — no visit, trip or place was named.");
+    }
+    if (visitId) {
+      const vrow = visits.find((r) => String(r[VI["Visit ID"]]).trim() === visitId);
+      if (!vrow) throw new Error(`The visit "${visitId}" is not in the sheet. If it was just added, let it sync first.`);
+      if (String(vrow[VI["Deleted?"]]).toLowerCase() === "yes") throw new Error("That visit has been deleted, so photos can no longer be added to it.");
+      placeId = String(vrow[VI["Place ID"]]).trim() || placeId;
+      tripId = String(vrow[VI["Trip ID"]]).trim() || tripId;
+    }
+
+    const itemId = String(body.itemId || "").trim();
+    let thumbId = "", displayId = "", videoId = "";
+    if (itemId) {
+      const live = travelPhotos.filter((r) =>
+        String(r[TPI["Google Photos Item ID"]]) === itemId &&
+        String(r[TPI["Deleted?"]]).toLowerCase() !== "yes");
+      const dupe = live.some((r) => {
+        if (visitId) return String(r[TPI["Visit ID"]]) === visitId;
+        if (tripId) return String(r[TPI["Trip ID"]]) === tripId && !String(r[TPI["Visit ID"]]);
+        return String(r[TPI["Place ID"]]) === placeId && !String(r[TPI["Visit ID"]]) && !String(r[TPI["Trip ID"]]);
+      });
+      if (dupe) {
+        const twin = live.find((r) => r[TPI["Video Drive File ID"]]);
+        return { status: "duplicate", clipStored: Boolean(twin), photos: { headers: [], rows: [] } };
+      }
+      const reuse = live.find((r) => r[TPI["Thumb Drive File ID"]] && r[TPI["Display Drive File ID"]]);
+      if (reuse) {
+        thumbId = reuse[TPI["Thumb Drive File ID"]];
+        displayId = reuse[TPI["Display Drive File ID"]];
+        videoId = reuse[TPI["Video Drive File ID"]] || "";
+      }
+    }
+
+    if (!thumbId || !displayId) {
+      const decode = (data, label) => {
+        const text = String(data || "");
+        if (!text) throw new Error(`The upload carried no ${label} data.`);
+        return Buffer.from(text, "base64");
+      };
+      const thumbBytes = decode(body.thumbData, "thumbnail");
+      const displayBytes = decode(body.displayData, "preview");
+      let clipBytes = null;
+      if (isVideo && body.videoData) {
+        clipBytes = decode(body.videoData, "video");
+        // Same server-side bound as MAX_DEVICE_CLIP_BYTES in Code.gs.
+        if (clipBytes.length > 40 * 1024 * 1024) {
+          throw new Error("That video is too large to store whole. Retry and it will be added as its preview frame.");
+        }
+      }
+      thumbId = `mockdrive-${nextPhotoNumber++}`;
+      photos.set(thumbId, { bytes: thumbBytes, mimeType: "image/jpeg" });
+      displayId = `mockdrive-${nextPhotoNumber++}`;
+      photos.set(displayId, { bytes: displayBytes, mimeType: "image/jpeg" });
+      if (clipBytes) {
+        videoId = `mockdrive-${nextPhotoNumber++}`;
+        photos.set(videoId, { bytes: clipBytes, mimeType });
+      }
+    }
+
+    const row = blank(TRAVEL_PHOTO_HEADERS);
+    const id = nextIdFor(travelPhotos, TPI, "Photo ID", "TPHOTO");
+    row[TPI["Photo ID"]] = id;
+    row[TPI["Google Photos Item ID"]] = itemId;
+    row[TPI["Place ID"]] = placeId;
+    row[TPI["Visit ID"]] = visitId;
+    row[TPI["Trip ID"]] = tripId;
+    row[TPI["Taken At"]] = String(body.takenAt || "");
+    row[TPI["Filename"]] = String(body.filename || "");
+    row[TPI["MIME Type"]] = mimeType;
+    row[TPI["Width"]] = body.width ? String(body.width) : "";
+    row[TPI["Height"]] = body.height ? String(body.height) : "";
+    row[TPI["Thumb Drive File ID"]] = thumbId;
+    row[TPI["Display Drive File ID"]] = displayId;
+    row[TPI["Video Drive File ID"]] = videoId;
+    row[TPI["Source"]] = "manual";
+    stampCommon(row, TPI, true);
+    travelPhotos.push(row);
+    return {
+      status: "imported",
+      photoId: id,
+      clipStored: Boolean(videoId),
+      photos: { headers: TRAVEL_PHOTO_HEADERS, rows: [row] },
+    };
   }
   if (action === "getTravelPhoto") {
     if (String(body.media || "") !== MOCK_MEDIA_CODE) {

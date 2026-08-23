@@ -46,6 +46,8 @@ export function PlaceFormSheet({
   trips,
   onCreateTrip,
   visitCount = 0,
+  onVideos,
+  pendingVideoCount,
 }: {
   open: boolean;
   mode: "create" | "edit";
@@ -71,6 +73,10 @@ export function PlaceFormSheet({
    * fields — editing them here would be overwritten by the next visit change.
    */
   visitCount?: number;
+  /** Lets the picker take videos too; they go to the place's memories. */
+  onVideos?: (files: File[]) => void;
+  /** Videos held back until a brand-new place is saved. */
+  pendingVideoCount?: number;
 }) {
   const [showEndDate, setShowEndDate] = useState(Boolean(draft.visitedTo));
   const [showCoordinates, setShowCoordinates] = useState(false);
@@ -473,6 +479,8 @@ export function PlaceFormSheet({
               photos={draft.photos}
               onChange={(photos) => set("photos", photos)}
               onError={setPhotoError}
+              onVideos={onVideos}
+              pendingVideoCount={pendingVideoCount}
             />
             {photoError ? (
               <p role="alert" className="mt-2.5 text-[13px] text-danger">

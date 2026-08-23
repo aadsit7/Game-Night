@@ -316,10 +316,13 @@ Two credentials are involved, and keeping them straight is the whole model:
 - **Google Photos OAuth** — an *import* permission. Connected once, from any
   device; the script keeps the refresh token in Script Properties and renews
   access itself. Viewing never asks for it.
-- **The media access code** — a *viewing* key you invent. Because the photo
-  files stay private in Drive, and the sheet's shared access code is public by
-  design (it ships in the static bundle), the photo bytes sit behind this
-  second, genuinely secret code. Typed once per device.
+- **The media access code** — a *viewing* key. Because the photo files stay
+  private in Drive, and the sheet's shared access code is public by design
+  (it ships in the static bundle), the photo bytes sit behind this second
+  code. Out of the box it is simply `2026` on both sides, so photos view
+  with nothing to type on any device. For real secrecy, set your own long
+  random `MEDIA_ACCESS_CODE` Script Property — the app then asks each
+  device for it once.
 
 ### Step 0 — Partner Sharing preflight (two-account setups)
 
@@ -391,7 +394,7 @@ Apps Script editor → **Project Settings → Script Properties**. Add:
 |---|---|
 | `PHOTOS_OAUTH_CLIENT_ID` | The OAuth client ID from step 2. |
 | `PHOTOS_OAUTH_CLIENT_SECRET` | The client secret from step 2. |
-| `MEDIA_ACCESS_CODE` | A long random string you invent — 20+ characters. This is the per-device viewing code. A password manager's generator is perfect. |
+| `MEDIA_ACCESS_CODE` *(optional)* | The per-device viewing code. Leave it unset and the code is simply `2026` — photos view with nothing to type. For real secrecy, set a long random string (20+ characters; a password manager's generator is perfect) and each device is asked for it once. |
 | `PHOTOS_ACCOUNT_HINT` *(optional)* | The email of the Google account to preselect on the consent screen — the App account normally, or the original photos account if the preflight said so. |
 
 `TRAVEL_PHOTOS_FOLDER_ID` is filled in automatically the first time an import
@@ -414,8 +417,10 @@ static site bundle.
 2. In the app: **sync chip → Sync settings → Google Photos → Connect**.
    A Google window opens; sign in with the account chosen above and allow.
    The page says "Google Photos connected" and closes itself.
-3. On each device you view photos from: **Google Photos → Media access
-   code**, paste the `MEDIA_ACCESS_CODE` value once.
+3. Photos now view on every device with nothing to type — the standard code
+   (`2026`) is built into both sides. Only if you set your own
+   `MEDIA_ACCESS_CODE`: on each device, **Google Photos → Media access
+   code**, paste it once.
 
 Reconnecting is only ever needed if you revoke access, Google invalidates the
 refresh token, or you switch the connected account — the status row in

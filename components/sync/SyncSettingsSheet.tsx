@@ -9,6 +9,7 @@ import { BottomSheet } from "@/components/ui/BottomSheet";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import type { SheetConnection } from "@/lib/sheets/connection";
 import { hasDefaultConnection } from "@/lib/sheets/defaultConnection";
+import type { SheetCapabilities } from "@/lib/sheets/sheetsClient";
 import type { SheetStatus } from "@/lib/storage/sheetPlaceRepository";
 import { cn } from "@/lib/utils/cn";
 
@@ -24,6 +25,7 @@ export function SyncSettingsSheet({
   onClose,
   connection,
   state,
+  capabilities,
   onConnect,
   onDisconnect,
   onSyncNow,
@@ -32,6 +34,8 @@ export function SyncSettingsSheet({
   onClose: () => void;
   connection: SheetConnection | null;
   state: SheetStatus;
+  /** What the deployed script can do; the Google Photos row reads it. */
+  capabilities: SheetCapabilities;
   onConnect: (connection: SheetConnection) => void;
   onDisconnect: () => void;
   onSyncNow: () => void;
@@ -67,7 +71,7 @@ export function SyncSettingsSheet({
             go up as you make them.
           </p>
 
-          <GooglePhotosSettings connection={connection} />
+          <GooglePhotosSettings connection={connection} capabilities={capabilities} />
 
           <section>
             <h3 className="px-1 pb-1.5 text-[13px] font-semibold uppercase tracking-[0.06em] text-ink-3">

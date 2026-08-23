@@ -687,14 +687,12 @@ function PlayerVideo({
   // detach branch is the audio's off switch: a media element removed from
   // the DOM otherwise plays on until it is collected.
   const elementRef = useRef<HTMLVideoElement | null>(null);
-  const setElement = useCallback(
-    (element: HTMLVideoElement | null) => {
-      if (element === null) elementRef.current?.pause();
-      elementRef.current = element;
-      videoRef.current = element;
-    },
-    [videoRef],
-  );
+  /** What the state machine currently believes, readable from a ref
+   * callback — which runs outside any render that could hand it props. */
+  const playingRef = useRef(playing);
+  useEffect(() => {
+    playingRef.current = playing;
+  }, [playing]);
 
   const attemptPlay = useCallback(() => {
     const element = elementRef.current;
@@ -709,6 +707,24 @@ function PlayerVideo({
       });
     }
   }, [onBlocked, onFailed]);
+
+  const setElement = useCallback(
+    (element: HTMLVideoElement | null) => {
+      if (element === null) elementRef.current?.pause();
+      elementRef.current = element;
+      videoRef.current = element;
+      // React's dev-mode ref cycle detaches and immediately re-attaches the
+      // same element — and the pause above has then just aborted the play()
+      // the effect already issued, with nothing left to retry it. Treat
+      // every attach as that retry: a clip the show believes is playing but
+      // that sits paused is asked again, and a refusal still lands in the
+      // usual Tap-to-continue path rather than a silent freeze.
+      if (element && playingRef.current && element.paused && !element.ended) {
+        attemptPlay();
+      }
+    },
+    [videoRef, attemptPlay],
+  );
 
   useEffect(() => {
     const element = elementRef.current;
