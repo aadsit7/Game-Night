@@ -383,12 +383,15 @@ export function visitFromRow(
   const deleted = isYes(cell(row, index, VISIT_COLUMNS.deleted));
   const updatedAt = timestamp(cell(row, index, VISIT_COLUMNS.updatedAt), fallbackTime);
   const start = calendarDate(cell(row, index, VISIT_COLUMNS.start));
+  const end = calendarDate(cell(row, index, VISIT_COLUMNS.end)) ?? start;
 
   return {
     id,
     placeId,
     startDate: start,
-    endDate: calendarDate(cell(row, index, VISIT_COLUMNS.end)) ?? start,
+    // A hand-edited row can end before it starts; folding that into a span
+    // would write an inverted First/Last pair back to Places. The start wins.
+    endDate: start && end && end < start ? start : end,
     tripId: text(cell(row, index, VISIT_COLUMNS.tripId)),
     status: text(cell(row, index, VISIT_COLUMNS.status)),
     tripType: text(cell(row, index, VISIT_COLUMNS.tripType)),

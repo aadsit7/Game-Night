@@ -66,6 +66,11 @@ type PlacesContextValue = {
   ) => Promise<PlaceVisit>;
   updateVisit: (id: string, changes: VisitChanges) => Promise<PlaceVisit>;
   deleteVisit: (id: string) => Promise<void>;
+  /**
+   * Removes the visit a place's old-style dates imply — clears the dates and
+   * zeroes the sheet's summary columns, since no rows remain to derive from.
+   */
+  clearImplicitVisit: (placeId: string) => Promise<void>;
   movePlace: (id: string, latitude: number, longitude: number) => Promise<VisitedPlace>;
   /** Removes the place and hands back the record so it can be restored. */
   deletePlace: (id: string) => Promise<VisitedPlace | null>;
@@ -232,6 +237,14 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const clearImplicitVisit = useCallback(async (placeId: string) => {
+    try {
+      await sheetPlaceRepository.clearImplicitVisit(placeId);
+    } catch (error) {
+      throw new Error(friendlyMessage(error, "That visit couldn’t be removed."));
+    }
+  }, []);
+
   const createTrip = useCallback(async (input: NewTripInput) => {
     try {
       return await sheetPlaceRepository.createTrip(input);
@@ -389,6 +402,7 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       addVisit,
       updateVisit,
       deleteVisit,
+      clearImplicitVisit,
       movePlace,
       deletePlace,
       restorePlace,
@@ -427,6 +441,7 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       addVisit,
       updateVisit,
       deleteVisit,
+      clearImplicitVisit,
       movePlace,
       deletePlace,
       restorePlace,

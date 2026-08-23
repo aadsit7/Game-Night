@@ -40,6 +40,7 @@ export function VisitFormSheet({
   saving,
   error,
   depth,
+  onRequestClose,
   trips,
   tripTypes,
 }: {
@@ -56,6 +57,8 @@ export function VisitFormSheet({
   saving: boolean;
   error: string | null;
   depth?: number;
+  /** Ask before closing — the unsaved-changes guard, as on the other forms. */
+  onRequestClose?: () => boolean;
   trips: Trip[];
   /** The sheet's own Trip Type words, from the Lookups tab. */
   tripTypes: string[];
@@ -90,10 +93,18 @@ export function VisitFormSheet({
   // itself — still has to appear as what it is rather than vanish.
   const knownType = !draft.tripType || tripTypes.includes(draft.tripType);
 
+  // Cancel goes through the same unsaved-changes guard as dragging the sheet
+  // away or pressing Escape — one rule, whichever way you leave.
+  const requestClose = () => {
+    if (onRequestClose && onRequestClose() === false) return;
+    onClose();
+  };
+
   return (
     <BottomSheet
       open={open}
       onClose={onClose}
+      onRequestClose={onRequestClose}
       depth={depth}
       label={mode === "add" ? `Add a visit to ${placeName}` : `Edit visit to ${placeName}`}
       header={
@@ -103,7 +114,7 @@ export function VisitFormSheet({
           </h2>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             data-autofocus
             className="pressable -mr-1 rounded-pill px-2 py-1 text-[16px] font-medium text-accent"
           >
