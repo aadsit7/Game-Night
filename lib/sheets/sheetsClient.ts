@@ -39,9 +39,12 @@ export type SheetCapabilities = {
   visits: boolean;
   /** The deployment has the Travel_Photos tab and its photo actions. */
   travelPhotos: boolean;
-  /** OAuth client credentials are configured, so "Connect Google Photos" can work. */
+  /** The deployment offers the Google Photos picker flow at all. Current
+   * scripts always do — the script's own authorisation is the default way
+   * in — while older ones only say so once OAuth credentials are set. */
   googlePhotosPicker: boolean;
-  /** A Google Photos refresh token is currently stored server-side. */
+  /** An import could run right now: the script's own token carries the
+   * Picker scope, or an OAuth-client connection is live server-side. */
   googlePhotosConnected: boolean;
   /**
    * The deployment accepts photos and videos uploaded straight from a
@@ -403,13 +406,24 @@ export async function setSetting(
  * ------------------------------------------------------------------ */
 
 export type PhotosAuthStatus = {
-  /** Client id + secret are set on the script. */
+  /** Imports can run, or there is at least a connect path worth offering. */
   configured: boolean;
-  /** A refresh token is stored server-side right now. */
+  /** An import could run right now, under whichever mode. */
   connected: boolean;
+  /**
+   * Which authorisation Photos calls ride on: "script" — the script's own
+   * Google authorisation, nothing to connect in-app — or "oauth", the
+   * optional OAuth-client connection (also what every older script is,
+   * since they predate the field).
+   */
+  mode: "script" | "oauth";
+  /** Script mode's ground truth: the script token carries the Picker scope. */
+  scopeGranted: boolean;
+  /** The script's own wording for what to do when not connected, if any. */
+  advice: string;
   connectedAt: string;
   accountHint: string;
-  /** The exact redirect URI to register on the OAuth client. */
+  /** The exact redirect URI to register on the optional OAuth client. */
   redirectUri: string;
 };
 
@@ -423,6 +437,9 @@ export async function photosAuthStatus(
   return {
     configured: data?.configured === true,
     connected: data?.connected === true,
+    mode: data?.mode === "script" ? "script" : "oauth",
+    scopeGranted: data?.scopeGranted === true,
+    advice: String(data?.advice ?? ""),
     connectedAt: String(data?.connectedAt ?? ""),
     accountHint: String(data?.accountHint ?? ""),
     redirectUri: String(data?.redirectUri ?? ""),

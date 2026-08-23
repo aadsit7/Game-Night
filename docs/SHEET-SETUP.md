@@ -28,6 +28,12 @@ once into the Apps Script project in step 4 below.
 2. **Extensions → Apps Script**. A code editor opens in a new tab.
 3. Delete whatever is in `Code.gs`, then paste the entire contents of
    [`apps-script/Code.gs`](../apps-script/Code.gs) from this repository.
+   Give the manifest the same treatment: **Project Settings (⚙️) → tick
+   "Show `appsscript.json` manifest file in editor"**, then back in the
+   editor open `appsscript.json` and paste
+   [`apps-script/appsscript.json`](../apps-script/appsscript.json) over it.
+   The manifest's scope list is what lets [Google Photos](#google-photos)
+   import work with nothing else to set up.
 4. Click the disk icon to save the script. **There is nothing to configure** —
    the access code is already in the file you just pasted.
 5. *(Optional but worth it.)* In the function dropdown pick **selfTest** and
@@ -311,11 +317,15 @@ Photos and videos can be imported straight from Google Photos into a specific
 4. From then on every device shows the photo **from Drive via the script** —
    Google Photos is never contacted again just to view.
 
-Two credentials are involved, and keeping them straight is the whole model:
+Two authorisations are involved, and keeping them straight is the whole model:
 
-- **Google Photos OAuth** — an *import* permission. Connected once, from any
-  device; the script keeps the refresh token in Script Properties and renews
-  access itself. Viewing never asks for it.
+- **Importing** — permission to read what you pick in Google Photos. The
+  script's **own authorisation** covers this out of the box: the approval
+  you give when deploying the web app now includes the Photos Picker scope,
+  so there is no Google Cloud project to create, no OAuth client, nothing
+  to store in Script Properties, and no "connect" step on any device.
+  Deploying the script *is* the connection, and it cannot lapse the way a
+  stored refresh token can.
 - **The media access code** — a *viewing* key. Because the photo files stay
   private in Drive, and the sheet's shared access code is public by design
   (it ships in the static bundle), the photo bytes sit behind this second
@@ -324,12 +334,62 @@ Two credentials are involved, and keeping them straight is the whole model:
   random `MEDIA_ACCESS_CODE` Script Property — the app then asks each
   device for it once.
 
-### Step 0 — Partner Sharing preflight (two-account setups)
+### Setup — the manifest, once
 
-If your original photo library lives in a **different** Google account from
-the one that owns this sheet (the “App account”), set up partner sharing so
-the App account can see everything, and verify it **before** doing the OAuth
-work:
+The script's authorisation lists its scopes in the project manifest
+(`appsscript.json`). Give it the Picker scope and re-authorise; that is the
+entire setup:
+
+1. Apps Script editor → **Project Settings (⚙️)** → tick **Show
+   "appsscript.json" manifest file in editor**.
+2. Open `appsscript.json` in the editor and make its `oauthScopes` match
+   the copy in this repo at
+   [`apps-script/appsscript.json`](../apps-script/appsscript.json) —
+   replacing the whole file is fine (if yours has a different `timeZone`,
+   keep it; data timestamps follow the *spreadsheet's* timezone either
+   way). The scopes, for the record:
+
+   ```json
+   "oauthScopes": [
+     "https://www.googleapis.com/auth/spreadsheets",
+     "https://www.googleapis.com/auth/drive",
+     "https://www.googleapis.com/auth/script.external_request",
+     "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
+   ]
+   ```
+
+   Listing scopes explicitly switches off Apps Script's automatic scope
+   detection, which is why the first three — everything the script already
+   uses — are spelled out alongside the new Picker scope. Leaving one out
+   breaks that feature on the next authorisation, so copy the list whole.
+3. Paste the current `Code.gs` if you haven't already, then publish a new
+   version — **Deploy → Manage deployments → pencil → Version: New version
+   → Deploy** (the [re-deploy trap](#️-the-re-deploy-trap) applies here
+   with real force: none of this exists until the new version is serving).
+   Google asks you to authorise the added permission — the same consent
+   ceremony as the very first deployment, "unverified app" interstitial
+   included (**Advanced → Go to … (unsafe)**; it is your own script,
+   reading only what you pick).
+4. That's it. Tap **Add photos** on any visit, on any device — the picker
+   opens with no connect step. Viewing needs nothing to type either — the
+   standard code (`2026`) is built into both sides. Only if you set your
+   own `MEDIA_ACCESS_CODE`: on each device, **Google Photos → Media access
+   code**, paste it once.
+
+If the app still says an authorisation is needed, the deployment is serving
+an old version (the re-deploy trap again) or the consent screen was
+dismissed halfway. Fix that, then **sync chip → Sync settings → Google
+Photos → Re-check** asks the script again.
+
+### Whose library the picker opens
+
+The script runs as the sheet owner, so the picker opens **the sheet
+owner's Google Photos library** — be signed into that account in the
+browser when the picker window opens. For a one-account setup that is the
+end of the story. For a two-account setup — your photos live in a
+different Google account than the one that owns the sheet (the "App
+account") — Partner Sharing brings the whole original library into the App
+account:
 
 1. In Google Photos, sign into the **original** account → Settings → Partner
    sharing → share with the App account (All photos).
@@ -337,19 +397,23 @@ work:
    partner's name choose **Save to your account → All photos**.
 3. Open the App account's Photos library and confirm old photos from the
    original account actually appear in it (saving can take a while to backfill).
-4. After finishing the setup below, run one small test: connect the App
-   account, tap Add photos on any visit, and confirm you can select one of
-   those old partner-shared photos in the picker.
+4. After the manifest step above, tap Add photos on any visit and confirm
+   you can select one of those partner-shared photos in the picker.
 
-If the partner-saved photos show up in the picker, use the **App account** for
-the Photos connection permanently — everything (Sheet, Drive, Apps Script,
-Photos) then lives behind one account. If they don't, connect the **original**
-photos account instead: imports still land in the App account's Drive, because
-the script always runs as the sheet owner. Set the account to steer the
-consent screen with the `PHOTOS_ACCOUNT_HINT` property below rather than
-hard-coding an address anywhere.
+If the partner-saved photos show up in the picker, you are done —
+everything (Sheet, Drive, Apps Script, Photos) lives behind one account. If
+they don't, the optional OAuth-client mode below can point the picker at
+the original account's library directly.
 
-### Step 1 — Google Cloud project and the Picker API
+### Optional — a different account, via an OAuth client
+
+Everything in this subsection exists for exactly one case: the picker must
+open a Google account's library **other than the sheet owner's**, and
+Partner Sharing above didn't cover it. Skip it otherwise — the default
+mode stores no credentials at all, and when both are set up, a connected
+OAuth client takes precedence.
+
+#### Step 1 — Google Cloud project and the Picker API
 
 1. Go to [console.cloud.google.com](https://console.cloud.google.com/) and
    create a project (or reuse the one from Maps search).
@@ -375,7 +439,7 @@ hard-coding an address anywhere.
 > consent screen actually presents; if it demands verification steps for your
 > configuration, they are not optional.
 
-### Step 2 — OAuth client and redirect URI
+#### Step 2 — OAuth client and redirect URI
 
 1. **APIs & Services → Credentials → Create credentials → OAuth client ID**.
 2. Application type: **Web application**. Name: anything.
@@ -386,7 +450,7 @@ hard-coding an address anywhere.
    that rather than retyping it.
 4. Create, then copy the **Client ID** and **Client secret**.
 
-### Step 3 — Script Properties
+#### Step 3 — Script Properties
 
 Apps Script editor → **Project Settings → Script Properties**. Add:
 
@@ -394,37 +458,36 @@ Apps Script editor → **Project Settings → Script Properties**. Add:
 |---|---|
 | `PHOTOS_OAUTH_CLIENT_ID` | The OAuth client ID from step 2. |
 | `PHOTOS_OAUTH_CLIENT_SECRET` | The client secret from step 2. |
-| `MEDIA_ACCESS_CODE` *(optional)* | The per-device viewing code. Leave it unset and the code is simply `2026` — photos view with nothing to type. For real secrecy, set a long random string (20+ characters; a password manager's generator is perfect) and each device is asked for it once. |
-| `PHOTOS_ACCOUNT_HINT` *(optional)* | The email of the Google account to preselect on the consent screen — the App account normally, or the original photos account if the preflight said so. |
-
-`TRAVEL_PHOTOS_FOLDER_ID` is filled in automatically the first time an import
-runs (the script creates the private `Travel App Photos` folder and remembers
-it). You never need to set it by hand.
+| `PHOTOS_ACCOUNT_HINT` *(optional)* | The email of the Google account to preselect on the consent screen — the account whose library the picker should open. |
 
 **Never commit any of these values to the repository.** The client secret,
 the refresh token and the media code live in Script Properties and nowhere
 else; none of them are ever written to the sheet, to Drive, or into the
 static site bundle.
 
-### Step 4 — Redeploy, then connect once
+#### Step 4 — Connect once
 
-1. Paste the new `Code.gs` and publish a new version — **Deploy → Manage
-   deployments → pencil → Version: New version → Deploy** (the
-   [re-deploy trap](#️-the-re-deploy-trap) applies here with real force: the
-   photo actions do not exist until the new version is serving). The first
-   run asks you to re-authorise the script, now including Drive access and
-   the ability to call external services (the Google Photos APIs).
-2. In the app: **sync chip → Sync settings → Google Photos → Connect**.
-   A Google window opens; sign in with the account chosen above and allow.
-   The page says "Google Photos connected" and closes itself.
-3. Photos now view on every device with nothing to type — the standard code
-   (`2026`) is built into both sides. Only if you set your own
-   `MEDIA_ACCESS_CODE`: on each device, **Google Photos → Media access
-   code**, paste it once.
+In the app: **sync chip → Sync settings → Google Photos → Connect**. A
+Google window opens; sign in with the account whose library the picker
+should show, and allow. The page says "Google Photos connected" and closes
+itself. Imports still land in the App account's Drive, because the script
+always runs as the sheet owner.
 
 Reconnecting is only ever needed if you revoke access, Google invalidates the
 refresh token, or you switch the connected account — the status row in
 settings says so when it happens.
+
+### Other Script Properties
+
+`MEDIA_ACCESS_CODE` *(optional, both modes)* — the per-device viewing code.
+Leave it unset and the code is simply `2026` — photos view with nothing to
+type. For real secrecy, set a long random string (20+ characters; a
+password manager's generator is perfect) and each device is asked for it
+once.
+
+`TRAVEL_PHOTOS_FOLDER_ID` is filled in automatically the first time an import
+runs (the script creates the private `Travel App Photos` folder and remembers
+it). You never need to set it by hand.
 
 ### Adding photos
 
@@ -452,7 +515,7 @@ that landed stay landed and a **Retry** button re-sends only the failures.
 | Image bytes (thumb ~512px, display ~2048px, video clip when it fits) | Private Drive folder `Travel App Photos` | **Not** link-shared. Only the script can read them, and it serves them only through `getTravelPhoto`, only with the media code, and only for files its own rows point at. |
 | Google Photos item id | `Travel_Photos` tab | The durable identity, used to skip duplicates and reuse existing Drive files instead of storing copies. |
 | Google Photos `baseUrl` | **Nowhere** | Temporary by design; used server-side during import and discarded. |
-| OAuth refresh/access tokens, client secret, media code | Script Properties | Never in the sheet, Drive, or the repository. |
+| Media code; OAuth client secret + tokens (optional different-account mode only) | Script Properties | The default mode stores no credentials anywhere — the script's own authorisation is the permission. Never in the sheet, Drive, or the repository. |
 | Viewed photo bytes | Each device's IndexedDB cache | So galleries are instant after the first look, and viewable offline. |
 
 Deleting a photo in the app tombstones its row first, then moves the Drive
