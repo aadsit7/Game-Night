@@ -10,7 +10,9 @@
  */
 import assert from "node:assert/strict";
 
-const { buildTimeline, formatDays, gapLabel } = await import("../lib/timeline/buildTimeline.ts");
+const { buildScrubTrack, buildTimeline, formatDays, gapLabel, stopAt, valueAt } = await import(
+  "../lib/timeline/buildTimeline.ts"
+);
 
 let failures = 0;
 function test(name, body) {
@@ -194,6 +196,113 @@ test("only gaps worth mentioning get a label", () => {
   assert.equal(gapLabel("2020-01-01", "2023-01-01"), "3 years later");
   assert.equal(gapLabel("2020-01-01", "2021-07-01"), "over a year later");
   assert.equal(gapLabel("bad", "2024-01-01"), null);
+});
+
+/*
+ * The scrubber's track.
+ *
+ * The control is dragged with a thumb over its own histogram, so two things
+ * have to hold at once: the position under the thumb must land on the year
+ * whose bar is under the thumb, and every place must have somewhere on the
+ * track that reaches it. Both are arithmetic, and neither is visible in a
+ * screenshot.
+ */
+
+const yearsOf = (...places) => buildTimeline(places).years;
+
+test("every place is a stop, in the order the timeline draws them", () => {
+  const track = buildScrubTrack(
+    yearsOf(
+      place("Kyoto", "2024-03-25", "2024-04-02"),
+      place("Lisbon", "2019-09-12", "2019-09-19"),
+      place("Banff", "2024-07-18", "2024-07-25"),
+    ),
+  );
+
+  assert.deepEqual(track.stops.map((stop) => stop.name), ["Lisbon", "Kyoto", "Banff"]);
+  assert.deepEqual(track.stops.map((stop) => stop.month), ["Sep", "Mar", "Jul"]);
+  assert.deepEqual(track.stops.map((stop) => stop.yearIndex), [0, 1, 1]);
+  assert.deepEqual(track.stops.map((stop) => stop.indexInYear), [0, 0, 1]);
+  assert.deepEqual(track.counts, [1, 2]);
+  assert.deepEqual(track.firstStop, [0, 1]);
+});
+
+test("a year owns the same slice of the track however busy it was", () => {
+  // The bars above the track are equal-width, so the positions under them have
+  // to be too: a handle that sat outside the bar it had lit would be lying.
+  const track = buildScrubTrack(
+    yearsOf(
+      place("One", "2020-01-01", "2020-01-02"),
+      ...Array.from({ length: 9 }, (unused, index) =>
+        place(`Many ${index}`, `2021-0${index + 1}-01`, `2021-0${index + 1}-02`),
+      ),
+    ),
+  );
+
+  // Anywhere in the first half of the track is 2020; anywhere in the second is 2021.
+  assert.equal(track.stops[stopAt(track, 0)].year, 2020);
+  assert.equal(track.stops[stopAt(track, Math.floor(track.max * 0.49))].year, 2020);
+  assert.equal(track.stops[stopAt(track, Math.ceil(track.max * 0.51))].year, 2021);
+  assert.equal(track.stops[stopAt(track, track.max)].year, 2021);
+});
+
+test("every stop can be reached, and reports the position it was reached from", () => {
+  // The busiest year decides how fine the track has to be. Nine places sharing
+  // one year is the case that used to round two of them onto one position,
+  // leaving the second unreachable by dragging.
+  const years = yearsOf(
+    place("Solo", "2019-05-01", "2019-05-02"),
+    ...Array.from({ length: 9 }, (unused, index) =>
+      place(`Stop ${index}`, `2024-0${index + 1}-01`, `2024-0${index + 1}-02`),
+    ),
+  );
+  const track = buildScrubTrack(years);
+
+  track.stops.forEach((stop, index) => {
+    const value = valueAt(track, index);
+    assert.ok(value >= 0 && value <= track.max, `${stop.name} sits off the track`);
+    assert.equal(stopAt(track, value), index, `${stop.name} is not where it says it is`);
+  });
+});
+
+test("dragging the whole track passes through every stop in turn", () => {
+  const track = buildScrubTrack(
+    yearsOf(
+      place("A", "2022-02-01", "2022-02-03"),
+      place("B", "2022-06-01", "2022-06-03"),
+      place("C", "2023-04-01", "2023-04-03"),
+      place("D", "2023-08-01", "2023-08-03"),
+      place("E", "2023-11-01", "2023-11-03"),
+    ),
+  );
+
+  const walked = [];
+  for (let value = 0; value <= track.max; value += 1) {
+    const index = stopAt(track, value);
+    if (walked[walked.length - 1] !== index) walked.push(index);
+  }
+
+  assert.deepEqual(walked, [0, 1, 2, 3, 4]);
+});
+
+test("positions off either end of the track land on the ends of the history", () => {
+  const track = buildScrubTrack(
+    yearsOf(place("First", "2018-01-01", "2018-01-02"), place("Last", "2024-01-01", "2024-01-02")),
+  );
+
+  assert.equal(stopAt(track, -50), 0);
+  assert.equal(stopAt(track, track.max + 50), 1);
+  assert.equal(valueAt(track, -3), valueAt(track, 0));
+  assert.equal(valueAt(track, 99), valueAt(track, track.stops.length - 1));
+});
+
+test("an empty history has a track with nothing on it", () => {
+  const track = buildScrubTrack(buildTimeline([]).years);
+
+  assert.deepEqual(track.stops, []);
+  assert.equal(track.max, 0);
+  assert.equal(stopAt(track, 0), -1);
+  assert.equal(valueAt(track, 0), 0);
 });
 
 if (failures > 0) {

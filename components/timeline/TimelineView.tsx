@@ -1,13 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useReducedMotion } from "framer-motion";
 import { CalendarClock, Luggage, Plus } from "lucide-react";
 
 import { TimelineScrubber } from "@/components/timeline/TimelineScrubber";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
-import { buildTimeline, formatDays, gapLabel, type TimelineEntry } from "@/lib/timeline/buildTimeline";
+import {
+  buildScrubTrack,
+  buildTimeline,
+  formatDays,
+  gapLabel,
+  stopAt,
+  valueAt,
+  type ScrubStop,
+  type TimelineEntry,
+} from "@/lib/timeline/buildTimeline";
 import { formatVisitRange } from "@/lib/utils/date";
 import { flagVariant } from "@/lib/ui/flags";
 import { countryFlag, placeSubtitle } from "@/lib/utils/geo";
@@ -21,7 +31,8 @@ import type { Trip } from "@/types/trip";
  * Reads from the same `places` array the globe and the list do — there is no
  * third dataset to fall out of step. It opens on the most recent year, because
  * that is the one worth seeing first, and the scrubber underneath is how you
- * get anywhere else without a long scroll.
+ * get anywhere else without a long scroll — down to the individual place, not
+ * just the year it happened in.
  */
 export function TimelineView({
   places,
@@ -50,10 +61,20 @@ export function TimelineView({
     return map;
   }, [trips]);
   const { years, undated, busiest, totals } = timeline;
+  /** Every place the scrubber can land on, and how they map onto its track. */
+  const track = useMemo(() => buildScrubTrack(years), [years]);
 
+  const reduceMotion = useReducedMotion();
   const scrollRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef(new Map<number, HTMLElement>());
-  const [activeIndex, setActiveIndex] = useState(0);
+  const entryRefs = useRef(new Map<string, HTMLElement>());
+  /**
+   * Where the scrubber's handle sits, in the track's own units. Clamped as it
+   * is read rather than stored clamped: a place added or removed reshapes the
+   * track under the handle, and the alternative is a stored position that
+   * points past the end of a shorter history until something moves it.
+   */
+  const [scrubValue, setScrubValue] = useState(0);
 
   /**
    * While a drag is driving the scroll, the scroll handler must not fight it by
@@ -62,50 +83,133 @@ export function TimelineView({
    */
   const scrubbingUntil = useRef(0);
   const openedAt = useRef(false);
+  /**
+   * The scroll-margin each kind of landing place carries, read back from the
+   * DOM rather than written down twice. The same figure has to put a stop below
+   * the sticky year heading when the scrubber jumps to it *and* recognise that
+   * stop again once the scroll settles; as two constants they drift apart and
+   * the handle springs back a place every time you let go. Forgotten whenever
+   * the safe-area inset underneath it can have changed.
+   */
+  const margins = useRef<{ section: number; entry: number } | null>(null);
 
-  const scrollToYear = useCallback((index: number, behavior: ScrollBehavior) => {
-    const year = years[index];
-    const section = year ? sectionRefs.current.get(year.year) : undefined;
-    const container = scrollRef.current;
-    if (!section || !container) return;
+  useEffect(() => {
+    const forget = () => {
+      margins.current = null;
+    };
+    window.addEventListener("resize", forget);
+    window.addEventListener("orientationchange", forget);
+    return () => {
+      window.removeEventListener("resize", forget);
+      window.removeEventListener("orientationchange", forget);
+    };
+  }, []);
 
-    scrubbingUntil.current = Date.now() + 700;
-    container.scrollTo({
-      top: section.offsetTop - container.offsetTop - 8,
-      behavior,
-    });
-  }, [years]);
+  /**
+   * What a stop scrolls to. A year's first place scrolls to the year itself, so
+   * arriving in 2019 shows the heading that says so; every other place scrolls
+   * to its own row.
+   */
+  const anchorFor = useCallback((stop: ScrubStop | undefined) => {
+    if (!stop) return undefined;
+    return stop.indexInYear === 0
+      ? sectionRefs.current.get(stop.year)
+      : entryRefs.current.get(stop.placeId);
+  }, []);
+
+  const scrollMargins = useCallback(() => {
+    if (margins.current) return margins.current;
+    const read = (element?: HTMLElement) =>
+      element ? Number.parseFloat(getComputedStyle(element).scrollMarginTop) || 0 : 0;
+
+    const next = {
+      section: read(sectionRefs.current.values().next().value),
+      entry: read(entryRefs.current.values().next().value),
+    };
+    // Nothing has rendered yet: measure again rather than cache a zero.
+    if (next.section || next.entry) margins.current = next;
+    return next;
+  }, []);
+
+  /** Where the page sits when this stop is at the top of the view. */
+  const landingTop = useCallback(
+    (stopIndex: number) => {
+      const stop = track.stops[stopIndex];
+      const element = anchorFor(stop);
+      if (!stop || !element) return Number.NEGATIVE_INFINITY;
+      const inset = scrollMargins();
+      return element.offsetTop - (stop.indexInYear === 0 ? inset.section : inset.entry);
+    },
+    [track, anchorFor, scrollMargins],
+  );
+
+  const scrollToStop = useCallback(
+    (stopIndex: number, behavior: ScrollBehavior) => {
+      const element = anchorFor(track.stops[stopIndex]);
+      if (!element) return;
+      // Long enough to cover a smooth scroll; short enough that the next step
+      // of a drag is never waiting on the one before it.
+      scrubbingUntil.current = Date.now() + (behavior === "smooth" ? 650 : 300);
+      element.scrollIntoView({ block: "start", behavior });
+    },
+    [track, anchorFor],
+  );
 
   // Land on the most recent year rather than the oldest: the last trip is the
   // one someone opening this is usually looking for.
   useEffect(() => {
     if (openedAt.current || years.length === 0) return;
     openedAt.current = true;
-    const last = years.length - 1;
-    setActiveIndex(last);
+    const first = track.firstStop[years.length - 1];
+    setScrubValue(valueAt(track, first));
     // After paint, so the sections have their real offsets.
-    requestAnimationFrame(() => scrollToYear(last, "auto"));
-  }, [years, scrollToYear]);
+    requestAnimationFrame(() => scrollToStop(first, "auto"));
+  }, [years, track, scrollToStop]);
 
   const onScroll = useCallback(() => {
     if (Date.now() < scrubbingUntil.current) return;
     const container = scrollRef.current;
-    if (!container) return;
+    if (!container || track.stops.length === 0) return;
 
-    // The year whose heading has most recently passed the top of the viewport.
-    const line = container.scrollTop + 72;
-    let next = 0;
-    years.forEach((year, index) => {
-      const section = sectionRefs.current.get(year.year);
-      if (section && section.offsetTop - container.offsetTop <= line) next = index;
-    });
-    setActiveIndex((current) => (current === next ? current : next));
-  }, [years]);
+    const top = container.scrollTop;
+    /*
+     * The last places on a timeline can never reach the top of the view —
+     * there is nothing below them to scroll past — so at the bottom the answer
+     * is the last stop, not the last one that happens to fit.
+     */
+    const atEnd = top + container.clientHeight >= container.scrollHeight - 2;
 
-  const scrub = useCallback((index: number) => {
-    setActiveIndex(index);
-    scrollToYear(index, "smooth");
-  }, [scrollToYear]);
+    let found = track.stops.length - 1;
+    if (!atEnd) {
+      // The last stop the scroll has reached. Landing positions only climb, so
+      // this is a binary search rather than a walk past every place.
+      let low = 0;
+      let high = track.stops.length - 1;
+      found = 0;
+      while (low <= high) {
+        const mid = (low + high) >> 1;
+        if (landingTop(mid) <= top + 1) {
+          found = mid;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+    }
+
+    const next = valueAt(track, found);
+    setScrubValue((current) => (current === next ? current : next));
+  }, [track, landingTop]);
+
+  const scrub = useCallback(
+    (next: number, live: boolean) => {
+      setScrubValue(next);
+      // A drag jumps: a smooth scroll queued per step leaves the list trailing
+      // the thumb by half a second. Anything else glides.
+      scrollToStop(stopAt(track, next), live || reduceMotion ? "auto" : "smooth");
+    },
+    [track, scrollToStop, reduceMotion],
+  );
 
   if (loading) {
     return (
@@ -190,7 +294,9 @@ export function TimelineView({
                 else sectionRefs.current.delete(year.year);
               }}
               aria-labelledby={`timeline-year-${year.year}`}
-              className="scroll-mt-4"
+              // Scrubbing to a year puts its heading clear of the status bar,
+              // not underneath it.
+              style={{ scrollMarginTop: "calc(env(safe-area-inset-top, 0px) + 8px)" }}
             >
               <div
                 className="sticky z-10 -mx-4 flex items-baseline gap-3 bg-bg/85 px-4 pb-2 pt-3 backdrop-blur-xl"
@@ -226,6 +332,10 @@ export function TimelineView({
                       {gap ? <Gap label={gap} /> : null}
                       <Entry
                         entry={entry}
+                        anchorRef={(node) => {
+                          if (node) entryRefs.current.set(entry.place.id, node);
+                          else entryRefs.current.delete(entry.place.id);
+                        }}
                         last={index === year.entries.length - 1}
                         tripName={
                           opensATrip && entry.place.tripId
@@ -250,7 +360,8 @@ export function TimelineView({
 
       <TimelineScrubber
         years={years}
-        activeIndex={activeIndex}
+        track={track}
+        value={Math.min(scrubValue, track.max)}
         onScrub={scrub}
         busiest={busiest}
         bottomInset={bottomInset}
@@ -279,12 +390,15 @@ function Header({ totals }: { totals: { places: number; countries: number; days:
 /** One place, on the spine. */
 function Entry({
   entry,
+  anchorRef,
   last,
   tripName,
   onOpen,
   onOpenTrip,
 }: {
   entry: TimelineEntry;
+  /** Registers the row as somewhere the scrubber can land. */
+  anchorRef: (node: HTMLElement | null) => void;
   last: boolean;
   /** Absent unless the place belongs to a trip the app knows about. */
   tripName?: string;
@@ -301,7 +415,13 @@ function Entry({
   const hasPhoto = Boolean(place.coverImage);
 
   return (
-    <div className="relative flex gap-3 pl-1">
+    <div
+      ref={anchorRef}
+      className="relative flex gap-3 pl-1"
+      // Clears the status bar and the year heading stuck below it, so a place
+      // scrubbed to is never hiding behind the year it belongs to.
+      style={{ scrollMarginTop: "calc(env(safe-area-inset-top, 0px) + 54px)" }}
+    >
       {/* The spine: a dot for this stop, and the line onward to the next. */}
       <div className="relative flex w-3 shrink-0 justify-center" aria-hidden="true">
         <span className="absolute top-[20px] size-[9px] rounded-full bg-accent ring-4 ring-bg" />
