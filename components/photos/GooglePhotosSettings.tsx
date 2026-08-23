@@ -5,14 +5,16 @@ import { Camera, Check, KeyRound, Loader2, Unplug } from "lucide-react";
 
 import { MediaCodeSheet } from "@/components/photos/MediaCodeSheet";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { loadMediaCode } from "@/lib/photos/mediaCode";
+import { DEFAULT_MEDIA_CODE, storedMediaCode } from "@/lib/photos/mediaCode";
 import { openPickerWindow, navigatePickerWindow, closePickerWindow } from "@/lib/photos/pickerWindow";
 import type { SheetConnection } from "@/lib/sheets/connection";
 import {
+  SheetError,
   photosAuthDisconnect,
   photosAuthStart,
   photosAuthStatus,
   type PhotosAuthStatus,
+  type SheetCapabilities,
 } from "@/lib/sheets/sheetsClient";
 
 /**
@@ -22,7 +24,14 @@ import {
  * Connecting is an import permission; viewing never needs it. That split is
  * the whole design, and the copy here says so.
  */
-export function GooglePhotosSettings({ connection }: { connection: SheetConnection | null }) {
+export function GooglePhotosSettings({
+  connection,
+  capabilities,
+}: {
+  connection: SheetConnection | null;
+  /** What the deployed script can do — the row asks nothing it can't answer. */
+  capabilities: SheetCapabilities;
+}) {
   const [status, setStatus] = useState<PhotosAuthStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -30,33 +39,54 @@ export function GooglePhotosSettings({ connection }: { connection: SheetConnecti
   const [codeSheetOpen, setCodeSheetOpen] = useState(false);
   // Lazy initialiser: this section only ever renders client-side, inside an
   // opened settings sheet, so localStorage is readable here.
-  const [hasMediaCode, setHasMediaCode] = useState(() => Boolean(loadMediaCode()));
+  const [hasOwnMediaCode, setHasOwnMediaCode] = useState(() => Boolean(storedMediaCode()));
 
-  /** The check itself failed — say so, or the row reads "Checking…" forever. */
-  const [statusFailed, setStatusFailed] = useState(false);
+  /**
+   * Asking an old deployment about Google Photos gets "Unknown action" back
+   * — which used to render here as "you may be offline". The capabilities
+   * the script itself advertised decide what to ask: a current script with
+   * no OAuth credentials is simply not configured, and an older script is
+   * told apart from a network problem instead of blamed on one.
+   */
+  const scriptCurrent = capabilities.travelPhotos;
+  const pickerReady = capabilities.googlePhotosPicker;
+
+  /** The check itself failed — the honest reason, or the row reads "Checking…" forever. */
+  const [statusError, setStatusError] = useState<string | null>(null);
   /** Bumped to re-run the status fetch — the one external system here. */
   const [statusEpoch, setStatusEpoch] = useState(0);
   const refresh = useCallback(() => {
-    setStatusFailed(false);
+    setStatusError(null);
     setStatusEpoch((epoch) => epoch + 1);
   }, []);
 
   useEffect(() => {
-    if (!connection) return;
+    if (!connection || !pickerReady) return;
     let disposed = false;
     void photosAuthStatus(connection)
       .then((next) => {
         if (!disposed) setStatus(next);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         // Settings still render; the row reports the failed check and the
         // button becomes Retry rather than a Connect that can never enable.
-        if (!disposed) setStatusFailed(true);
+        if (disposed) return;
+        if (error instanceof SheetError && error.kind === "network") {
+          setStatusError("Google Photos couldn’t be checked — you may be offline");
+        } else if (error instanceof SheetError && error.kind === "timeout") {
+          setStatusError("The check took too long — the script may be busy");
+        } else {
+          setStatusError(
+            error instanceof Error && error.message
+              ? error.message
+              : "Google Photos couldn’t be checked",
+          );
+        }
       });
     return () => {
       disposed = true;
     };
-  }, [connection, statusEpoch]);
+  }, [connection, pickerReady, statusEpoch]);
 
   // Coming back from the consent window is the moment to re-check.
   useEffect(() => {
@@ -126,21 +156,23 @@ export function GooglePhotosSettings({ connection }: { connection: SheetConnecti
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-[15px] leading-snug text-ink">
-              {status === null
-                ? statusFailed
-                  ? "Google Photos couldn’t be checked — you may be offline"
-                  : "Checking Google Photos…"
-                : status.connected
-                  ? "Connected — photos can be imported from any device"
-                  : status.configured
-                    ? "Not connected yet"
-                    : "Not configured — see the setup guide"}
+              {!scriptCurrent
+                ? "The deployed script is older than this app — re-deploy Code.gs to enable Google Photos"
+                : !pickerReady
+                  ? "Not configured — see the setup guide"
+                  : status === null
+                    ? (statusError ?? "Checking Google Photos…")
+                    : status.connected
+                      ? "Connected — photos can be imported from any device"
+                      : status.configured
+                        ? "Not connected yet"
+                        : "Not configured — see the setup guide"}
             </p>
             <p className="mt-0.5 text-[12.5px] leading-snug text-ink-3">
               Connecting is only for importing. Viewing photos already added never asks for this.
             </p>
           </div>
-          {status?.connected ? (
+          {!scriptCurrent || !pickerReady ? null : status?.connected ? (
             <button
               type="button"
               onClick={() => setConfirmDisconnect(true)}
@@ -150,7 +182,7 @@ export function GooglePhotosSettings({ connection }: { connection: SheetConnecti
               <Unplug size={13} aria-hidden="true" className="mr-1 inline-block align-[-2px]" />
               Disconnect
             </button>
-          ) : status === null && statusFailed ? (
+          ) : status === null && statusError ? (
             <button
               type="button"
               onClick={refresh}
@@ -181,9 +213,9 @@ export function GooglePhotosSettings({ connection }: { connection: SheetConnecti
           <span className="min-w-0 flex-1">
             <span className="block text-[15px] leading-snug text-ink">Media access code</span>
             <span className="mt-0.5 block text-[12.5px] leading-snug text-ink-3">
-              {hasMediaCode
+              {hasOwnMediaCode
                 ? "Saved on this device — photos can be viewed here"
-                : "Enter once per device to view imported photos"}
+                : `Using the standard code (${DEFAULT_MEDIA_CODE}) — photos just work. Enter your own if your script has one.`}
             </span>
           </span>
         </button>
@@ -199,7 +231,7 @@ export function GooglePhotosSettings({ connection }: { connection: SheetConnecti
       <MediaCodeSheet
         open={codeSheetOpen}
         onClose={() => setCodeSheetOpen(false)}
-        onSaved={() => setHasMediaCode(true)}
+        onSaved={() => setHasOwnMediaCode(Boolean(storedMediaCode()))}
       />
 
       <ConfirmDialog

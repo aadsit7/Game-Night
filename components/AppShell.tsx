@@ -2231,6 +2231,7 @@ export function AppShell() {
         onClose={() => setSyncOpen(false)}
         connection={sync.connection}
         state={sync.state}
+        capabilities={capabilities}
         onConnect={sync.connect}
         onDisconnect={sync.disconnect}
         onSyncNow={sync.syncNow}

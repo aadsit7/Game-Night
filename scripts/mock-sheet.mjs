@@ -164,7 +164,9 @@ let nextPhotoNumber = 1;
  * mock picker page is opened, and hands back a handful of generated images.
  * The media access code below matches what you enter in the app to view.
  */
-const MOCK_MEDIA_CODE = "mock-media-code";
+// Matches the app's built-in default, so photos view with nothing to type —
+// the same out-of-the-box behaviour the real script now has.
+const MOCK_MEDIA_CODE = "2026";
 const pickerSessions = new Map();
 let nextSessionNumber = 1;
 

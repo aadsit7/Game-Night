@@ -1638,19 +1638,19 @@ function saveTravelPhotoRow_(fields) {
 var MEDIA_ACCESS_CODE_PROPERTY = 'MEDIA_ACCESS_CODE';
 
 /**
- * Private photo bytes need a better door than the shared access code, which
- * is public by design (it ships in the static site). This second code lives
- * only in Script Properties and in the browsers the owner typed it into —
- * never in the repository, never in the bundle.
+ * Photo bytes sit behind their own code, separate from the shared access
+ * code (which is public by design — it ships in the static site). Out of
+ * the box the code is simply '2026', matching the app's own default, so
+ * photos view with nothing to set up. An owner who wants real secrecy sets
+ * a long random MEDIA_ACCESS_CODE Script Property instead — it overrides
+ * the default here, and each device is then asked for it once.
  */
+var DEFAULT_MEDIA_CODE = '2026';
+
 function authorizeMedia_(supplied) {
-  var expected = PropertiesService.getScriptProperties().getProperty(MEDIA_ACCESS_CODE_PROPERTY) || '';
-  if (!expected) {
-    throw new Error(
-      'No media access code is set. Add a long random ' + MEDIA_ACCESS_CODE_PROPERTY +
-      ' script property before private photos can be viewed — see docs/SHEET-SETUP.md.'
-    );
-  }
+  var expected =
+    PropertiesService.getScriptProperties().getProperty(MEDIA_ACCESS_CODE_PROPERTY) ||
+    DEFAULT_MEDIA_CODE;
   if (!supplied || !constantTimeEquals_(String(supplied), expected)) {
     throw new Error('Wrong or missing media access code.');
   }
