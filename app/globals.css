@@ -384,8 +384,10 @@ select {
  * threshold anywhere in this: fly down to a city and the map covers every
  * pixel of it, and space is gone because the Earth is in the way.
  *
- * The starfield is a fixed scatter rather than a random one. The same sky
- * every time is a place; a sky that reshuffles on each render is a screensaver.
+ * This layer keeps only what does not move with the view: the void's colour,
+ * the galaxy's wash, and two whispers of nebula pinned to the corners of the
+ * window. The stars themselves live in `__stars` below, which slides — hold
+ * these still behind them and the sky gains an extra layer of depth.
  */
 .globe-space {
   background-color: var(--c-space);
@@ -393,92 +395,23 @@ select {
     /* The nearest thing to a galaxy: a cool wash behind the planet, so the
        black has some depth in it rather than being a flat backdrop. */
     radial-gradient(140% 90% at 50% 38%, var(--c-space-glow) 0%, rgba(0, 0, 0, 0) 62%),
-    radial-gradient(1.2px 1.2px at 52.7% 13.5%, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 15.1% 1.2%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 80.6% 8.1%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(1.6px 1.6px at 67.3% 3.0%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 37.9% 5.2%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(1.6px 1.6px at 34.7% 25.7%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 51.1% 2.8%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(1.2px 1.2px at 33.0% 5.6%, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 36.1% 74.9%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 14.4% 51.5%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(1.2px 1.2px at 6.1% 43.0%, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 22.3% 89.9%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(1.2px 1.2px at 69.8% 50.5%, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(1.6px 1.6px at 45.3% 65.0%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 25.9% 31.6%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 73.8% 88.3%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(1.2px 1.2px at 97.7% 76.0%, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 55.6% 93.9%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 95.0% 85.0%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 71.0% 39.8%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 4.3% 84.4%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 61.2% 83.2%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 43.0% 79.5%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(1.2px 1.2px at 43.8% 66.9%, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 71.8% 70.2%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 58.7% 12.4%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(1.2px 1.2px at 82.4% 73.7%, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 34.4% 41.1%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(1.6px 1.6px at 28.3% 63.7%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(1.6px 1.6px at 70.0% 64.7%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(1.2px 1.2px at 60.5% 48.9%, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(1.6px 1.6px at 21.8% 83.0%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 78.2% 49.7%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 92.6% 49.9%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 79.5% 18.5%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 92.6% 19.2%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 72.1% 63.4%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 47.8% 60.2%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 43.2% 13.9%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 81.7% 5.2%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 47.2% 20.3%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 13.6% 93.5%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 26.9% 23.0%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 38.5% 3.0%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(0.9px 0.9px at 49.7% 39.6%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
-    radial-gradient(1.6px 1.6px at 30.4% 6.2%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%),
-    /* A few stars are allowed a colour. A real sky is not monochrome — Antares
-       burns orange, Rigel blue — and two warm and two cool points among the
-       white ones stop the scatter reading as printed dots. */
-    radial-gradient(1.4px 1.4px at 18.6% 12.9%, rgba(255, 214, 170, 0.85) 0%, rgba(255, 214, 170, 0) 100%),
-    radial-gradient(1.4px 1.4px at 84.2% 61.3%, rgba(255, 206, 158, 0.8) 0%, rgba(255, 206, 158, 0) 100%),
-    radial-gradient(1.5px 1.5px at 63.9% 22.4%, rgba(170, 200, 255, 0.9) 0%, rgba(170, 200, 255, 0) 100%),
-    radial-gradient(1.5px 1.5px at 9.4% 64.8%, rgba(178, 206, 255, 0.85) 0%, rgba(178, 206, 255, 0) 100%),
-    /* The Milky Way: a soft diagonal band of faint light, felt more than seen,
-       so the black reads as a sky with a structure rather than a backdrop. */
-    linear-gradient(
-      115deg,
-      rgba(0, 0, 0, 0) 30%,
-      rgba(158, 186, 234, 0.05) 42%,
-      rgba(215, 227, 248, 0.09) 50%,
-      rgba(158, 186, 234, 0.05) 58%,
-      rgba(0, 0, 0, 0) 70%
-    ),
     /* Two whispers of nebula colour in opposite corners — violet and teal, the
        hues deep-sky photographs are made of — give the void depth without ever
        competing with the traveller's marks. */
     radial-gradient(36% 28% at 84% 12%, rgba(122, 92, 204, 0.12) 0%, rgba(122, 92, 204, 0) 100%),
     radial-gradient(32% 26% at 10% 82%, rgba(44, 138, 160, 0.11) 0%, rgba(44, 138, 160, 0) 100%);
-  /* One scatter across the element, not a tile: a repeating starfield is a
-     pattern, and a pattern is the one thing a night sky must not look like. */
   background-repeat: no-repeat;
 }
 
 /*
- * The rest of the solar system.
+ * The rest of the universe.
  *
- * Everything in here sits in the same layer the starfield does — behind the
- * transparent canvas — so the Earth eclipses each body naturally as it turns
- * and grows: zoom in and the planets slide behind the world, zoom out and
- * they are waiting where they were. Positions are chosen for a portrait
- * phone: the Moon and Saturn in the bands of sky above the framed Earth, Mars
- * in the band below it, and all of them clear of the stat pill, the search,
- * the view toggle and the attribution mark.
- *
- * Like the starfield, the arrangement is fixed. The same sky every time is a
- * place; a sky that reshuffles is a screensaver.
+ * Everything in here sits behind the transparent map canvas, so the Earth
+ * eclipses each body naturally as it turns and grows: zoom in and the planets
+ * slide behind the world, zoom out and they are waiting where they were. The
+ * arrangement is fixed on a celestial sphere and re-projected by JS whenever
+ * the camera moves — the same sky every time is a place, and turning the
+ * globe is what turns it.
  */
 .globe-space__scene {
   position: absolute;
@@ -488,18 +421,113 @@ select {
 }
 
 /*
- * The four brightest stars are elements rather than background dots, because
- * they carry what a background cannot: a four-point diffraction glint, and a
- * slow twinkle. The glint is two hairlines faded out by a radial mask; the
- * twinkle is opacity-only, years away from anything that could distract from
- * a pin. The app-wide reduced-motion rule freezes the animation at its first
- * keyframe, which is deliberately the star at full brightness.
+ * The deep starfield: a seamless 1024px tile, drawn once and slid by the
+ * camera. Translating an oversized layer keeps the whole thing on the
+ * compositor — no repaint per frame, just a transform — and the wrap in the
+ * JS that drives it means a full turn of the globe brings the same stars
+ * back without a visible seam. The Milky Way rides the same tile as a
+ * repeating band at 45°, whose period divides the tile's diagonal exactly —
+ * which is what lets the band wrap with the stars instead of jumping.
+ */
+.globe-space__stars {
+  position: absolute;
+  inset: -600px;
+  will-change: transform;
+  background-image:
+    repeating-linear-gradient(
+      135deg,
+      rgba(0, 0, 0, 0) 0px,
+      rgba(0, 0, 0, 0) 217px,
+      rgba(158, 186, 234, 0.05) 304px,
+      rgba(215, 227, 248, 0.09) 362px,
+      rgba(158, 186, 234, 0.05) 420px,
+      rgba(0, 0, 0, 0) 507px,
+      rgba(0, 0, 0, 0) 724.077px
+    ),
+    radial-gradient(1.2px 1.2px at 540px 138px, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 155px 12px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 825px 83px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(1.6px 1.6px at 689px 31px, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 388px 53px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(1.6px 1.6px at 355px 263px, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 523px 29px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(1.2px 1.2px at 338px 57px, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 370px 767px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 147px 527px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(1.2px 1.2px at 62px 440px, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 228px 921px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(1.2px 1.2px at 715px 517px, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(1.6px 1.6px at 464px 666px, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 265px 324px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 756px 904px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(1.2px 1.2px at 1000px 778px, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 569px 962px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 973px 870px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 727px 408px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 44px 864px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 627px 852px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 440px 814px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(1.2px 1.2px at 449px 685px, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 735px 719px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 601px 127px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(1.2px 1.2px at 844px 755px, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 352px 421px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(1.6px 1.6px at 290px 652px, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(1.6px 1.6px at 717px 662px, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(1.2px 1.2px at 620px 501px, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(1.6px 1.6px at 223px 850px, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 801px 509px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 948px 511px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 814px 189px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 948px 197px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 738px 649px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 489px 616px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 442px 142px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 837px 53px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 483px 208px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 139px 957px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 275px 236px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 394px 31px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(0.9px 0.9px at 509px 405px, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(1.6px 1.6px at 311px 63px, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%),
+    /* A few stars are allowed a colour. A real sky is not monochrome — Antares
+       burns orange, Rigel blue — and two warm and two cool points among the
+       white ones stop the scatter reading as printed dots. */
+    radial-gradient(1.4px 1.4px at 190px 132px, rgba(255, 214, 170, 0.85) 0%, rgba(255, 214, 170, 0) 100%),
+    radial-gradient(1.4px 1.4px at 862px 628px, rgba(255, 206, 158, 0.8) 0%, rgba(255, 206, 158, 0) 100%),
+    radial-gradient(1.5px 1.5px at 654px 229px, rgba(170, 200, 255, 0.9) 0%, rgba(170, 200, 255, 0) 100%),
+    radial-gradient(1.5px 1.5px at 96px 664px, rgba(178, 206, 255, 0.85) 0%, rgba(178, 206, 255, 0) 100%);
+  background-size: 1024px 1024px;
+  background-repeat: repeat;
+}
+
+/* The worlds themselves, ray-cast in WebGL behind the map's canvas. */
+.globe-space__bodies {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/*
+ * The brightest stars are elements rather than background dots, because they
+ * carry what a background cannot: a four-point diffraction glint, and a slow
+ * twinkle. The glint is two hairlines faded out by a radial mask; the twinkle
+ * is opacity-only, years away from anything that could distract from a pin.
+ * Each rides the celestial sphere — JS projects it, staggers its phase, and
+ * hides it while its patch of sky faces away. The app-wide reduced-motion
+ * rule freezes the animation at its first keyframe, which is deliberately the
+ * star at full brightness.
  */
 .globe-space__star {
   position: absolute;
+  top: 0;
+  left: 0;
   width: 26px;
   height: 26px;
   margin: -13px 0 0 -13px;
+  visibility: hidden;
+  will-change: transform;
   background:
     radial-gradient(circle, rgba(255, 255, 255, 0.98) 0%, rgba(224, 236, 255, 0.4) 16%, rgba(224, 236, 255, 0) 30%),
     linear-gradient(0deg, rgba(0, 0, 0, 0) calc(50% - 0.6px), rgba(255, 255, 255, 0.85) 50%, rgba(0, 0, 0, 0) calc(50% + 0.6px)),
@@ -507,33 +535,6 @@ select {
   -webkit-mask-image: radial-gradient(circle, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0) 66%);
   mask-image: radial-gradient(circle, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0) 66%);
   animation: star-twinkle 7s ease-in-out infinite;
-}
-
-/* Staggered phases and periods, so the sky never pulses in unison. */
-.globe-space__star--a {
-  top: 12%;
-  left: 57%;
-}
-.globe-space__star--b {
-  top: 15%;
-  left: 88%;
-  animation-duration: 9s;
-  animation-delay: -3.2s;
-  transform: scale(0.8);
-}
-.globe-space__star--c {
-  top: 78%;
-  left: 16%;
-  animation-duration: 8s;
-  animation-delay: -5.5s;
-  transform: scale(0.9);
-}
-.globe-space__star--d {
-  top: 86%;
-  left: 68%;
-  animation-duration: 11s;
-  animation-delay: -1.8s;
-  transform: scale(0.72);
 }
 
 @keyframes star-twinkle {
@@ -546,10 +547,10 @@ select {
   }
 }
 
-/* Distant worlds: small enough to read as far away, so the Earth stays the
-   hero of the view. Each is lit from the upper left — the same key light the
-   Moon's craters and Saturn's shadowed limb answer to — because bodies lit
-   from three directions read as stickers, not as a sky. */
+/* Distant worlds, painted in CSS: the stand-ins shown only when WebGL isn't
+   there to ray-cast the real ones. Small enough to read as far away, so the
+   Earth stays the hero of the view, and each lit from the upper left because
+   bodies lit from three directions read as stickers, not as a sky. */
 .planet {
   position: absolute;
   border-radius: 50%;
