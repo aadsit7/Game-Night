@@ -2,14 +2,14 @@
 
 import { forwardRef, useId } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Earth, History, Luggage, MapPin, Plus } from "lucide-react";
+import { Earth, History, Luggage, MapPin, Play, Plus } from "lucide-react";
 
 import { cn } from "@/lib/utils/cn";
 
-export type AppMode = "globe" | "timeline" | "places" | "trips";
+export type AppMode = "globe" | "timeline" | "places" | "trips" | "player";
 
 /**
- * The app's entire navigation: four ways to read the same history and one way
+ * The app's entire navigation: five ways to read the same history and one way
  * to add to it, floating within thumb reach and clear of the home indicator.
  * No desktop navbar, no hidden menus — everything important is one tap away.
  *
@@ -26,6 +26,7 @@ const TABS: Array<{ value: AppMode; label: string; Icon: typeof Earth }> = [
   { value: "timeline", label: "Timeline", Icon: History },
   { value: "places", label: "Places", Icon: MapPin },
   { value: "trips", label: "Trips", Icon: Luggage },
+  { value: "player", label: "Player", Icon: Play },
 ];
 
 export const AppTabBar = forwardRef<

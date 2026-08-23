@@ -27,6 +27,11 @@ Four ways to look at the same travel history:
   trip — or into one made on the spot — which is how a trip actually gets
   built: you come home, add everywhere you went, and only then decide they
   belonged together.
+- **Player** — every trip and place with photos or videos attached, in one
+  list, newest memories first. Tap an entry and it opens in place: a Play
+  button for the full-screen show, the same gallery strip the cards use for
+  browsing one photo or video at a time, and a link through to the full card.
+  Nothing with an empty gallery appears, so everything here is watchable.
 
 A saved place is one of two things, and the app keeps them apart: somewhere
 you have **been**, or somewhere you **want to go**. A wishlist entry has no
@@ -378,14 +383,14 @@ name, city, region, country, country code and coordinates.
 app/                     layout, page, manifest, generated icons
 components/
   AppShell.tsx           the one place that knows what is on screen
-  AppTabBar.tsx          Globe | Timeline | Places | Trips + the add button
+  AppTabBar.tsx          Globe | Timeline | Places | Trips | Player + add
   globe/                 TravelGlobe, overlays, preview sheet, fallback
   timeline/              chronology view and its scrubber
   places/                list, cards, search, filters, stats
   trips/                 trip list, trip detail by day, trip form
   sync/                  setup screen, connection form, settings sheet
   place/                 detail, form, location search, photos, pin bar
-  photos/                cloud gallery, Google Photos flow, memories player
+  photos/                cloud gallery, Google Photos flow, memories player, Player tab
   ui/                    BottomSheet, SegmentedControl, dialogs, imagery
 lib/
   maps/                  basemap config and layer ids, geocoding

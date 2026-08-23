@@ -18,6 +18,7 @@ const suites = [
   "travel-photos.test.mjs",
   "device-media.test.mjs",
   "media-player.test.mjs",
+  "player-library.test.mjs",
   "trip-membership.test.mjs",
   "sheet-connection.test.mjs",
   "timeline.test.mjs",
