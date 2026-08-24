@@ -52,6 +52,8 @@ await test("an old script's answer still reads as the OAuth mode it is", async (
   assert.equal(status.mode, "oauth");
   assert.equal(status.connected, true);
   assert.equal(status.scopeGranted, false);
+  // The field predates old deployments; absent must read as "not the problem".
+  assert.equal(status.pickerApiEnabled, true);
   assert.equal(status.advice, "");
   assert.equal(status.connectedAt, "2026-01-01T00:00:00");
 });
@@ -71,6 +73,29 @@ await test("a script-mode deployment reads as ready, with nothing to connect", a
   assert.equal(status.mode, "script");
   assert.equal(status.connected, true);
   assert.equal(status.scopeGranted, true);
+});
+
+await test("scope granted but the Picker API off arrives not-connected, naming the switch", async () => {
+  // The screenshot state: authorisation passed, yet Google refuses every
+  // Picker call because the API is disabled in the script's Cloud project.
+  // The status must present that as not-connected — otherwise the app opens
+  // a picker that can only 403 — while scopeGranted stays honestly true.
+  answerWith({
+    configured: true,
+    connected: false,
+    mode: "script",
+    scopeGranted: true,
+    pickerApiEnabled: false,
+    advice:
+      "One-time step: the Photos Picker API is switched off in the Cloud project this script runs in, so Google refuses every picker call — the authorisation itself is fine, and re-authorising will not change this. Enable the API at https://console.developers.google.com/apis/api/photospicker.googleapis.com/overview?project=000000000000, give Google a few minutes to notice, then try again. Full steps: docs/SHEET-SETUP.md → Google Photos.",
+  });
+  const status = await photosAuthStatus(connection);
+  assert.equal(status.mode, "script");
+  assert.equal(status.connected, false);
+  assert.equal(status.scopeGranted, true);
+  assert.equal(status.pickerApiEnabled, false);
+  assert.match(status.advice, /Photos Picker API is switched off/);
+  assert.match(status.advice, /https:\/\/console\./);
 });
 
 await test("a missing scope arrives not-connected, carrying the script's advice", async () => {

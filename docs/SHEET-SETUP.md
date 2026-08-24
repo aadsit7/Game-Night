@@ -32,8 +32,9 @@ once into the Apps Script project in step 4 below.
    "Show `appsscript.json` manifest file in editor"**, then back in the
    editor open `appsscript.json` and paste
    [`apps-script/appsscript.json`](../apps-script/appsscript.json) over it.
-   The manifest's scope list is what lets [Google Photos](#google-photos)
-   import work with nothing else to set up.
+   The manifest's scope list is half of what lets [Google
+   Photos](#google-photos) import work; the other half is one switch in a
+   Cloud project, described in that section.
 4. Click the disk icon to save the script. **There is nothing to configure** —
    the access code is already in the file you just pasted.
 5. *(Optional but worth it.)* In the function dropdown pick **selfTest** and
@@ -320,12 +321,14 @@ Photos and videos can be imported straight from Google Photos into a specific
 Two authorisations are involved, and keeping them straight is the whole model:
 
 - **Importing** — permission to read what you pick in Google Photos. The
-  script's **own authorisation** covers this out of the box: the approval
-  you give when deploying the web app now includes the Photos Picker scope,
-  so there is no Google Cloud project to create, no OAuth client, nothing
-  to store in Script Properties, and no "connect" step on any device.
-  Deploying the script *is* the connection, and it cannot lapse the way a
-  stored refresh token can.
+  script's **own authorisation** covers this: the approval you give when
+  deploying the web app now includes the Photos Picker scope, so there is
+  no OAuth client, nothing to store in Script Properties, and no "connect"
+  step on any device. Deploying the script *is* the connection, and it
+  cannot lapse the way a stored refresh token can. Google asks one thing
+  in return: every API call is accounted to a Cloud project, and the
+  **Photos Picker API must be enabled** in the one this script runs in —
+  a one-time switch covered in the setup below.
 - **The media access code** — a *viewing* key. Because the photo files stay
   private in Drive, and the sheet's shared access code is public by design
   (it ships in the static bundle), the photo bytes sit behind this second
@@ -334,11 +337,15 @@ Two authorisations are involved, and keeping them straight is the whole model:
   random `MEDIA_ACCESS_CODE` Script Property — the app then asks each
   device for it once.
 
-### Setup — the manifest, once
+### Setup — manifest and Cloud project, once
 
-The script's authorisation lists its scopes in the project manifest
-(`appsscript.json`). Give it the Picker scope and re-authorise; that is the
-entire setup:
+Two things, then a single re-authorisation that covers both. The manifest
+tells Google which scopes the script's authorisation carries; the Cloud
+project is where Google's **Photos Picker API** switch lives, because every
+Google API call is accounted to some project — even a free one. Do them in
+this order and you authorise exactly once.
+
+**The manifest:**
 
 1. Apps Script editor → **Project Settings (⚙️)** → tick **Show
    "appsscript.json" manifest file in editor**.
@@ -362,15 +369,43 @@ entire setup:
    detection, which is why the first three — everything the script already
    uses — are spelled out alongside the new Picker scope. Leaving one out
    breaks that feature on the next authorisation, so copy the list whole.
-3. Paste the current `Code.gs` if you haven't already, then publish a new
+
+**The Cloud project:**
+
+3. Scripts start out on a hidden, Google-managed Cloud project — one with
+   no console page of its own, so the Picker API can never be switched on
+   there. Attach a standard project of your own instead:
+   1. At [console.cloud.google.com](https://console.cloud.google.com/),
+      create a project — or reuse one you already have, such as the one
+      from [Maps search](#optional-google-maps-search). Everything here is
+      free; the Picker API itself costs nothing.
+   2. **APIs & Services → Library** → search **Photos Picker API** →
+      **Enable**.
+   3. **APIs & Services → OAuth consent screen** → configure it: User type
+      **External**, an app name, your email — nothing more. Apps Script
+      refuses to attach a project whose consent screen is bare. Then set
+      the publishing status to **In production** (OAuth consent screen →
+      Publish app): while it sits in **Testing**, Google expires the
+      script's authorisation **every 7 days**, which would mean
+      re-authorising weekly. The ⚠️ note in the OAuth section below is
+      about this same screen; as there, follow whatever Google's screens
+      actually demand of your configuration.
+   4. Copy the project **number** (on the console's dashboard card), then
+      in the Apps Script editor: **Project Settings (⚙️) → Google Cloud
+      Platform (GCP) Project → Change project** → paste the number.
+      Switching resets the script's existing authorisation — the next step
+      grants it back.
+
+**One authorisation:**
+
+4. Paste the current `Code.gs` if you haven't already, then publish a new
    version — **Deploy → Manage deployments → pencil → Version: New version
    → Deploy** (the [re-deploy trap](#️-the-re-deploy-trap) applies here
    with real force: none of this exists until the new version is serving).
-   Google asks you to authorise the added permission — the same consent
-   ceremony as the very first deployment, "unverified app" interstitial
-   included (**Advanced → Go to … (unsafe)**; it is your own script,
-   reading only what you pick).
-4. That's it. Tap **Add photos** on any visit, on any device — the picker
+   Google asks you to authorise — the same consent ceremony as the very
+   first deployment, "unverified app" interstitial included (**Advanced →
+   Go to … (unsafe)**; it is your own script, reading only what you pick).
+5. That's it. Tap **Add photos** on any visit, on any device — the picker
    opens with no connect step. Viewing needs nothing to type either — the
    standard code (`2026`) is built into both sides. Only if you set your
    own `MEDIA_ACCESS_CODE`: on each device, **Google Photos → Media access
@@ -380,6 +415,15 @@ If the app still says an authorisation is needed, the deployment is serving
 an old version (the re-deploy trap again) or the consent screen was
 dismissed halfway. Fix that, then **sync chip → Sync settings → Google
 Photos → Re-check** asks the script again.
+
+If **Add photos** instead answers *"Google Photos refused the request (403)
+… the Photos Picker API is switched off in the Cloud project"* — or, from
+an older copy of the script, Google's own wording, *"Photos Picker API has
+not been used in project … before or it is disabled"* — that is step 3:
+the API isn't enabled in the project the script is attached to. The error
+links the exact enable-it page for that project; if that page says you
+don't have permission to view it, the script is still on its hidden
+default project — do the switch in step 3, then **Re-check**.
 
 ### Whose library the picker opens
 

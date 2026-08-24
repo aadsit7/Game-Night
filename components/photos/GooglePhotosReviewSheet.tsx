@@ -14,6 +14,7 @@ import {
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { Button } from "@/components/ui/Button";
+import { LinkifiedText } from "@/components/ui/LinkifiedText";
 import {
   reviewCounts,
   reviewSelection,
@@ -181,7 +182,9 @@ function FlowBody({
               : "The script signs into Google Photos with its own authorisation — nothing to connect here, and no credentials to set. One approval in the Apps Script editor, once, and adding photos works from every device."}
           </p>
           {state.message ? (
-            <p className="rounded-sm bg-fill px-3.5 py-2.5 text-[14px] text-ink-2">{state.message}</p>
+            <p className="rounded-sm bg-fill px-3.5 py-2.5 text-[14px] text-ink-2">
+              <LinkifiedText text={state.message} />
+            </p>
           ) : null}
           {state.canConnect ? (
             <>
@@ -274,7 +277,11 @@ function FlowBody({
         <div className="space-y-4 pb-4">
           <p className="flex items-start gap-2 rounded-sm bg-danger-soft px-3.5 py-2.5 text-[15px] text-danger">
             <CircleAlert size={17} aria-hidden="true" className="mt-0.5 shrink-0" />
-            {state.message}
+            {/* One flex child, or the gap would open between every text
+                segment the linkifier splits out. */}
+            <span className="min-w-0">
+              <LinkifiedText text={state.message} />
+            </span>
           </p>
           <Button block variant="secondary" onClick={onFinish}>
             Close

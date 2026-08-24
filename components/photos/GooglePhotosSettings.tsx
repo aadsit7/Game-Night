@@ -5,6 +5,7 @@ import { Camera, Check, KeyRound, Loader2, Unplug } from "lucide-react";
 
 import { MediaCodeSheet } from "@/components/photos/MediaCodeSheet";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { LinkifiedText } from "@/components/ui/LinkifiedText";
 import { DEFAULT_MEDIA_CODE, storedMediaCode } from "@/lib/photos/mediaCode";
 import { openPickerWindow, navigatePickerWindow, closePickerWindow } from "@/lib/photos/pickerWindow";
 import type { SheetConnection } from "@/lib/sheets/connection";
@@ -166,9 +167,11 @@ export function GooglePhotosSettings({
                       ? status.mode === "script"
                         ? "Ready — the script imports with its own Google authorisation"
                         : "Connected — photos can be imported from any device"
-                      : status.configured && status.mode === "oauth"
-                        ? "Not connected yet"
-                        : "Needs a one-time authorisation in the Apps Script editor — see the setup guide"}
+                      : !status.pickerApiEnabled
+                        ? "One console switch to go — the Photos Picker API is off in the script’s Cloud project"
+                        : status.configured && status.mode === "oauth"
+                          ? "Not connected yet"
+                          : "Needs a one-time authorisation in the Apps Script editor — see the setup guide"}
             </p>
             <p className="mt-0.5 text-[12.5px] leading-snug text-ink-3">
               Connecting is only for importing. Viewing photos already added never asks for this.
@@ -196,9 +199,10 @@ export function GooglePhotosSettings({
             >
               Retry
             </button>
-          ) : status && !(status.configured && status.mode === "oauth") ? (
-            // Nothing in-app can connect script mode — the fix happens in
-            // the Apps Script editor; this just asks the script again after.
+          ) : status && (!status.pickerApiEnabled || !(status.configured && status.mode === "oauth")) ? (
+            // Nothing in-app can fix these — the missing authorisation
+            // lives in the Apps Script editor, and the disabled Picker API
+            // in the Cloud console; this just asks the script again after.
             <button
               type="button"
               onClick={refresh}
@@ -239,7 +243,9 @@ export function GooglePhotosSettings({
 
       {note ? <p className="px-1 pt-2 text-[12.5px] leading-relaxed text-ink-3">{note}</p> : null}
       {status && !status.connected && status.advice ? (
-        <p className="px-1 pt-2 text-[12.5px] leading-relaxed text-ink-3">{status.advice}</p>
+        <p className="px-1 pt-2 text-[12.5px] leading-relaxed text-ink-3">
+          <LinkifiedText text={status.advice} />
+        </p>
       ) : null}
       {status && !status.connected && status.redirectUri ? (
         <p className="wrap-anywhere px-1 pt-2 text-[12px] leading-relaxed text-ink-3">

@@ -419,6 +419,13 @@ export type PhotosAuthStatus = {
   mode: "script" | "oauth";
   /** Script mode's ground truth: the script token carries the Picker scope. */
   scopeGranted: boolean;
+  /**
+   * False in exactly one state: authorisation works, but the Photos Picker
+   * API is switched off in the script's Cloud project — a one-time console
+   * fix `advice` spells out. Older deployments never send the field, and a
+   * missing one reads as true.
+   */
+  pickerApiEnabled: boolean;
   /** The script's own wording for what to do when not connected, if any. */
   advice: string;
   connectedAt: string;
@@ -439,6 +446,7 @@ export async function photosAuthStatus(
     connected: data?.connected === true,
     mode: data?.mode === "script" ? "script" : "oauth",
     scopeGranted: data?.scopeGranted === true,
+    pickerApiEnabled: data?.pickerApiEnabled !== false,
     advice: String(data?.advice ?? ""),
     connectedAt: String(data?.connectedAt ?? ""),
     accountHint: String(data?.accountHint ?? ""),
