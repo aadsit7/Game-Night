@@ -64,6 +64,22 @@ export type TravelInsights = {
   matrix: TravelMatrix;
 };
 
+/** Which number leads: how often you went, or how long you stayed. */
+export type InsightMetric = "stays" | "days";
+
+/**
+ * The lens the whole tab looks through. A year narrows every list to stays
+ * that started then; a trip type narrows them to the visits logged that way
+ * ("Family", "Solo" — the sheet's own words); the metric decides what leads
+ * the ranking. The matrix keeps all its years whatever the year filter says —
+ * it *is* the year view — but honours the other two.
+ */
+export type InsightOptions = {
+  year?: number;
+  tripType?: string;
+  metric?: InsightMetric;
+};
+
 /** How far a leaderboard runs before it stops being a podium. */
 export const REGULARS_LIMIT = 8;
 /** Rows the matrix shows; more would be a spreadsheet, not a picture. */
@@ -80,8 +96,27 @@ function yearOf(date: string | undefined): number | null {
   return Number.isInteger(year) && year > 1000 ? year : null;
 }
 
+/** The filters' idea of a match, case- and whitespace-blind. */
+function normalType(value: string | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function passesFilters(visit: PlaceVisit, options: InsightOptions): boolean {
+  if (options.year !== undefined && yearOf(visit.startDate) !== options.year) return false;
+  // A visit that never said what kind of trip it was cannot claim to be a
+  // family one — under a type filter, unlabelled visits sit out.
+  if (options.tripType !== undefined && normalType(visit.tripType) !== normalType(options.tripType)) {
+    return false;
+  }
+  return true;
+}
+
 /** One place folded down to its tally; null when nothing countable happened. */
-export function tallyPlace(place: VisitedPlace, visits: PlaceVisit[]): PlaceTally | null {
+export function tallyPlace(
+  place: VisitedPlace,
+  visits: PlaceVisit[],
+  options: InsightOptions = {},
+): PlaceTally | null {
   if (place.wantToGo) return null;
 
   let stays = 0;
@@ -90,7 +125,7 @@ export function tallyPlace(place: VisitedPlace, visits: PlaceVisit[]): PlaceTall
   const years = new Map<number, { stays: number; days: number }>();
 
   for (const visit of visitsForPlace(place, visits)) {
-    if (!countable(visit)) continue;
+    if (!countable(visit) || !passesFilters(visit, options)) continue;
     const visitDays = inclusiveDayCount(visit.startDate, visit.endDate) ?? 0;
     stays += 1;
     days += visitDays;
@@ -109,13 +144,20 @@ export function tallyPlace(place: VisitedPlace, visits: PlaceVisit[]): PlaceTall
   return { place, stays, days, lastLabel: monthYearLabel(last), years };
 }
 
-/** Most stays first, longest first among equals, then the familiar A–Z. */
-function byWeight(a: { stays: number; days: number }, b: { stays: number; days: number }): number {
-  return b.stays - a.stays || b.days - a.days;
+/** The chosen metric leads; the other breaks ties; A–Z is the caller's last resort. */
+function byWeight(
+  a: { stays: number; days: number },
+  b: { stays: number; days: number },
+  metric: InsightMetric = "stays",
+): number {
+  return metric === "days"
+    ? b.days - a.days || b.stays - a.stays
+    : b.stays - a.stays || b.days - a.days;
 }
 
 function rollUp(
   tallies: PlaceTally[],
+  metric: InsightMetric,
   keyOf: (place: VisitedPlace) => string,
   labelOf: (place: VisitedPlace) => string,
   codeOf: (place: VisitedPlace) => string | undefined,
@@ -141,37 +183,58 @@ function rollUp(
     }
   }
   return Array.from(rows.values()).sort(
-    (a, b) => byWeight(a, b) || a.label.localeCompare(b.label),
+    (a, b) => byWeight(a, b, metric) || a.label.localeCompare(b.label),
   );
 }
 
-/** Everything the Stats tab draws, from the same arrays every view reads. */
-export function buildInsights(places: VisitedPlace[], visits: PlaceVisit[]): TravelInsights {
-  const tallies = places
-    .map((place) => tallyPlace(place, visits))
+function talliesFor(
+  places: VisitedPlace[],
+  visits: PlaceVisit[],
+  options: InsightOptions,
+): PlaceTally[] {
+  return places
+    .map((place) => tallyPlace(place, visits, options))
     .filter((tally): tally is PlaceTally => tally !== null);
+}
+
+/** Everything the Stats tab draws, through whatever lens the filters set. */
+export function buildInsights(
+  places: VisitedPlace[],
+  visits: PlaceVisit[],
+  options: InsightOptions = {},
+): TravelInsights {
+  const metric = options.metric ?? "stays";
+  const tallies = talliesFor(places, visits, options);
 
   const countries = rollUp(
     tallies,
+    metric,
     countryKeyOf,
     (place) => place.country || "No country",
     (place) => place.countryCode,
   );
   const continents = rollUp(
     tallies,
+    metric,
     (place) => continentOf(place.countryCode),
     (place) => continentOf(place.countryCode),
     () => undefined,
   );
 
   /* The matrix: the busiest countries against every year that holds a stay,
-     newest years kept when there are more than fit. */
-  const matrixRows = countries.slice(0, MATRIX_COUNTRY_LIMIT);
+     newest years kept when there are more than fit. It is the year view, so
+     the year filter never narrows it — the other filters do. */
+  const matrixTallies =
+    options.year === undefined ? tallies : talliesFor(places, visits, { ...options, year: undefined });
+  const matrixRows = (options.year === undefined
+    ? countries
+    : rollUp(matrixTallies, metric, countryKeyOf, (place) => place.country || "No country", (place) => place.countryCode)
+  ).slice(0, MATRIX_COUNTRY_LIMIT);
   const rowKeys = new Set(matrixRows.map((row) => row.key));
   const cells = new Map<string, MatrixCell>();
   const yearSet = new Set<number>();
 
-  for (const tally of tallies) {
+  for (const tally of matrixTallies) {
     const key = countryKeyOf(tally.place);
     if (!rowKeys.has(key)) continue;
     for (const [year, count] of tally.years) {
@@ -195,7 +258,7 @@ export function buildInsights(places: VisitedPlace[], visits: PlaceVisit[]): Tra
     },
     regulars: tallies
       .filter((tally) => tally.stays >= 2)
-      .sort((a, b) => byWeight(a, b) || a.place.name.localeCompare(b.place.name))
+      .sort((a, b) => byWeight(a, b, metric) || a.place.name.localeCompare(b.place.name))
       .slice(0, REGULARS_LIMIT),
     countries,
     continents,
@@ -203,16 +266,56 @@ export function buildInsights(places: VisitedPlace[], visits: PlaceVisit[]): Tra
   };
 }
 
+/**
+ * Every year with a countable stay, newest first — the year filter's
+ * vocabulary, always drawn from the unfiltered journal so choosing one year
+ * never hides the way back to the others.
+ */
+export function visitYears(places: VisitedPlace[], visits: PlaceVisit[]): number[] {
+  const years = new Set<number>();
+  for (const tally of talliesFor(places, visits, {})) {
+    for (const year of tally.years.keys()) years.add(year);
+  }
+  return Array.from(years).sort((a, b) => b - a);
+}
+
+/**
+ * The trip-type words the sheet actually uses — "Family", "Solo", whatever
+ * was typed — most frequent first, one spelling per word. The filter offers
+ * only words that exist, so no chip is ever a dead end.
+ */
+export function tripTypesOf(visits: PlaceVisit[]): string[] {
+  const counts = new Map<string, { label: string; count: number }>();
+  for (const visit of visits) {
+    if (visit.deletedAt || !countable(visit)) continue;
+    const key = normalType(visit.tripType);
+    if (!key) continue;
+    const entry = counts.get(key);
+    if (entry) entry.count += 1;
+    else counts.set(key, { label: visit.tripType!.trim(), count: 1 });
+  }
+  return Array.from(counts.values())
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+    .map((entry) => entry.label);
+}
+
 /* ------------------------------------------------------------------ *
  * Drilling in
  * ------------------------------------------------------------------ */
 
-/** What a leaderboard row or a matrix cell is about. */
+/**
+ * What a leaderboard row or a matrix cell is about — including the filters
+ * that were on when it was tapped, so the drill answers the same question
+ * the number did.
+ */
 export type InsightScope = {
   level: "country" | "continent";
   key: string;
-  /** Present when a matrix cell was tapped: just that year's stays. */
+  /** Present when a matrix cell was tapped, or a year filter was on. */
   year?: number;
+  /** Present when a trip-type filter was on. */
+  tripType?: string;
+  metric?: InsightMetric;
 };
 
 /**
@@ -226,26 +329,21 @@ export function scopeMembers(
   visits: PlaceVisit[],
 ): PlaceTally[] {
   const members: PlaceTally[] = [];
+  const options: InsightOptions = { year: scope.year, tripType: scope.tripType };
 
   for (const place of places) {
     const key =
       scope.level === "country" ? countryKeyOf(place) : continentOf(place.countryCode);
     if (key !== scope.key) continue;
 
-    const tally = tallyPlace(place, visits);
+    // The scope's own numbers — a cell's drill shows that year's stays, a
+    // filtered board's drill shows the filtered ones, never the lifetime.
+    const tally = tallyPlace(place, visits, options);
     if (!tally) continue;
-
-    if (scope.year === undefined) {
-      members.push(tally);
-      continue;
-    }
-
-    // A cell is one year of one country: the drill shows that year's numbers,
-    // not the place's lifetime ones.
-    const year = tally.years.get(scope.year);
-    if (!year) continue;
-    members.push({ ...tally, stays: year.stays, days: year.days });
+    members.push(tally);
   }
 
-  return members.sort((a, b) => byWeight(a, b) || a.place.name.localeCompare(b.place.name));
+  return members.sort(
+    (a, b) => byWeight(a, b, scope.metric ?? "stays") || a.place.name.localeCompare(b.place.name),
+  );
 }

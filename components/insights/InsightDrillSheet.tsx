@@ -82,6 +82,7 @@ export function InsightDrillSheet({
               stays={tally.stays}
               days={tally.days}
               lastLabel={scope?.year === undefined ? tally.lastLabel : undefined}
+              lead={scope?.metric ?? "stays"}
               onPress={() => onOpenPlace(tally.place.id)}
             />
           ))}

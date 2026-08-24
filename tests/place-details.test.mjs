@@ -87,6 +87,64 @@ test("what cannot be drawn is dropped rather than drawn wrong", () => {
   assert.equal(toGooglePlaceDetails("nonsense"), null);
 });
 
+test("the Google Maps staples come through: price, access, the one-liner", () => {
+  const details = toGooglePlaceDetails({
+    id: "x",
+    priceLevel: "PRICE_LEVEL_MODERATE",
+    accessibilityOptions: { wheelchairAccessibleEntrance: true },
+    editorialSummary: { text: "An iconic tower.", languageCode: "en" },
+    googleMapsUri: "https://maps.google.com/?cid=3",
+  });
+  assert.equal(details.priceLabel, "$$");
+  assert.equal(details.wheelchairEntrance, true);
+  assert.equal(details.summary, "An iconic tower.");
+  assert.equal(details.googleMapsUri, "https://maps.google.com/?cid=3");
+
+  // Unspecified and free stay unlabelled — a museum with no admission is not
+  // a "free" restaurant; an inaccessible entrance is silence, not a claim.
+  const bare = toGooglePlaceDetails({
+    id: "x",
+    priceLevel: "PRICE_LEVEL_UNSPECIFIED",
+    accessibilityOptions: { wheelchairAccessibleEntrance: false },
+  });
+  assert.equal(bare.priceLabel, undefined);
+  assert.equal(bare.wheelchairEntrance, undefined);
+});
+
+test("reviews are credited, capped, and never invented", () => {
+  const review = (author, text, rating) => ({
+    rating,
+    text: { text },
+    relativePublishTimeDescription: "a week ago",
+    authorAttribution: { displayName: author, uri: `https://maps/${author}`, photoUri: "" },
+  });
+
+  const details = toGooglePlaceDetails({
+    id: "x",
+    reviews: [
+      review("Amélie", "Lovely at sunset.", 5),
+      // No author: the display policies want attribution, so it cannot show.
+      { rating: 5, text: { text: "anon" }, authorAttribution: {} },
+      // Stars alone still say something.
+      review("Marco", undefined, 4),
+      review("Ana", "Great.", 5),
+      review("Kim", "Fine.", 3),
+    ],
+  });
+
+  assert.deepEqual(
+    details.reviews.map((entry) => entry.author),
+    ["Amélie", "Marco", "Ana"],
+    "capped at three, the uncredited one skipped",
+  );
+  assert.equal(details.reviews[0].text, "Lovely at sunset.");
+  assert.equal(details.reviews[0].when, "a week ago");
+  assert.equal(details.reviews[0].authorUri, "https://maps/Amélie");
+
+  // No reviews at all is `undefined`, so the card renders nothing.
+  assert.equal(toGooglePlaceDetails({ id: "x", reviews: [] }).reviews, undefined);
+});
+
 test("permanently closed survives the trip through", () => {
   const details = toGooglePlaceDetails({ id: "x", businessStatus: "CLOSED_PERMANENTLY" });
   assert.equal(details.permanentlyClosed, true);
