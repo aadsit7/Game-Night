@@ -18,6 +18,15 @@ export type CountryGroup = {
 };
 
 /**
+ * The one spelling of "which country is this place in?". The list's sections,
+ * the flag rail's filter and the stats' rollups all key on this, so a heading,
+ * a tap and a leaderboard row can never disagree about what a country is.
+ */
+export function countryKeyOf(place: Pick<VisitedPlace, "country" | "countryCode">): string {
+  return (place.countryCode ?? place.country).toLowerCase();
+}
+
+/**
  * Sections come out in the order their countries first appear, with each
  * place kept in the order it arrived — hand this the country-sorted list and
  * the sections read alphabetically with their places already arranged inside.
@@ -28,9 +37,7 @@ export function groupPlacesByCountry(places: VisitedPlace[]): CountryGroup[] {
   const groups = new Map<string, CountryGroup>();
 
   for (const place of places) {
-    // The same key the country filter matches on, so tapping a flag and
-    // reading a heading can never disagree about what a country is.
-    const key = (place.countryCode ?? place.country).toLowerCase();
+    const key = countryKeyOf(place);
     const group = groups.get(key);
 
     if (group) {

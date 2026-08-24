@@ -3,7 +3,7 @@
 A personal, visual history of everywhere you’ve been — pinned to an interactive
 Earth. Built iPhone-first.
 
-Four ways to look at the same travel history:
+Six ways to look at the same travel history:
 
 - **Globe** — a full-screen 3D Earth you can spin and zoom from whole-planet
   down to street level, with every saved place pinned and nearby pins clustered.
@@ -32,6 +32,15 @@ Four ways to look at the same travel history:
   button for the full-screen show, the same gallery strip the cards use for
   browsing one photo or video at a time, and a link through to the full card.
   Nothing with an empty gallery appears, so everything here is watchable.
+- **Stats** — the journal as a scoreboard. *Your regulars* ranks the places
+  been to more than once — the theme park that keeps winning; *where you keep
+  going* reads the same stays a country or a continent at a time; and a
+  years-by-countries matrix crosses your busiest countries with the calendar,
+  a contribution graph for travel. Every row and every cell drills down to
+  the places behind the number, and each of those opens its own card — it is
+  a way through the collection, not a trophy shelf. Only stays that actually
+  happened count: wishlist entries, upcoming bookings and years spent living
+  somewhere never inflate a visit tally.
 
 A saved place is one of two things, and the app keeps them apart: somewhere
 you have **been**, or somewhere you **want to go**. A wishlist entry has no

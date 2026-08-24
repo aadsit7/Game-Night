@@ -2,14 +2,14 @@
 
 import { forwardRef, useId } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Earth, History, Luggage, MapPin, Play, Plus } from "lucide-react";
+import { BarChart3, Earth, History, Luggage, MapPin, Play, Plus } from "lucide-react";
 
 import { cn } from "@/lib/utils/cn";
 
-export type AppMode = "globe" | "timeline" | "places" | "trips" | "player";
+export type AppMode = "globe" | "timeline" | "places" | "trips" | "player" | "stats";
 
 /**
- * The app's entire navigation: five ways to read the same history and one way
+ * The app's entire navigation: six ways to read the same history and one way
  * to add to it, floating within thumb reach and clear of the home indicator.
  * No desktop navbar, no hidden menus — everything important is one tap away.
  *
@@ -23,10 +23,15 @@ export type AppMode = "globe" | "timeline" | "places" | "trips" | "player";
 
 const TABS: Array<{ value: AppMode; label: string; Icon: typeof Earth }> = [
   { value: "globe", label: "Globe", Icon: Earth },
-  { value: "timeline", label: "Timeline", Icon: History },
+  // "History", not "Timeline": six labels share a phone's width now, and the
+  // rule above — destinations keep their names at every width — outranks the
+  // longer word. Same for "Stats" over "Insights". The icon said History all
+  // along.
+  { value: "timeline", label: "History", Icon: History },
   { value: "places", label: "Places", Icon: MapPin },
   { value: "trips", label: "Trips", Icon: Luggage },
   { value: "player", label: "Player", Icon: Play },
+  { value: "stats", label: "Stats", Icon: BarChart3 },
 ];
 
 export const AppTabBar = forwardRef<
