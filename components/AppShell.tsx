@@ -529,6 +529,19 @@ export function AppShell() {
     setOverlays([{ kind: "trip", id }]);
   }, []);
 
+  /**
+   * The card found this place's Google listing; keep it. One cell in the
+   * sheet, and every future open is a lookup instead of a hunt. A failed
+   * write is silent — the card already has what it needs for this session,
+   * and the next open simply searches again.
+   */
+  const handleLinkGoogle = useCallback(
+    (placeId: string, googlePlaceId: string) => {
+      updatePlace(placeId, { googlePlaceId }).catch(() => undefined);
+    },
+    [updatePlace],
+  );
+
   const handleLocationChosen = useCallback(
     (result: LocationResult) => {
       setDraft((current) => applyLocation(current, result));
@@ -1946,6 +1959,7 @@ export function AppShell() {
         onNeedMediaCode={() => setMediaCodeOpen(true)}
         onPlayMemories={() => detailPlace && startPlaceMemories(detailPlace)}
         galleryEpoch={galleryEpoch}
+        onLinkGoogle={handleLinkGoogle}
       />
 
       <VisitFormSheet

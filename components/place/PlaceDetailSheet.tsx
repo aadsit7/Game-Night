@@ -10,9 +10,7 @@ import {
   Heart,
   Home,
   Luggage,
-  Map as MapIcon,
   MapPin,
-  Navigation,
   Pencil,
   Plane,
   Play,
@@ -29,7 +27,7 @@ import { formatDays } from "@/lib/timeline/buildTimeline";
 import { isResidenceVisit, isUpcomingVisit, visitStats } from "@/lib/places/visits";
 import { formatMediaCounts, mediaCounts } from "@/lib/photos/mediaPlaylist";
 import { photosForPlace, sortTravelPhotos } from "@/lib/photos/travelPhotos";
-import { googleMapsDirectionsUrl, googleMapsUrl } from "@/lib/maps/googleMapsLinks";
+import { GoogleMapsCard } from "@/components/place/GoogleMapsCard";
 import { formatVisitRange, inclusiveDayCount } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
 import { countryFlag, formatCoordinates, placeSubtitle } from "@/lib/utils/geo";
@@ -74,6 +72,7 @@ export function PlaceDetailSheet({
   onNeedMediaCode,
   onPlayMemories,
   galleryEpoch,
+  onLinkGoogle,
 }: {
   place: VisitedPlace | null;
   open: boolean;
@@ -115,6 +114,11 @@ export function PlaceDetailSheet({
   onPlayMemories: () => void;
   /** Bumped when the media code changes, so galleries retry cleanly. */
   galleryEpoch: number;
+  /**
+   * A confident Google listing match was found for a place saved before
+   * listings were captured; persists it so next time is a lookup, not a hunt.
+   */
+  onLinkGoogle?: (placeId: string, googlePlaceId: string) => void;
 }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const reduceMotion = useReducedMotion();
@@ -392,29 +396,14 @@ export function PlaceDetailSheet({
               />
             </div>
 
-            {/* The same spot on everyone's map. With a listing id saved from
-                the search that created the place, this opens the real entry —
-                hours, photos, reviews — not just a pin at the coordinates. */}
-            <div className="mt-2.5 flex gap-2.5">
-              <a
-                href={googleMapsUrl(place)}
-                target="_blank"
-                rel="noreferrer"
-                className="pressable flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-md bg-fill text-[16px] font-medium text-ink"
-              >
-                <MapIcon size={17} aria-hidden="true" />
-                Google Maps
-              </a>
-              <a
-                href={googleMapsDirectionsUrl(place)}
-                target="_blank"
-                rel="noreferrer"
-                className="pressable flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-md bg-fill text-[16px] font-medium text-ink"
-              >
-                <Navigation size={16} aria-hidden="true" />
-                Directions
-              </a>
-            </div>
+            {/* The place as Google Maps knows it — rating, open right now,
+                the address — with the buttons through to the real listing.
+                With no key or no listing it quietly shrinks to the buttons,
+                which work for every place. */}
+            <GoogleMapsCard
+              place={place}
+              onLinked={onLinkGoogle ? (id) => onLinkGoogle(place.id, id) : undefined}
+            />
 
             {place.notes ? (
               <Section

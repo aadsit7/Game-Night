@@ -216,6 +216,7 @@ const PHOTOS_API_DISABLED_ADVICE =
 
 const CAPABILITIES = {
   placesSearch: process.env.MOCK_PLACES === "1",
+  placeDetails: process.env.MOCK_PLACES === "1",
   // The mock can always "upload": bytes are held in memory and served back
   // from /photo/<id>, standing in for the Drive link the real script returns.
   photoUpload: true,
@@ -257,6 +258,70 @@ const MOCK_PLACES = [
     countryCode: "JP", types: ["locality", "political"],
   },
 ];
+
+/**
+ * What the real script's placeDetails proxy answers, per listing — the shape
+ * Places (New) returns under the card's field mask. Kyoto is deliberately
+ * sparse: a locality has no rating, hours or website, and the card must read
+ * as complete rather than broken when most rows have nothing to say.
+ */
+const MOCK_PLACE_DETAILS = {
+  ChIJmock0001: {
+    id: "ChIJmock0001",
+    displayName: { text: "Blue Bottle Coffee", languageCode: "en" },
+    primaryTypeDisplayName: { text: "Coffee Shop", languageCode: "en" },
+    businessStatus: "OPERATIONAL",
+    shortFormattedAddress: "66 Mint Plaza, San Francisco",
+    googleMapsUri: "https://maps.google.com/?cid=1",
+    rating: 4.4, userRatingCount: 1867,
+    currentOpeningHours: {
+      openNow: true,
+      weekdayDescriptions: [
+        "Monday: 6:30 AM – 6:00 PM", "Tuesday: 6:30 AM – 6:00 PM", "Wednesday: 6:30 AM – 6:00 PM",
+        "Thursday: 6:30 AM – 6:00 PM", "Friday: 6:30 AM – 6:00 PM", "Saturday: 7:00 AM – 6:00 PM",
+        "Sunday: 7:00 AM – 6:00 PM",
+      ],
+    },
+    websiteUri: "https://bluebottlecoffee.com/us/cafes/mint-plaza",
+    nationalPhoneNumber: "(510) 653-3394",
+    utcOffsetMinutes: -420,
+  },
+  ChIJmock0002: {
+    id: "ChIJmock0002",
+    displayName: { text: "Blue Bottle Coffee", languageCode: "en" },
+    primaryTypeDisplayName: { text: "Coffee Shop", languageCode: "en" },
+    businessStatus: "CLOSED_PERMANENTLY",
+    shortFormattedAddress: "315 Linden St, San Francisco",
+    rating: 4.5, userRatingCount: 923,
+    utcOffsetMinutes: -420,
+  },
+  ChIJmock0003: {
+    id: "ChIJmock0003",
+    displayName: { text: "Eiffel Tower", languageCode: "en" },
+    primaryTypeDisplayName: { text: "Historical Landmark", languageCode: "en" },
+    businessStatus: "OPERATIONAL",
+    shortFormattedAddress: "Av. Gustave Eiffel, Paris",
+    googleMapsUri: "https://maps.google.com/?cid=3",
+    rating: 4.7, userRatingCount: 412381,
+    currentOpeningHours: {
+      openNow: true,
+      weekdayDescriptions: [
+        "Monday: 9:30 AM – 11:00 PM", "Tuesday: 9:30 AM – 11:00 PM", "Wednesday: 9:30 AM – 11:00 PM",
+        "Thursday: 9:30 AM – 11:00 PM", "Friday: 9:30 AM – 11:00 PM", "Saturday: 9:30 AM – 11:00 PM",
+        "Sunday: 9:30 AM – 11:00 PM",
+      ],
+    },
+    websiteUri: "https://www.toureiffel.paris/",
+    internationalPhoneNumber: "+33 892 70 12 39",
+    utcOffsetMinutes: 120,
+  },
+  ChIJmock0004: {
+    id: "ChIJmock0004",
+    displayName: { text: "Kyoto", languageCode: "en" },
+    shortFormattedAddress: "Kyoto, Japan",
+    utcOffsetMinutes: 540,
+  },
+};
 
 // Seeded rows arrive with their derived coordinate columns already correct, the
 // way a real sheet's rows do — otherwise the first write fills them in and an
@@ -381,6 +446,14 @@ function handle(action, body) {
       `${place.name} ${place.address}`.toLowerCase().includes(query),
     );
     return { places, source: "google" };
+  }
+
+  if (action === "placeDetails") {
+    if (!CAPABILITIES.placeDetails) throw new Error("No Google Maps API key is set on this script.");
+    const id = String(body.id || "").trim();
+    const details = MOCK_PLACE_DETAILS[id];
+    if (!details) throw new Error("Google Places refused the lookup (404): place not found.");
+    return { place: details, source: "google" };
   }
 
   if (action === "getAll") {

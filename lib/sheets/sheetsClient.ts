@@ -30,6 +30,12 @@ export type SheetCapabilities = {
   /** A Google Maps API key is set on the script, so Places search works. */
   placesSearch: boolean;
   /**
+   * The script serves single-listing lookups for the card's Google Maps
+   * section. Same key as the search; named separately so an app new enough
+   * to ask never asks a script too old to answer.
+   */
+  placeDetails: boolean;
+  /**
    * The script can save photos to the sheet owner's Google Drive, so a photo
    * added on one device can be seen on all of them. An older deployment
    * simply omits this and photos stay in the browser they were added in.
@@ -263,6 +269,7 @@ export async function getAll(
     schemaVersion: String(data?.schemaVersion ?? ""),
     capabilities: {
       placesSearch: capabilities.placesSearch === true,
+      placeDetails: capabilities.placeDetails === true,
       photoUpload: capabilities.photoUpload === true,
       visits: capabilities.visits === true,
       travelPhotos: capabilities.travelPhotos === true,
@@ -295,6 +302,25 @@ export async function searchPlaces(
     | undefined;
 
   return Array.isArray(data?.places) ? data.places : [];
+}
+
+/**
+ * One listing, looked up by the id a place was saved with. The script does
+ * the asking so its API key never reaches the browser; the raw payload comes
+ * back for `lib/maps/placeDetails` to shape into what a card shows.
+ */
+export async function getPlaceDetails(
+  connection: SheetConnection,
+  request: { id: string; language?: string },
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const params: Record<string, string> = { action: "placeDetails", id: request.id };
+  if (request.language) params.lang = request.language;
+
+  const data = (await getFromSheet(connection, params, signal)) as
+    | { place?: unknown }
+    | undefined;
+  return data?.place;
 }
 
 export async function getLookups(

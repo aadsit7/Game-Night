@@ -122,18 +122,19 @@ export const PLACE_FILTER_LABELS: Record<PlaceFilter, string> = {
 };
 
 export type PlaceSort =
+  | "country"
   | "recentlyAdded"
   | "recentlyVisited"
   | "oldestVisited"
-  | "name"
-  | "country";
+  | "name";
 
+/** Listed in the order the sort sheet shows them; the default leads. */
 export const PLACE_SORT_LABELS: Record<PlaceSort, string> = {
+  country: "Country",
   recentlyAdded: "Recently added",
   recentlyVisited: "Recently visited",
   oldestVisited: "Oldest visited",
   name: "Name",
-  country: "Country",
 };
 
 /** A geocoded real-world location, before it becomes a saved place. */

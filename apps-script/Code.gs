@@ -108,6 +108,39 @@ var PLACES_FIELDS = [
  */
 var PLACES_CACHE_SECONDS = 1800;
 
+var PLACE_DETAILS_ENDPOINT = 'https://places.googleapis.com/v1/places/';
+
+/**
+ * What one card shows about the listing. Places (New) bills a request at the
+ * highest tier any field belongs to; rating, hours, website and phone put
+ * this call in the Enterprise tier (1,000 free a month), and the cheaper-tier
+ * fields ride along in the same call at no extra cost. Reviews and editorial
+ * text are deliberately absent — they'd move the call to a still higher tier
+ * and carry display obligations the card doesn't want.
+ */
+var PLACE_DETAILS_FIELDS = [
+  'id',
+  'businessStatus',
+  'displayName',
+  'primaryTypeDisplayName',
+  'googleMapsUri',
+  'utcOffsetMinutes',
+  'shortFormattedAddress',
+  'rating',
+  'userRatingCount',
+  'currentOpeningHours',
+  'websiteUri',
+  'nationalPhoneNumber',
+  'internationalPhoneNumber'
+].join(',');
+
+/**
+ * Opening a card twice in an afternoon should bill once. Six hours is
+ * CacheService's ceiling, still fresh enough for "open now", and far inside
+ * the 30 days Google's terms allow for cached content.
+ */
+var PLACE_DETAILS_CACHE_SECONDS = 21600;
+
 /**
  * The shared code this script checks on every request.
  *
@@ -173,6 +206,7 @@ function doGet(e) {
       case 'getAll':        return getAll_();
       case 'getLookups':    return { lookups: readLookups_() };
       case 'searchPlaces':  return searchPlaces_(params);
+      case 'placeDetails':  return placeDetails_(params);
       case 'photosAuthStatus':      return photosAuthStatus_();
       case 'getPhotoPickerSession': return getPhotoPickerSession_(params);
       case 'getPickedPhotoPreview': return getPickedPhotoPreview_(params);
@@ -182,8 +216,8 @@ function doGet(e) {
       default:
         throw new Error(
           'Unknown action "' + (params.action || '') +
-          '". Expected getAll, getLookups, searchPlaces, photosAuthStatus, ' +
-          'getPhotoPickerSession, getTravelPhoto or ping.'
+          '". Expected getAll, getLookups, searchPlaces, placeDetails, ' +
+          'photosAuthStatus, getPhotoPickerSession, getTravelPhoto or ping.'
         );
     }
   });
@@ -497,6 +531,9 @@ function getAll_() {
 function capabilities_() {
   return {
     placesSearch: Boolean(placesKey_()),
+    // Same key, different call: the card's Google Maps section. Named on its
+    // own so an app new enough to ask never asks a script too old to answer.
+    placeDetails: Boolean(placesKey_()),
     photoUpload: true,
     // Individual Dates_Visits rows and the Travel_Photos tab both ride in
     // getAll from this version on.
@@ -633,6 +670,82 @@ function searchPlaces_(params) {
   var result = { places: (payload.places || []).map(toPlaceResult_), source: 'google' };
   try {
     cache.put(cacheKey, JSON.stringify(result), PLACES_CACHE_SECONDS);
+  } catch (cacheError) {
+    // Caching is an optimisation, never a reason to fail.
+  }
+  return result;
+}
+
+/**
+ * One listing, by the id the app saved when the place was added.
+ *
+ * Serves the card's "Google Maps" section: rating, hours, address, website,
+ * phone. Cached hard because the same card gets opened again and again, and
+ * every miss is a billable call. Nothing from here is ever written to the
+ * sheet — Google's terms allow storing the id, not the content.
+ */
+function placeDetails_(params) {
+  var key = placesKey_();
+  if (!key) {
+    throw new Error(
+      'No Google Maps API key is set on this script, so place details are off. ' +
+      'Add a GOOGLE_MAPS_API_KEY script property to switch them on.'
+    );
+  }
+
+  var id = String(params.id || '').trim();
+  // Real ids are letter-number strings like ChIJ…; anything else is refused
+  // before it can reach the URL path.
+  if (!/^[A-Za-z0-9_-]{10,300}$/.test(id)) {
+    throw new Error('That does not look like a Google place id.');
+  }
+
+  var url = PLACE_DETAILS_ENDPOINT + encodeURIComponent(id);
+  var language = String(params.lang || '').trim();
+  if (/^[a-z]{2}$/i.test(language)) url += '?languageCode=' + language.toLowerCase();
+
+  var cacheKey = 'placeDetails:' + id + ':' + language.toLowerCase();
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (parseError) {
+      // A corrupt entry is not worth failing the card over.
+    }
+  }
+
+  var response = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: { 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': PLACE_DETAILS_FIELDS },
+    muteHttpExceptions: true
+  });
+
+  var code = response.getResponseCode();
+  var text = response.getContentText();
+
+  if (code !== 200) {
+    var detail = '';
+    try {
+      detail = (JSON.parse(text).error || {}).message || '';
+    } catch (parseError) {
+      detail = '';
+    }
+    throw new Error('Google Places refused the lookup (' + code + ')' + (detail ? ': ' + detail : '.'));
+  }
+
+  var payload;
+  try {
+    payload = JSON.parse(text);
+  } catch (parseError) {
+    throw new Error('Google Places sent back something unreadable.');
+  }
+
+  // Already shaped by the field mask; passed through as one object so the
+  // app's own mapping decides what a card shows.
+  var result = { place: payload, source: 'google' };
+  try {
+    cache.put(cacheKey, JSON.stringify(result), PLACE_DETAILS_CACHE_SECONDS);
   } catch (cacheError) {
     // Caching is an optimisation, never a reason to fail.
   }

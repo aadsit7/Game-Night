@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Cloud, CloudOff, Compass, Heart, Loader2, Luggage, MapPin, Plus, RefreshCw, SearchX, Trash2,
@@ -13,8 +13,10 @@ import { PlacesFilters } from "@/components/places/PlacesFilters";
 import { PlacesSearch } from "@/components/places/PlacesSearch";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { FlagChip } from "@/components/ui/FlagChip";
 import { SwipeRow } from "@/components/ui/SwipeRow";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
+import { groupPlacesByCountry } from "@/lib/places/grouping";
 import { visitTimestamp } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
 import type { SheetStatus } from "@/lib/storage/sheetPlaceRepository";
@@ -125,7 +127,14 @@ export function PlacesView({
 }) {
   const reduceMotion = useReducedMotion();
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<PlaceSort>("recentlyAdded");
+  /*
+   * Country-grouped by default. "Where have I been?" is the question this
+   * screen exists to answer, and a country at a time is how people remember
+   * the answer — two hundred places sorted by when they were typed in is a
+   * changelog, not a travel history. Recency is still one tap away in the
+   * filters for the times "what did I just add?" is the actual question.
+   */
+  const [sort, setSort] = useState<PlaceSort>("country");
   const [filter, setFilter] = useState<PlaceFilter>("all");
   const [country, setCountry] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -170,8 +179,19 @@ export function PlacesView({
     [places],
   );
 
-  const filtersActive = country !== null || sort !== "recentlyAdded";
+  const filtersActive = country !== null || sort !== "country";
   const isEmpty = places.length === 0;
+
+  /** Section per country when the collection is arranged that way. */
+  const grouped = useMemo(
+    () => (sort === "country" ? groupPlacesByCountry(visible) : null),
+    [sort, visible],
+  );
+  /** The first cards on screen load their images eagerly, grouped or not. */
+  const priorityIds = useMemo(
+    () => new Set(visible.slice(0, 2).map((place) => place.id)),
+    [visible],
+  );
 
   /*
    * Selection is held as ids rather than places so it survives a sync landing
@@ -394,38 +414,61 @@ export function PlacesView({
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: reduceMotion ? 0 : 0.28, ease: [0.2, 0.8, 0.3, 1] }}
           >
-            {visible.map((place, index) => (
-              <SwipeRow
-                key={place.id}
-                open={swipedId === place.id}
-                onOpenChange={(next) => setSwipedId(next ? place.id : null)}
-                // Ticking places is its own mode with its own gestures; a row
-                // that both swipes and selects is a coin toss every touch.
-                disabled={selecting}
-                radius={place.coverImage ? 20 : 18}
-                left={{
-                  label: "Trip",
-                  tone: "accent",
-                  icon: <Luggage size={19} aria-hidden="true" />,
-                  onAction: () => setTagIds([place.id]),
-                }}
-                right={{
-                  label: "Delete",
-                  tone: "danger",
-                  icon: <Trash2 size={19} aria-hidden="true" />,
-                  onAction: () => onDeletePlace(place.id),
-                }}
-              >
-                <PlaceCard
-                  place={place}
-                  priority={index < 2}
-                  onOpen={() => onOpenPlace(place.id)}
-                  onActions={() => onPlaceActions(place.id)}
-                  selecting={selecting}
-                  selected={selectedIds.includes(place.id)}
-                  onToggleSelect={() => toggle(place.id)}
-                />
-              </SwipeRow>
+            {(grouped ?? [null]).map((group) => (
+              <Fragment key={group?.key ?? "all"}>
+                {group ? (
+                  /*
+                    A country at a time. The heading spans the grid so the
+                    cards beneath it read as that country's shelf, and the
+                    count answers "how much of my travelling was here?"
+                    before a single card is read.
+                  */
+                  <li className="col-span-full flex items-center justify-between gap-3 pb-0.5 pt-3.5 first:pt-1">
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      <FlagChip countryCode={group.code} />
+                      <span className="truncate text-[17px] font-semibold tracking-[-0.01em] text-ink">
+                        {group.label}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-[14px] tabular-nums text-ink-3">
+                      {group.places.length === 1 ? "1 place" : `${group.places.length} places`}
+                    </span>
+                  </li>
+                ) : null}
+                {(group?.places ?? visible).map((place) => (
+                  <SwipeRow
+                    key={place.id}
+                    open={swipedId === place.id}
+                    onOpenChange={(next) => setSwipedId(next ? place.id : null)}
+                    // Ticking places is its own mode with its own gestures; a row
+                    // that both swipes and selects is a coin toss every touch.
+                    disabled={selecting}
+                    radius={place.coverImage ? 20 : 18}
+                    left={{
+                      label: "Trip",
+                      tone: "accent",
+                      icon: <Luggage size={19} aria-hidden="true" />,
+                      onAction: () => setTagIds([place.id]),
+                    }}
+                    right={{
+                      label: "Delete",
+                      tone: "danger",
+                      icon: <Trash2 size={19} aria-hidden="true" />,
+                      onAction: () => onDeletePlace(place.id),
+                    }}
+                  >
+                    <PlaceCard
+                      place={place}
+                      priority={priorityIds.has(place.id)}
+                      onOpen={() => onOpenPlace(place.id)}
+                      onActions={() => onPlaceActions(place.id)}
+                      selecting={selecting}
+                      selected={selectedIds.includes(place.id)}
+                      onToggleSelect={() => toggle(place.id)}
+                    />
+                  </SwipeRow>
+                ))}
+              </Fragment>
             ))}
           </motion.ul>
         )}
