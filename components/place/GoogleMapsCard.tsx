@@ -10,6 +10,7 @@ import {
   hasGoogleDetails,
   localTimeAt,
   type GooglePlaceDetails,
+  type GoogleReview,
 } from "@/lib/maps/placeDetails";
 import { cn } from "@/lib/utils/cn";
 import type { VisitedPlace } from "@/types/place";
@@ -157,6 +158,14 @@ export function GoogleMapsCard({
         </div>
       ) : null}
 
+      {details?.reviews ? (
+        <Reviews
+          reviews={details.reviews}
+          googleMapsUri={details.googleMapsUri}
+          placeName={place.name}
+        />
+      ) : null}
+
       {/* The same spot on everyone's map. With a listing behind it, either
           button opens the real entry rather than a pin at the coordinates. */}
       <div className="flex gap-2.5">
@@ -193,6 +202,10 @@ type FactLine = { text: string; tone?: "danger" };
 function factLines(details: GooglePlaceDetails): FactLine[] {
   const lines: FactLine[] = [];
 
+  // Google's own one-liner leads — it is the closest thing the card has to
+  // an introduction, and it reads like one.
+  if (details.summary) lines.push({ text: details.summary });
+
   if (details.permanentlyClosed) {
     lines.push({ text: "Permanently closed", tone: "danger" });
   } else if (details.temporarilyClosed) {
@@ -208,6 +221,7 @@ function factLines(details: GooglePlaceDetails): FactLine[] {
 
   const character = [
     details.kind,
+    details.priceLabel,
     details.utcOffsetMinutes !== undefined
       ? `${localTimeAt(details.utcOffsetMinutes, new Date())} there`
       : undefined,
@@ -217,8 +231,109 @@ function factLines(details: GooglePlaceDetails): FactLine[] {
   if (character) lines.push({ text: character });
 
   if (details.address) lines.push({ text: details.address });
+  if (details.wheelchairEntrance) lines.push({ text: "Wheelchair-accessible entrance" });
 
   return lines;
+}
+
+/**
+ * What visitors said, the way Google Maps itself shows it: the reviewer's
+ * face and name (linked to their profile — the attribution Google's display
+ * policies require), their stars, when, and what they wrote. Three at most;
+ * the rest live one tap away on the listing.
+ */
+function Reviews({
+  reviews,
+  googleMapsUri,
+  placeName,
+}: {
+  reviews: GoogleReview[];
+  googleMapsUri?: string;
+  placeName: string;
+}) {
+  return (
+    <div className="mb-2.5">
+      <div className="flex items-baseline justify-between gap-3 pb-1.5">
+        <h4 className="text-[13px] font-semibold uppercase tracking-[0.04em] text-ink-3">
+          Reviews
+        </h4>
+        {/* Ranking disclosure, as their policies ask: these are Google's
+            most-relevant picks, not the newest or ours. */}
+        <span className="text-[12px] text-ink-3">most relevant · Google Maps</span>
+      </div>
+      <div className="divide-y divide-separator overflow-hidden rounded-[18px] bg-fill/60">
+        {reviews.map((review, index) => (
+          <div key={`${review.author}-${index}`} className="px-3.5 py-3">
+            <div className="flex items-center gap-2.5">
+              {review.avatarUrl ? (
+                <img
+                  src={review.avatarUrl}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  className="size-7 shrink-0 rounded-full bg-fill object-cover"
+                />
+              ) : (
+                <span
+                  aria-hidden="true"
+                  className="grid size-7 shrink-0 place-items-center rounded-full bg-accent-soft text-[12px] font-bold text-accent"
+                >
+                  {review.author.slice(0, 1).toUpperCase()}
+                </span>
+              )}
+              <span className="min-w-0 flex-1">
+                {review.authorUri ? (
+                  <a
+                    href={review.authorUri}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block truncate text-[14px] font-semibold leading-tight text-ink"
+                  >
+                    {review.author}
+                  </a>
+                ) : (
+                  <span className="block truncate text-[14px] font-semibold leading-tight text-ink">
+                    {review.author}
+                  </span>
+                )}
+                <span className="mt-[2px] flex items-center gap-1.5 text-[12px] leading-tight text-ink-3">
+                  {review.rating !== undefined ? (
+                    <span
+                      aria-label={`${review.rating} out of 5 stars`}
+                      className="flex items-center gap-[1px] text-accent"
+                    >
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star
+                          key={star}
+                          size={10}
+                          aria-hidden="true"
+                          fill={star <= (review.rating ?? 0) ? "currentColor" : "none"}
+                          className={star <= (review.rating ?? 0) ? undefined : "text-ink-3"}
+                        />
+                      ))}
+                    </span>
+                  ) : null}
+                  {review.when ? <span>{review.when}</span> : null}
+                </span>
+              </span>
+            </div>
+            {review.text ? (
+              <p className="clamp-3 mt-2 text-[14px] leading-relaxed text-ink-2">{review.text}</p>
+            ) : null}
+          </div>
+        ))}
+        {googleMapsUri ? (
+          <a
+            href={googleMapsUri}
+            target="_blank"
+            rel="noreferrer"
+            className="flex min-h-[44px] items-center justify-center text-[14px] font-medium text-accent transition-colors active:bg-fill-strong"
+          >
+            More reviews of {placeName} on Google Maps
+          </a>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 /** "toureiffel.paris", not forty characters of path. */

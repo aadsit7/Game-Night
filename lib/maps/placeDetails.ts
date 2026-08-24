@@ -15,6 +15,18 @@ import type { LocationResult, VisitedPlace } from "@/types/place";
  * the content is fetched fresh and cached briefly.
  */
 
+/** One Google review, reduced to what the display policies ask us to show. */
+export type GoogleReview = {
+  rating?: number;
+  text?: string;
+  /** "2 months ago" — Google's own relative phrasing, kept verbatim. */
+  when?: string;
+  author: string;
+  /** The reviewer's Google Maps profile; attribution links here. */
+  authorUri?: string;
+  avatarUrl?: string;
+};
+
 export type GooglePlaceDetails = {
   id: string;
   /** What Google calls the listing — shown when it differs from the saved name. */
@@ -33,6 +45,15 @@ export type GooglePlaceDetails = {
   utcOffsetMinutes?: number;
   permanentlyClosed?: boolean;
   temporarilyClosed?: boolean;
+  /** "$" through "$$$$", from Google's price level. */
+  priceLabel?: string;
+  /** The entrance takes a wheelchair; the one accessibility fact shown. */
+  wheelchairEntrance?: boolean;
+  /** Google's one-line editorial description of the place. */
+  summary?: string;
+  /** The listing on Google Maps itself; "more reviews" points here. */
+  googleMapsUri?: string;
+  reviews?: GoogleReview[];
 };
 
 /** Whether this browser's sheet can serve the lookup at all. */
@@ -86,6 +107,41 @@ export function localTimeAt(utcOffsetMinutes: number, now: Date): string {
   });
 }
 
+/** "$" through "$$$$"; unspecified and free stay unlabelled — a museum with
+ * no admission is not a "free" restaurant. */
+const PRICE_LABELS: Record<string, string> = {
+  PRICE_LEVEL_INEXPENSIVE: "$",
+  PRICE_LEVEL_MODERATE: "$$",
+  PRICE_LEVEL_EXPENSIVE: "$$$",
+  PRICE_LEVEL_VERY_EXPENSIVE: "$$$$",
+};
+
+/** How many reviews a card carries. Three reads; five scrolls. */
+const REVIEW_LIMIT = 3;
+
+function toReview(raw: unknown): GoogleReview | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const review = raw as Record<string, unknown>;
+  const author = (review.authorAttribution ?? {}) as Record<string, unknown>;
+  const name = text(author.displayName);
+  const body = text((review.text as Record<string, unknown> | undefined)?.text);
+  const stars = count(review.rating);
+
+  // Google's policies want reviews credited; one with no author is not
+  // something this card can show, and one with neither text nor stars has
+  // nothing to say.
+  if (!name || (!body && stars === undefined)) return null;
+
+  return {
+    rating: stars !== undefined && stars >= 1 && stars <= 5 ? stars : undefined,
+    text: body,
+    when: text(review.relativePublishTimeDescription),
+    author: name,
+    authorUri: text(author.uri),
+    avatarUrl: text(author.photoUri),
+  };
+}
+
 /** The raw field-masked payload, shaped into exactly what a card shows. */
 export function toGooglePlaceDetails(raw: unknown, now: Date = new Date()): GooglePlaceDetails | null {
   if (typeof raw !== "object" || raw === null) return null;
@@ -97,6 +153,11 @@ export function toGooglePlaceDetails(raw: unknown, now: Date = new Date()): Goog
   const offset = count(place.utcOffsetMinutes);
   const rating = count(place.rating);
   const status = text(place.businessStatus);
+  const access = (place.accessibilityOptions ?? {}) as Record<string, unknown>;
+  const reviews = (Array.isArray(place.reviews) ? place.reviews : [])
+    .map(toReview)
+    .filter((review): review is GoogleReview => review !== null)
+    .slice(0, REVIEW_LIMIT);
 
   return {
     id,
@@ -113,6 +174,11 @@ export function toGooglePlaceDetails(raw: unknown, now: Date = new Date()): Goog
     utcOffsetMinutes: offset,
     permanentlyClosed: status === "CLOSED_PERMANENTLY" || undefined,
     temporarilyClosed: status === "CLOSED_TEMPORARILY" || undefined,
+    priceLabel: PRICE_LABELS[text(place.priceLevel) ?? ""],
+    wheelchairEntrance: access.wheelchairAccessibleEntrance === true || undefined,
+    summary: text((place.editorialSummary as Record<string, unknown> | undefined)?.text),
+    googleMapsUri: text(place.googleMapsUri),
+    reviews: reviews.length > 0 ? reviews : undefined,
   };
 }
 
@@ -148,6 +214,7 @@ function writeCache(cache: CacheShape): void {
   } catch {
     // Private mode or a full quota — the cache is a nicety, never a need.
   }
+  summaryMemo = null;
 }
 
 function cachedDetails(id: string, now: number): GooglePlaceDetails | null {
@@ -162,6 +229,40 @@ function rememberDetails(id: string, place: GooglePlaceDetails, now: number): vo
   const entries = Object.entries(cache).filter(([, value]) => now - value.at < CACHE_TTL_MS);
   entries.sort((a, b) => b[1].at - a[1].at);
   writeCache(Object.fromEntries(entries.slice(0, CACHE_MAX_ENTRIES)));
+}
+
+/* ------------------------------------------------------------------ *
+ * What a list card may borrow
+ *
+ * The Places list never fetches — two hundred rows would spend a month's
+ * free calls in an afternoon. It borrows instead: whatever the card opens
+ * have already put in the cache. The borrowed facts are the stable ones
+ * (a rating moves by hundredths; closed-for-good is forever), so the list
+ * may read entries the card would consider stale — up to a week, well
+ * inside the thirty days Google's terms allow.
+ * ------------------------------------------------------------------ */
+
+export type GoogleSummary = {
+  rating?: number;
+  ratingCount?: number;
+  permanentlyClosed?: boolean;
+};
+
+const SUMMARY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** One parse per render pass, not one per row of a two-hundred-place list. */
+let summaryMemo: CacheShape | null = null;
+
+export function googleSummaryFor(googlePlaceId: string | undefined): GoogleSummary | null {
+  if (!googlePlaceId) return null;
+  if (!summaryMemo) summaryMemo = readCache();
+
+  const entry = summaryMemo[googlePlaceId];
+  if (!entry || Date.now() - entry.at >= SUMMARY_TTL_MS) return null;
+
+  const { rating, ratingCount, permanentlyClosed } = entry.place;
+  if (rating === undefined && !permanentlyClosed) return null;
+  return { rating, ratingCount, permanentlyClosed };
 }
 
 /** Photon's trick, repeated: ask Google in the viewer's own language. */

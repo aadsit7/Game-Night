@@ -11,7 +11,9 @@
  */
 import assert from "node:assert/strict";
 
-const { buildInsights, tallyPlace, scopeMembers } = await import("../lib/insights/insights.ts");
+const { buildInsights, tallyPlace, scopeMembers, tripTypesOf, visitYears } = await import(
+  "../lib/insights/insights.ts"
+);
 const { continentOf, UNKNOWN_CONTINENT } = await import("../lib/insights/continents.ts");
 
 let failures = 0;
@@ -122,10 +124,10 @@ function journal() {
   });
   const places = [disneyland, kyoto, osaka, lisbon];
   const visits = [
-    visit(disneyland.id, "2019-06-01", "2019-06-03"),
-    visit(disneyland.id, "2022-06-10", "2022-06-14"),
-    visit(disneyland.id, "2024-06-01", "2024-06-02"),
-    visit(kyoto.id, "2019-03-25", "2019-04-02"),
+    visit(disneyland.id, "2019-06-01", "2019-06-03", { tripType: "Family" }),
+    visit(disneyland.id, "2022-06-10", "2022-06-14", { tripType: "Family" }),
+    visit(disneyland.id, "2024-06-01", "2024-06-02", { tripType: "Solo" }),
+    visit(kyoto.id, "2019-03-25", "2019-04-02", { tripType: "family" }),
     visit(kyoto.id, "2024-03-20", "2024-03-27"),
     visit(osaka.id, "2024-03-27", "2024-03-29"),
   ];
@@ -169,6 +171,64 @@ test("the matrix holds each country's years, and only years that happened", () =
   assert.deepEqual(matrix.cells.get("jp:2024"), { stays: 2, days: 11 });
   assert.deepEqual(matrix.cells.get("us:2022"), { stays: 1, days: 5 });
   assert.equal(matrix.cells.get("jp:2022"), undefined);
+});
+
+test("a year filter narrows every list, and the matrix keeps its calendar", () => {
+  const { places, visits } = journal();
+  const y2024 = buildInsights(places, visits, { year: 2024 });
+
+  // 2024 held three single stays — nobody repeated within the year.
+  assert.deepEqual(y2024.totals, { places: 3, countries: 2, stays: 3, days: 13 });
+  assert.equal(y2024.regulars.length, 0);
+  const japan = y2024.countries.find((row) => row.label === "Japan");
+  assert.deepEqual([japan.places, japan.stays], [2, 2]);
+
+  // The matrix is the year view; a year filter must not amputate its axis.
+  assert.deepEqual(y2024.matrix.years, [2019, 2022, 2023, 2024]);
+});
+
+test("a trip-type filter counts only the visits logged that way", () => {
+  const { places, visits } = journal();
+  const family = buildInsights(places, visits, { tripType: "Family" });
+
+  // Two Family stays at Disneyland, one at Kyoto — spelled "family" there,
+  // which is the same word to a person and so to the filter.
+  assert.deepEqual(
+    family.regulars.map((tally) => [tally.place.name, tally.stays]),
+    [["Disneyland", 2]],
+  );
+  assert.equal(family.totals.stays, 3);
+  // Lisbon's stays are implicit and unlabelled: under a type filter they sit out.
+  assert.equal(family.countries.some((row) => row.label === "Portugal"), false);
+});
+
+test("the metric decides who leads", () => {
+  const { places, visits } = journal();
+  // Kyoto: 2 stays, 16 days. Disneyland: 3 stays, 10 days.
+  const byStays = buildInsights(places, visits, { metric: "stays" });
+  assert.equal(byStays.regulars[0].place.name, "Disneyland");
+  const byDays = buildInsights(places, visits, { metric: "days" });
+  assert.equal(byDays.regulars[0].place.name, "Kyoto");
+});
+
+test("the filter vocabularies come from the journal itself", () => {
+  const { places, visits } = journal();
+  // One spelling per word, most frequent first.
+  assert.deepEqual(tripTypesOf(visits), ["Family", "Solo"]);
+  assert.deepEqual(visitYears(places, visits), [2024, 2023, 2022, 2019]);
+});
+
+test("a drill carries the lens it was opened through", () => {
+  const { places, visits } = journal();
+  const familyJapan = scopeMembers(
+    { level: "country", key: "jp", tripType: "Family" },
+    places,
+    visits,
+  );
+  assert.deepEqual(
+    familyJapan.map((t) => [t.place.name, t.stays]),
+    [["Kyoto", 1]],
+  );
 });
 
 test("a drill shows the scope's own numbers, not the lifetime ones", () => {

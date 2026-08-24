@@ -4,6 +4,7 @@ import { Check, Heart, MoreHorizontal } from "lucide-react";
 
 import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
+import { googleSummaryFor } from "@/lib/maps/placeDetails";
 import { formatVisitShort } from "@/lib/utils/date";
 import { flagVariant } from "@/lib/ui/flags";
 import { countryFlag } from "@/lib/utils/geo";
@@ -65,6 +66,25 @@ export function PlaceCard({
     .filter(Boolean)
     .join(" · ");
 
+  /*
+   * What Google Maps knows, borrowed rather than fetched: the list reads
+   * only the cache that opened cards fill, so two hundred rows cost zero
+   * calls. A rating appears once its card has been opened; a place that has
+   * closed for good says so, which in a list of memories is the one fact
+   * worth interrupting for.
+   */
+  const google = googleSummaryFor(place.googlePlaceId);
+  const googleChip = google?.permanentlyClosed ? (
+    <span className="mr-1.5 font-medium text-danger">Permanently closed</span>
+  ) : google?.rating !== undefined ? (
+    <span className="mr-1.5 whitespace-nowrap text-accent">
+      <span aria-hidden="true">★ </span>
+      <span aria-label={`Rated ${google.rating.toFixed(1)} on Google Maps`} className="tabular-nums">
+        {google.rating.toFixed(1)}
+      </span>
+    </span>
+  ) : null;
+
   const press = selecting ? onToggleSelect : onOpen;
   // The tick is a state of the card, so the card carries the pressed state
   // rather than a separate control the thumb has to find.
@@ -102,6 +122,7 @@ export function PlaceCard({
             </h3>
             <p className="mt-1 truncate text-[13.5px] text-ink-2">
               {hasFlag ? <FlagChip countryCode={place.countryCode} className="mr-1.5" /> : null}
+              {googleChip}
               {detail}
             </p>
             {place.notes ? (
@@ -130,8 +151,11 @@ export function PlaceCard({
             <h3 className="truncate text-[16.5px] font-semibold leading-tight tracking-[-0.02em] text-ink">
               {place.name}
             </h3>
-            {detail ? (
-              <p className="mt-0.5 truncate text-[13.5px] leading-snug text-ink-2">{detail}</p>
+            {detail || googleChip ? (
+              <p className="mt-0.5 truncate text-[13.5px] leading-snug text-ink-2">
+                {googleChip}
+                {detail}
+              </p>
             ) : null}
             {place.notes ? (
               <p className="truncate text-[13px] leading-snug text-ink-3">{place.notes}</p>

@@ -36,11 +36,15 @@ Six ways to look at the same travel history:
   been to more than once — the theme park that keeps winning; *where you keep
   going* reads the same stays a country or a continent at a time; and a
   years-by-countries matrix crosses your busiest countries with the calendar,
-  a contribution graph for travel. Every row and every cell drills down to
-  the places behind the number, and each of those opens its own card — it is
-  a way through the collection, not a trophy shelf. Only stays that actually
-  happened count: wishlist entries, upcoming bookings and years spent living
-  somewhere never inflate a visit tally.
+  a contribution graph for travel. A **lens** over the whole tab filters it
+  three ways: a year, a kind of trip (the sheet's own words — Family, Solo,
+  whatever was typed), and whether visits or days lead the ranking; every
+  drill answers through the same lens, titled to say so ("Japan · 2024 ·
+  Family"). Every row and every cell drills down to the places behind the
+  number, and each of those opens its own card — it is a way through the
+  collection, not a trophy shelf. Only stays that actually happened count:
+  wishlist entries, upcoming bookings and years spent living somewhere never
+  inflate a visit tally.
 
 A saved place is one of two things, and the app keeps them apart: somewhere
 you have **been**, or somewhere you **want to go**. A wishlist entry has no
@@ -388,10 +392,14 @@ hours, photos, reviews — while any other place opens as a pin on the exact
 spot.
 
 With the key set, the card goes further: a **Google Maps** section shows the
-listing itself — the star rating and how many people gave it, whether it is
-open right now and today's hours, what Google calls it, the local time there,
-the address, and tappable website and phone rows. A place that closed for good
-since you visited says so. Places saved before any of this existed link
+listing itself — Google's one-line description, the star rating and how many
+people gave it, whether it is open right now and today's hours, what Google
+calls it and its price level, the local time there, the address, wheelchair
+accessibility, tappable website and phone rows, and the **most relevant
+reviews**, credited to their authors the way Google's policies ask, with a
+link through to the rest. A place that closed for good since you visited says
+so — in the card and on its row in the list, where a cached ★ rating also
+appears once a card has been opened (the list itself never spends a call). Places saved before any of this existed link
 themselves up on first open: one search biased to the saved pin, taken only on
 a confident match, then remembered in the sheet. Only the listing *id* is ever
 stored — the content is fetched fresh and cached for six hours, which is what

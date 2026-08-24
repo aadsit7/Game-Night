@@ -273,6 +273,20 @@ const MOCK_PLACE_DETAILS = {
     businessStatus: "OPERATIONAL",
     shortFormattedAddress: "66 Mint Plaza, San Francisco",
     googleMapsUri: "https://maps.google.com/?cid=1",
+    priceLevel: "PRICE_LEVEL_MODERATE",
+    reviews: [
+      {
+        name: "places/ChIJmock0001/reviews/r1",
+        rating: 5,
+        relativePublishTimeDescription: "2 months ago",
+        text: { text: "The single-origin pour over is worth the queue every time.", languageCode: "en" },
+        authorAttribution: {
+          displayName: "Jordan P.",
+          uri: "https://www.google.com/maps/contrib/1",
+          photoUri: "",
+        },
+      },
+    ],
     rating: 4.4, userRatingCount: 1867,
     currentOpeningHours: {
       openNow: true,
@@ -302,6 +316,35 @@ const MOCK_PLACE_DETAILS = {
     businessStatus: "OPERATIONAL",
     shortFormattedAddress: "Av. Gustave Eiffel, Paris",
     googleMapsUri: "https://maps.google.com/?cid=3",
+    editorialSummary: {
+      text: "Gustave Eiffel's iconic wrought-iron tower, with viewing platforms over Paris.",
+      languageCode: "en",
+    },
+    accessibilityOptions: { wheelchairAccessibleEntrance: true },
+    reviews: [
+      {
+        name: "places/ChIJmock0003/reviews/r1",
+        rating: 5,
+        relativePublishTimeDescription: "a week ago",
+        text: { text: "Went at sunset and stayed for the sparkle at the top of the hour. Unforgettable.", languageCode: "en" },
+        authorAttribution: {
+          displayName: "Amélie R.",
+          uri: "https://www.google.com/maps/contrib/2",
+          photoUri: "",
+        },
+      },
+      {
+        name: "places/ChIJmock0003/reviews/r2",
+        rating: 4,
+        relativePublishTimeDescription: "3 months ago",
+        text: { text: "Queues are long — book the lift in advance. The second floor view beats the summit.", languageCode: "en" },
+        authorAttribution: {
+          displayName: "Marco T.",
+          uri: "https://www.google.com/maps/contrib/3",
+          photoUri: "",
+        },
+      },
+    ],
     rating: 4.7, userRatingCount: 412381,
     currentOpeningHours: {
       openNow: true,

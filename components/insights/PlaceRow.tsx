@@ -19,6 +19,7 @@ export function PlaceRow({
   stays,
   days,
   lastLabel,
+  lead = "stays",
   onPress,
 }: {
   place: VisitedPlace;
@@ -27,11 +28,14 @@ export function PlaceRow({
   stays: number;
   days: number;
   lastLabel?: string | null;
+  /** Which number the caption leads with — the one the ranking used. */
+  lead?: "stays" | "days";
   onPress: () => void;
 }) {
+  const visitsPart = stays === 1 ? "1 visit" : `${stays} visits`;
+  const daysPart = days > 0 ? `${days} ${days === 1 ? "day" : "days"}` : null;
   const caption = [
-    stays === 1 ? "1 visit" : `${stays} visits`,
-    days > 0 ? `${days} ${days === 1 ? "day" : "days"}` : null,
+    ...(lead === "days" ? [daysPart, visitsPart] : [visitsPart, daysPart]),
     lastLabel ? `last ${lastLabel}` : null,
   ]
     .filter(Boolean)

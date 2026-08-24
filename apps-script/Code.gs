@@ -112,11 +112,12 @@ var PLACE_DETAILS_ENDPOINT = 'https://places.googleapis.com/v1/places/';
 
 /**
  * What one card shows about the listing. Places (New) bills a request at the
- * highest tier any field belongs to; rating, hours, website and phone put
- * this call in the Enterprise tier (1,000 free a month), and the cheaper-tier
- * fields ride along in the same call at no extra cost. Reviews and editorial
- * text are deliberately absent — they'd move the call to a still higher tier
- * and carry display obligations the card doesn't want.
+ * highest tier any field belongs to; reviews and the editorial line put this
+ * call in the Enterprise + Atmosphere tier, which carries the same 1,000
+ * free calls a month the plain Enterprise tier does — so the card gets the
+ * whole listing for the identical budget: one call per open, cache-absorbed.
+ * Photos stay out: each one is its own billed request against that same
+ * allowance.
  */
 var PLACE_DETAILS_FIELDS = [
   'id',
@@ -131,7 +132,11 @@ var PLACE_DETAILS_FIELDS = [
   'currentOpeningHours',
   'websiteUri',
   'nationalPhoneNumber',
-  'internationalPhoneNumber'
+  'internationalPhoneNumber',
+  'priceLevel',
+  'accessibilityOptions',
+  'editorialSummary',
+  'reviews'
 ].join(',');
 
 /**

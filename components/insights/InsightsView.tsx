@@ -10,6 +10,9 @@ import { FlagChip } from "@/components/ui/FlagChip";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import {
   buildInsights,
+  tripTypesOf,
+  visitYears,
+  type InsightMetric,
   type InsightScope,
   type LevelTally,
   type TravelMatrix,
@@ -48,10 +51,50 @@ export function InsightsView({
   const reduceMotion = useReducedMotion();
   const [level, setLevel] = useState<"country" | "continent">("country");
 
-  const insights = useMemo(() => buildInsights(places, visits), [places, visits]);
+  /*
+   * The lens: a year, a kind of trip, and which number leads. Each is one
+   * tap on a chip and one tap off, and every section — and every drill —
+   * looks through the same lens, so a board and its drill can never answer
+   * different questions.
+   */
+  const [year, setYear] = useState<number | null>(null);
+  const [tripType, setTripType] = useState<string | null>(null);
+  const [metric, setMetric] = useState<InsightMetric>("stays");
+
+  /* Chip vocabularies come from the unfiltered journal, so picking a year
+     never hides the way back to the others. */
+  const years = useMemo(() => visitYears(places, visits), [places, visits]);
+  const tripTypes = useMemo(() => tripTypesOf(visits), [visits]);
+
+  const insights = useMemo(
+    () =>
+      buildInsights(places, visits, {
+        year: year ?? undefined,
+        tripType: tripType ?? undefined,
+        metric,
+      }),
+    [places, visits, year, tripType, metric],
+  );
   const { totals, regulars, matrix } = insights;
   const rollup = level === "country" ? insights.countries : insights.continents;
-  const isEmpty = !loading && totals.places === 0;
+
+  const filtersActive = year !== null || tripType !== null;
+  /* An empty journal and an empty filter answer are different sentences. */
+  const isEmpty = !loading && years.length === 0 && !filtersActive && totals.places === 0;
+  const filteredEmpty = !loading && !isEmpty && filtersActive && totals.places === 0;
+
+  /** The lens, spelled out for a drill's title: "Japan · 2024 · Family". */
+  const drill = (scope: Omit<InsightScope, "tripType" | "metric">, label: string) => {
+    const parts = [
+      label,
+      scope.year ?? year ?? undefined,
+      tripType ?? undefined,
+    ].filter((part): part is string | number => part !== undefined);
+    onDrill(
+      { ...scope, year: scope.year ?? year ?? undefined, tripType: tripType ?? undefined, metric },
+      parts.join(" · "),
+    );
+  };
 
   return (
     <div className="absolute inset-0 bg-bg">
@@ -105,79 +148,154 @@ export function InsightsView({
               }
             />
           ) : (
-            <motion.div
-              initial={reduceMotion ? false : { opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: reduceMotion ? 0 : 0.28, ease: [0.2, 0.8, 0.3, 1] }}
-              className="pb-4"
-            >
-              <Section
-                title="Your regulars"
-                aside={<span className="text-[14px] text-ink-3">been more than once</span>}
-              >
-                {regulars.length === 0 ? (
-                  <p className="rounded-[18px] bg-fill/60 px-3.5 py-4 text-[15px] leading-relaxed text-ink-2">
-                    No repeats yet. The first place you go back to starts the board.
-                  </p>
-                ) : (
-                  <div className="divide-y divide-separator overflow-hidden rounded-[18px] bg-fill/60">
-                    {regulars.map((tally, index) => (
-                      <PlaceRow
-                        key={tally.place.id}
-                        place={tally.place}
-                        rank={index + 1}
-                        stays={tally.stays}
-                        days={tally.days}
-                        lastLabel={tally.lastLabel}
-                        onPress={() => onOpenPlace(tally.place.id)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </Section>
-
-              <Section title="Where you keep going">
+            <>
+              {/* The lens: which number leads, which year, which kind of trip. */}
+              <div className="pt-1">
                 <SegmentedControl
-                  ariaLabel="Roll travel up by"
-                  className="mb-2.5"
-                  value={level}
-                  onChange={setLevel}
+                  ariaLabel="Rank by"
+                  className="max-w-[210px]"
+                  value={metric}
+                  onChange={setMetric}
                   options={[
-                    { value: "country", label: "Countries" },
-                    { value: "continent", label: "Continents" },
+                    { value: "stays", label: "Visits" },
+                    { value: "days", label: "Days" },
                   ]}
                 />
-                <div className="divide-y divide-separator overflow-hidden rounded-[18px] bg-fill/60">
-                  {rollup.map((row) => (
-                    <LevelRow
-                      key={row.key}
-                      row={row}
-                      level={level}
-                      onPress={() => onDrill({ level, key: row.key }, row.label)}
+                <div className="-mx-4 mt-2.5 flex gap-1.5 overflow-x-auto scrollbar-none px-4">
+                  <Chip active={year === null} label="All time" onPress={() => setYear(null)} />
+                  {years.map((option) => (
+                    <Chip
+                      key={option}
+                      active={year === option}
+                      label={String(option)}
+                      onPress={() => setYear(year === option ? null : option)}
                     />
                   ))}
                 </div>
-              </Section>
+                {tripTypes.length > 0 ? (
+                  <div className="-mx-4 mt-1.5 flex gap-1.5 overflow-x-auto scrollbar-none px-4">
+                    <Chip
+                      active={tripType === null}
+                      label="Any trip"
+                      onPress={() => setTripType(null)}
+                    />
+                    {tripTypes.map((option) => (
+                      <Chip
+                        key={option}
+                        active={tripType === option}
+                        label={option}
+                        onPress={() => setTripType(tripType === option ? null : option)}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
 
-              {matrix.years.length > 0 ? (
-                <Section
-                  title="Year by year"
-                  aside={
-                    <span className="flex items-center gap-1.5 text-[14px] text-ink-3">
-                      <BarChart3 size={13} aria-hidden="true" />
-                      visits
-                    </span>
-                  }
+              {filteredEmpty ? (
+                <div className="mt-6 rounded-[18px] bg-fill/60 px-4 py-8 text-center">
+                  <p className="text-[15px] leading-relaxed text-ink-2">
+                    Nothing matches these filters — no{" "}
+                    {tripType ? `${tripType.toLowerCase()} ` : ""}
+                    {year ? `stays in ${year}` : "stays"} yet.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setYear(null);
+                      setTripType(null);
+                    }}
+                    className="pressable mt-3 min-h-10 rounded-pill px-4 text-[15px] font-medium text-accent"
+                  >
+                    Clear filters
+                  </button>
+                </div>
+              ) : (
+                <motion.div
+                  key={`${year ?? "all"}-${tripType ?? "any"}-${metric}`}
+                  initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: reduceMotion ? 0 : 0.28, ease: [0.2, 0.8, 0.3, 1] }}
+                  className="pb-4"
                 >
-                  <HeatMatrix
-                    matrix={matrix}
-                    onCell={(row, year) =>
-                      onDrill({ level: "country", key: row.key, year }, `${row.label} · ${year}`)
+                  <Section
+                    title="Your regulars"
+                    aside={
+                      <span className="text-[14px] text-ink-3">
+                        {year || tripType ? "more than once" : "been more than once"}
+                      </span>
                     }
-                  />
-                </Section>
-              ) : null}
-            </motion.div>
+                  >
+                    {regulars.length === 0 ? (
+                      <p className="rounded-[18px] bg-fill/60 px-3.5 py-4 text-[15px] leading-relaxed text-ink-2">
+                        {filtersActive
+                          ? "No repeats under these filters — every stay here was a first."
+                          : "No repeats yet. The first place you go back to starts the board."}
+                      </p>
+                    ) : (
+                      <div className="divide-y divide-separator overflow-hidden rounded-[18px] bg-fill/60">
+                        {regulars.map((tally, index) => (
+                          <PlaceRow
+                            key={tally.place.id}
+                            place={tally.place}
+                            rank={index + 1}
+                            stays={tally.stays}
+                            days={tally.days}
+                            lastLabel={tally.lastLabel}
+                            lead={metric}
+                            onPress={() => onOpenPlace(tally.place.id)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </Section>
+
+                  <Section title="Where you keep going">
+                    <SegmentedControl
+                      ariaLabel="Roll travel up by"
+                      className="mb-2.5"
+                      value={level}
+                      onChange={setLevel}
+                      options={[
+                        { value: "country", label: "Countries" },
+                        { value: "continent", label: "Continents" },
+                      ]}
+                    />
+                    <div className="divide-y divide-separator overflow-hidden rounded-[18px] bg-fill/60">
+                      {rollup.map((row) => (
+                        <LevelRow
+                          key={row.key}
+                          row={row}
+                          level={level}
+                          lead={metric}
+                          onPress={() => drill({ level, key: row.key }, row.label)}
+                        />
+                      ))}
+                    </div>
+                  </Section>
+
+                  {matrix.years.length > 0 ? (
+                    <Section
+                      title="Year by year"
+                      aside={
+                        <span className="flex items-center gap-1.5 text-[14px] text-ink-3">
+                          <BarChart3 size={13} aria-hidden="true" />
+                          {metric === "days" ? "days" : "visits"}
+                          {year !== null ? " · all years" : ""}
+                        </span>
+                      }
+                    >
+                      <HeatMatrix
+                        matrix={matrix}
+                        metric={metric}
+                        onCell={(row, cellYear) =>
+                          drill({ level: "country", key: row.key, year: cellYear }, row.label)
+                        }
+                      />
+                    </Section>
+                  ) : null}
+                </motion.div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -204,19 +322,49 @@ const CONTINENT_INITIALS: Record<string, string> = {
   Elsewhere: "…",
 };
 
+/** One pill of the lens. Years and trip types both wear it. */
+function Chip({
+  active,
+  label,
+  onPress,
+}: {
+  active: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onPress}
+      aria-pressed={active}
+      className={cn(
+        "pressable inline-flex min-h-9 shrink-0 items-center rounded-pill px-3",
+        "text-[13.5px] font-medium tabular-nums transition-colors",
+        active ? "bg-accent text-on-accent" : "bg-fill text-ink-2",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
 function LevelRow({
   row,
   level,
+  lead,
   onPress,
 }: {
   row: LevelTally;
   level: "country" | "continent";
+  /** Which number the caption leads with — the one the ranking used. */
+  lead: InsightMetric;
   onPress: () => void;
 }) {
+  const visitsPart = row.stays === 1 ? "1 visit" : `${row.stays} visits`;
+  const daysPart = row.days > 0 ? `${row.days} ${row.days === 1 ? "day" : "days"}` : null;
   const caption = [
     row.places === 1 ? "1 place" : `${row.places} places`,
-    row.stays === 1 ? "1 visit" : `${row.stays} visits`,
-    row.days > 0 ? `${row.days} ${row.days === 1 ? "day" : "days"}` : null,
+    ...(lead === "days" ? [daysPart, visitsPart] : [visitsPart, daysPart]),
   ]
     .filter(Boolean)
     .join(" · ");
@@ -257,14 +405,19 @@ function LevelRow({
  */
 function HeatMatrix({
   matrix,
+  metric,
   onCell,
 }: {
   matrix: TravelMatrix;
+  /** What a cell's colour and number mean: stays there, or days there. */
+  metric: InsightMetric;
   onCell: (row: TravelMatrix["rows"][number], year: number) => void;
 }) {
+  const valueOf = (cell: { stays: number; days: number }) =>
+    metric === "days" ? cell.days : cell.stays;
   const most = Math.max(
     1,
-    ...Array.from(matrix.cells.values()).map((cell) => cell.stays),
+    ...Array.from(matrix.cells.values()).map(valueOf),
   );
 
   return (
@@ -300,14 +453,16 @@ function HeatMatrix({
                     </td>
                   );
                 }
-                const heat = cell.stays / most;
+                const value = valueOf(cell);
+                const unit = metric === "days" ? "day" : "visit";
+                const heat = value / most;
                 return (
                   <td key={year}>
                     <button
                       type="button"
                       onClick={() => onCell(row, year)}
-                      aria-label={`${row.label} ${year}: ${cell.stays} ${
-                        cell.stays === 1 ? "visit" : "visits"
+                      aria-label={`${row.label} ${year}: ${value} ${
+                        value === 1 ? unit : `${unit}s`
                       }`}
                       className="pressable relative grid size-[34px] place-items-center rounded-[9px] bg-fill"
                     >
@@ -323,7 +478,7 @@ function HeatMatrix({
                           heat > 0.5 ? "text-on-accent" : "text-ink",
                         )}
                       >
-                        {cell.stays}
+                        {value}
                       </span>
                     </button>
                   </td>
