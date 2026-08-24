@@ -149,7 +149,7 @@ had no effect, this is almost always why.
 
 | Tab | App behaviour |
 |---|---|
-| `Places` | Read and written. The main table. A place joins a trip through its existing `Trip ID / Collection` column; `Favorite` and `Status` back the favourites and want-to-go lists. |
+| `Places` | Read and written. The main table. A place joins a trip through its existing `Trip ID / Collection` column; `Favorite` and `Status` back the favourites and want-to-go lists. `Google Place ID` holds the listing id captured when a place was added from a Google search result — it is what makes the app's **Google Maps** buttons and the derived `Map URL` open the actual listing rather than a bare pin. The script appends this column if a sheet from an early copy of the template is missing it. |
 | `Trips` | Read and written. One row per trip. **Created by the script on first run** if it isn't there. |
 | `Dates_Visits` | Read and written. One row per stay — the place card lists them, and the Places row's `First/Last Visited Date`, `Visit Count` and `Days Spent Total` are kept in step. The script appends its bookkeeping columns (`Created At` … `Deleted?`) on first run of this version. |
 | `Media_Links` | Read and written, for photos only. Each uploaded photo becomes a `Photo` row pointing at its place, which is how a photo added on one device appears on the others. Other row types are left alone. |
@@ -632,8 +632,16 @@ No re-deploy is needed — script properties are read on every request. Reload
 the app and search for something; results now say **Results from Google Maps**
 underneath.
 
+Places added from these results also remember their Google listing — the id
+goes into the sheet's `Google Place ID` column. From then on, the **Google
+Maps** and **Directions** buttons on that place's card (and the sheet's own
+derived `Map URL` cell) open the real listing, with its hours, photos and
+reviews, rather than a pin at the coordinates. The buttons themselves work on
+every place either way — they are ordinary Google Maps links and need no key —
+a place without a listing id just opens as a pin on the exact spot.
+
 To turn it off again, delete the property. The app goes back to OpenStreetMap
-on the next reload.
+on the next reload; saved listing ids stay in the sheet and keep working.
 
 ### What it costs
 

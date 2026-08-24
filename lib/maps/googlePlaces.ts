@@ -85,9 +85,10 @@ export function toLocationResult(place: GooglePlace, index: number): LocationRes
     .join(", ");
 
   const address = place.address?.trim();
+  const googlePlaceId = place.id?.trim() || undefined;
 
   return {
-    id: place.id?.trim() || `google-${index}`,
+    id: googlePlaceId || `google-${index}`,
     name,
     context,
     // Only worth showing when it says more than the subtitle already does.
@@ -100,6 +101,9 @@ export function toLocationResult(place: GooglePlace, index: number): LocationRes
     longitude,
     kind: kindOf(place.types ?? []),
     source: "google",
+    // The listing id rides along so a place saved from this result can link
+    // back to the real thing on Google Maps, not just to its coordinates.
+    googlePlaceId,
   };
 }
 

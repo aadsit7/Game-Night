@@ -31,6 +31,8 @@ export type PlaceDraft = {
   photos: string[];
   /** What the geocoder called this spot, shown as the location subtitle. */
   locationLabel: string;
+  /** Google's listing id, when the location came from a Google result. */
+  googlePlaceId: string;
 };
 
 export function emptyDraft(): PlaceDraft {
@@ -49,6 +51,7 @@ export function emptyDraft(): PlaceDraft {
     tripId: "",
     photos: [],
     locationLabel: "",
+    googlePlaceId: "",
   };
 }
 
@@ -149,6 +152,7 @@ export function draftFromPlace(place: VisitedPlace): PlaceDraft {
     locationLabel: [place.city, place.region, place.country]
       .filter((part, index, all): part is string => Boolean(part) && all.indexOf(part) === index)
       .join(", "),
+    googlePlaceId: place.googlePlaceId ?? "",
   };
 }
 
@@ -165,6 +169,10 @@ export function applyLocation(draft: PlaceDraft, result: LocationResult): PlaceD
     latitude: result.latitude,
     longitude: result.longitude,
     locationLabel: result.context || result.name,
+    // Choosing a location re-anchors the record: a Google result brings its
+    // listing id, and any other provider clears the one that no longer
+    // describes where the pin now is.
+    googlePlaceId: result.googlePlaceId ?? "",
   };
 }
 
@@ -202,6 +210,7 @@ export function draftToInput(draft: PlaceDraft): NewPlaceInput {
     tripId: draft.tripId.trim() || undefined,
     coverImage: cover,
     photos: rest.length > 0 ? rest : undefined,
+    googlePlaceId: draft.googlePlaceId.trim() || undefined,
   };
 }
 
@@ -220,6 +229,7 @@ export function isDraftDirty(current: PlaceDraft, original: PlaceDraft): boolean
     "favorite",
     "wantToGo",
     "tripId",
+    "googlePlaceId",
   ];
   if (keys.some((key) => current[key] !== original[key])) return true;
   if (current.photos.length !== original.photos.length) return true;

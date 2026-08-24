@@ -369,6 +369,16 @@ dependency either: a key that is missing, restricted, unbilled or briefly
 unhappy falls through to the keyless geocoder rather than leaving anyone unable
 to add a place.
 
+Every saved place also links out to Google Maps: **Google Maps** and
+**Directions** buttons on the place card, and a directions shortcut on the
+pin preview over the globe. The links are the official cross-platform URLs —
+they open the Google Maps app on a phone, need no key, and work for every
+place. A place added from a Google search result remembers its listing id (the
+sheet's `Google Place ID` column), so its links open the actual listing —
+hours, photos, reviews — while any other place opens as a pin on the exact
+spot. See [Google Maps search](docs/SHEET-SETUP.md#optional-google-maps-search)
+for the optional key setup.
+
 
 `lib/maps/geocoding.ts` uses **Photon**, an open geocoder over OpenStreetMap
 data. Raw OSM results lean heavily towards street addresses, so results are

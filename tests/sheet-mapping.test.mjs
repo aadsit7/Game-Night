@@ -361,6 +361,35 @@ test("a new place takes its status from the choice, not from whether a date was 
   assert.equal(been[COLUMNS.status], STATUS_BEEN);
 });
 
+test("the Google listing id is read, written, cleared, and otherwise left alone", () => {
+  const cells = row(PLACES_HEADERS, { ...KYOTO, "Google Place ID": "ChIJmock0004" });
+  const [place] = placesFromTable({ headers: PLACES_HEADERS, rows: [cells] }, FALLBACK);
+  assert.equal(place.googlePlaceId, "ChIJmock0004");
+
+  // A row from before the app wrote this column simply has no listing.
+  const [bare] = placesFromTable(
+    { headers: PLACES_HEADERS, rows: [row(PLACES_HEADERS, KYOTO)] },
+    FALLBACK,
+  );
+  assert.equal(bare.googlePlaceId, undefined);
+
+  // Saving an id lands it in its column; re-anchoring the place somewhere
+  // Google didn't answer for clears the cell rather than leaving a stale
+  // listing behind; an edit that never mentions it leaves the cell alone.
+  assert.equal(
+    fieldsFromChanges({ googlePlaceId: "ChIJmock0004" }, KYOTO_RECORD)[COLUMNS.googlePlaceId],
+    "ChIJmock0004",
+  );
+  assert.equal(
+    fieldsFromChanges({ googlePlaceId: undefined }, KYOTO_RECORD)[COLUMNS.googlePlaceId],
+    "",
+  );
+  assert.equal(
+    COLUMNS.googlePlaceId in fieldsFromChanges({ notes: "unrelated" }, KYOTO_RECORD),
+    false,
+  );
+});
+
 if (failures > 0) {
   console.error(`\n${failures} mapping test(s) failed.`);
   process.exit(1);
