@@ -23,6 +23,8 @@ import {
 import { GooglePhotosFlowSheet } from "@/components/photos/GooglePhotosReviewSheet";
 import { MediaCodeSheet } from "@/components/photos/MediaCodeSheet";
 import { PlayerView } from "@/components/photos/PlayerView";
+import { InsightDrillSheet } from "@/components/insights/InsightDrillSheet";
+import { InsightsView } from "@/components/insights/InsightsView";
 import { TravelMediaPlayer } from "@/components/photos/TravelMediaPlayer";
 import { AdjustPinBar } from "@/components/place/AdjustPinBar";
 import { LocationSearchSheet } from "@/components/place/LocationSearchSheet";
@@ -48,6 +50,7 @@ import { TripsView } from "@/components/trips/TripsView";
 import { ActionSheet } from "@/components/ui/ActionSheet";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Toast, type ToastMessage } from "@/components/ui/Toast";
+import { type InsightScope } from "@/lib/insights/insights";
 import { reverseGeocode } from "@/lib/maps/geocoding";
 import { LocationError, currentLocation, type Fix } from "@/lib/maps/geolocation";
 import type { MapView } from "@/lib/maps/basemap";
@@ -111,7 +114,9 @@ type Overlay =
   /** Logging or editing one stay; `visitId` may name the implicit visit. */
   | { kind: "visitForm"; placeId: string; visitId?: string }
   /** The Google Photos picking flow; its context lives in `photoContext`. */
-  | { kind: "photoFlow" };
+  | { kind: "photoFlow" }
+  /** The Stats tab's drill: the places behind one row or matrix cell. */
+  | { kind: "insight"; scope: InsightScope; label: string };
 
 type PinSession = {
   mode: "create" | "adjust";
@@ -284,6 +289,9 @@ export function AppShell() {
   const detailOverlay = overlays.find((overlay) => overlay.kind === "detail");
   const detailPlace = getPlace(detailOverlay?.kind === "detail" ? detailOverlay.id : null);
   const tripOverlay = overlays.find((overlay) => overlay.kind === "trip");
+  const insightOverlay = overlays.find(
+    (overlay): overlay is Extract<Overlay, { kind: "insight" }> => overlay.kind === "insight",
+  );
   const openTrip = getTrip(tripOverlay?.kind === "trip" ? tripOverlay.id : null);
   const tripFormOverlay = overlays.find((overlay) => overlay.kind === "tripForm");
   const visitFormOverlay = overlays.find((overlay) => overlay.kind === "visitForm");
@@ -317,7 +325,9 @@ export function AppShell() {
     const index = overlays.findIndex((overlay) => overlay.kind === "detail");
     if (index <= 0) return undefined;
     const beneath = overlays[index - 1];
-    return beneath.kind === "trip" ? (getTrip(beneath.id)?.name ?? "Trip") : undefined;
+    if (beneath.kind === "trip") return getTrip(beneath.id)?.name ?? "Trip";
+    if (beneath.kind === "insight") return beneath.label;
+    return undefined;
   })();
 
   /* Measure the tab bar so sheets, toasts and camera padding all agree. */
@@ -514,6 +524,19 @@ export function AppShell() {
 
   const openDetail = useCallback((id: string) => {
     setOverlays([{ kind: "detail", id }]);
+  }, []);
+
+  /** A Stats row or matrix cell, opened as the places behind the number. */
+  const openInsightDrill = useCallback((scope: InsightScope, label: string) => {
+    setOverlays([{ kind: "insight", scope, label }]);
+  }, []);
+
+  /** A place opened from a drill, with the drill left open beneath it. */
+  const openDetailFromInsight = useCallback((id: string) => {
+    setOverlays((current) => [
+      ...current.filter((overlay) => overlay.kind === "insight"),
+      { kind: "detail", id },
+    ]);
   }, []);
 
   /** A place opened from inside a trip, with the trip left open beneath it. */
@@ -1890,6 +1913,32 @@ export function AppShell() {
         ) : null}
       </AnimatePresence>
 
+      {/* The scoreboard slides over the globe the same way the others do. */}
+      <AnimatePresence>
+        {mode === "stats" ? (
+          <motion.div
+            key="stats"
+            className="absolute inset-0 z-20"
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 22 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 22 }}
+            transition={
+              reduceMotion ? { duration: 0 } : { duration: 0.3, ease: [0.2, 0.8, 0.3, 1] }
+            }
+          >
+            <InsightsView
+              places={places}
+              visits={visits}
+              loading={status === "loading"}
+              bottomInset={tabBarHeight + 16}
+              onOpenPlace={openDetail}
+              onDrill={openInsightDrill}
+              onAdd={() => startCreate()}
+            />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
       <MapViewToggle
         value={mapView}
         onChange={setMapView}
@@ -2022,6 +2071,17 @@ export function AppShell() {
         visitCount={draft.id ? getVisits(draft.id).length : 0}
         onVideos={deviceMediaEnabled ? handleFormVideos : undefined}
         pendingVideoCount={pendingFormVideoCount}
+      />
+
+      <InsightDrillSheet
+        scope={insightOverlay?.scope ?? null}
+        label={insightOverlay?.label ?? ""}
+        open={Boolean(insightOverlay)}
+        onClose={closeAllOverlays}
+        depth={depthOf("insight")}
+        places={places}
+        visits={visits}
+        onOpenPlace={openDetailFromInsight}
       />
 
       <TripDetailSheet
