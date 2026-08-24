@@ -192,11 +192,27 @@ function storeMockFile(seed, label) {
  */
 /**
  * The real script's default is its own authorisation ("script" mode) with the
- * Picker scope granted. `MOCK_PHOTOS_UNAUTHORISED=1 npm run mock-sheet`
- * simulates the one state that needs anything of the user — the manifest
- * scope not yet authorised — so the guidance screen can be developed against.
+ * Picker scope granted. Two flags simulate the two states that need anything
+ * of the user, so both guidance screens can be developed against:
+ * `MOCK_PHOTOS_UNAUTHORISED=1 npm run mock-sheet` — the manifest scope not
+ * yet authorised; `MOCK_PHOTOS_API_DISABLED=1 npm run mock-sheet` — scope
+ * fine, but the Photos Picker API switched off in the Cloud project.
  */
 const PHOTOS_AUTHORISED = process.env.MOCK_PHOTOS_UNAUTHORISED !== "1";
+const PHOTOS_API_ENABLED = process.env.MOCK_PHOTOS_API_DISABLED !== "1";
+
+/** Word for word what pickerApiDisabledAdvice_ says in script mode, with a
+ * stand-in activation URL where Google would name the real project's. */
+const PHOTOS_API_DISABLED_ADVICE =
+  "One-time step: the Photos Picker API is switched off in the Cloud project this " +
+  "script runs in, so Google refuses every picker call — the authorisation itself is fine, " +
+  "and re-authorising will not change this. Enable the API at " +
+  "https://console.developers.google.com/apis/api/photospicker.googleapis.com/overview?project=000000000000" +
+  ", give Google a few minutes to notice, then try again. If that page says you don’t " +
+  "have permission, the script is on its hidden default Cloud project: switch it to a " +
+  "standard one (Apps Script editor → Project Settings → Google Cloud Platform (GCP) " +
+  "Project → Change project), enable the Photos Picker API there, and authorise the " +
+  "script again when it asks. Full steps: docs/SHEET-SETUP.md → Google Photos.";
 
 const CAPABILITIES = {
   placesSearch: process.env.MOCK_PLACES === "1",
@@ -382,12 +398,18 @@ function handle(action, body) {
   if (action === "photosAuthStatus") {
     // Script mode, like a freshly deployed real script: nothing configured,
     // nothing to connect — the deployment's own authorisation carries it.
+    // The API-disabled state layers on top exactly as the real status does:
+    // scope granted, connection refused, advice naming the console switch.
     return {
-      configured: PHOTOS_AUTHORISED, connected: PHOTOS_AUTHORISED,
+      configured: PHOTOS_AUTHORISED,
+      connected: PHOTOS_AUTHORISED && PHOTOS_API_ENABLED,
       mode: "script", scopeGranted: PHOTOS_AUTHORISED,
-      advice: PHOTOS_AUTHORISED
-        ? ""
-        : "One-time step: add the Google Photos Picker scope to the script’s appsscript.json manifest and re-authorise the deployment — see docs/SHEET-SETUP.md → Google Photos.",
+      pickerApiEnabled: PHOTOS_API_ENABLED,
+      advice: !PHOTOS_API_ENABLED
+        ? PHOTOS_API_DISABLED_ADVICE
+        : PHOTOS_AUTHORISED
+          ? ""
+          : "One-time step: add the Google Photos Picker scope to the script’s appsscript.json manifest and re-authorise the deployment — see docs/SHEET-SETUP.md → Google Photos.",
       connectedAt: "",
       accountHint: "mock@example.com",
       redirectUri: `http://localhost:${PORT}/`,
@@ -406,6 +428,10 @@ function handle(action, body) {
         "Add the Photos Picker scope to the appsscript.json manifest and re-authorise " +
         "the deployment — see docs/SHEET-SETUP.md → Google Photos.",
       );
+    }
+    if (!PHOTOS_API_ENABLED) {
+      // Word for word what pickerFetch_ throws for Google's SERVICE_DISABLED.
+      throw new Error("Google Photos refused the request (403). " + PHOTOS_API_DISABLED_ADVICE);
     }
     const id = `mocksession-${nextSessionNumber++}`;
     pickerSessions.set(id, { picked: false, createdAt: Date.now() });

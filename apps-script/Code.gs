@@ -492,14 +492,18 @@ function capabilities_() {
     // getAll from this version on.
     visits: true,
     travelPhotos: true,
-    // The Picker no longer needs anything configured: the script's own
+    // The Picker needs no credentials configured: the script's own
     // authorisation is the default way in, and the flow itself walks
-    // through the one-time re-authorisation if the scope is still missing.
+    // through the one-time fixes — the manifest scope, or the Cloud
+    // project's API switch — when a call bounces off either.
     googlePhotosPicker: true,
-    // Whether an import could run right now — a live OAuth-client
-    // connection, or the script's own token carrying the Picker scope —
-    // so the app can say "connect" vs "add photos" without a second round
-    // trip.
+    // Whether an import could plausibly run right now — a live
+    // OAuth-client connection, or the script's own token carrying the
+    // Picker scope — so the app can say "connect" vs "add photos" without
+    // a second round trip. Deliberately cheap: this rides the scope cache
+    // and skips the API-enablement probe, because getAll is the startup
+    // path; photosAuthStatus is the authority the picker flow consults
+    // before actually opening anything.
     googlePhotosConnected: photosOauthClientLive_() || scriptPhotosScopeGranted_(),
     // Photos and videos picked straight from a device or Drive folder can be
     // stored in Travel_Photos from this version on.
@@ -783,9 +787,15 @@ function uploadPhoto_(body) {
  * 1. The script's own authorisation (the default). The web app already
  *    runs as the sheet owner, and when the appsscript.json manifest lists
  *    the Photos Picker scope, the token the script runs with can call the
- *    Picker API directly. No Cloud project, no OAuth client, nothing in
- *    Script Properties, no connect ceremony: authorising the deployment
- *    IS the connection, and it reaches the sheet owner's library.
+ *    Picker API directly. No OAuth client, nothing in Script Properties,
+ *    no connect ceremony: authorising the deployment IS the connection,
+ *    and it reaches the sheet owner's library. Google does keep one
+ *    console switch: the Picker API must be ENABLED in the Cloud project
+ *    the token belongs to, and the hidden default project scripts start
+ *    on has no page where that switch exists — attaching a standard
+ *    project is the way out (docs/SHEET-SETUP.md → Google Photos). That
+ *    refusal arrives as a 403 just like a scope problem, so pickerFetch_
+ *    and photosAuthStatus_ both tell the two apart and name the real fix.
  *
  * 2. An OAuth client (optional). Kept for the one thing the script token
  *    cannot do — import from a DIFFERENT Google account's library. The
@@ -913,6 +923,104 @@ function photosBearerToken_() {
     'Add the Photos Picker scope to the appsscript.json manifest and re-authorise ' +
     'the deployment — see docs/SHEET-SETUP.md → Google Photos.'
   );
+}
+
+/**
+ * Google's refusal body, read once: the human message, and whether the
+ * refusal is really "the Picker API is switched off in the Cloud project
+ * this token belongs to". That state arrives as a 403 exactly like a scope
+ * problem, and telling the two apart is the difference between advice that
+ * fixes it and advice that sends the owner re-authorising for nothing.
+ * Google names the enable-this-API page in the refusal; it is carried
+ * through so the person can be sent to the switch itself.
+ */
+function pickerRefusal_(text) {
+  var refusal = { message: '', apiDisabled: false, activationUrl: '' };
+  var error;
+  try {
+    error = JSON.parse(text).error || {};
+  } catch (parseError) {
+    return refusal;
+  }
+  refusal.message = String(error.message || '');
+
+  var details = error.details || [];
+  for (var i = 0; i < details.length; i++) {
+    var detail = details[i] || {};
+    if (detail.reason === 'SERVICE_DISABLED') {
+      refusal.apiDisabled = true;
+      refusal.activationUrl = String((detail.metadata || {}).activationUrl || '');
+    }
+  }
+  // Some refusals carry no structured details; the message still says it
+  // plainly, in wording Google has kept stable for years. Both phrases are
+  // matched narrowly — "disabled" alone could as easily describe an
+  // account, and that misdiagnosis is the very thing this function exists
+  // to end.
+  if (!refusal.apiDisabled &&
+      /has not been used in project|Enable it by visiting/i.test(refusal.message)) {
+    refusal.apiDisabled = true;
+  }
+  if (refusal.apiDisabled && !refusal.activationUrl) {
+    var link = /https:\/\/console\.[^\s"']+/.exec(refusal.message);
+    if (link) refusal.activationUrl = link[0].replace(/[.,;]+$/, '');
+  }
+  return refusal;
+}
+
+/**
+ * The words for that refusal, and only the true ones: authorisation was
+ * checked before the call was made, so "re-authorise" — the likeliest
+ * guess for any 403 — must not be the advice. Script mode has a second
+ * trap worth naming: the hidden default Cloud project offers no page where
+ * the API can be enabled, and attaching a standard project is the way out.
+ */
+function pickerApiDisabledAdvice_(activationUrl) {
+  if (photosOauthClientLive_()) {
+    return 'One-time step: the Photos Picker API is switched off in the Cloud project the ' +
+      'connected OAuth client belongs to. Enable it' +
+      (activationUrl ? ' at ' + activationUrl : ' (APIs & Services → Library → Photos Picker API)') +
+      ', give Google a few minutes to notice, then try again — ' +
+      'see docs/SHEET-SETUP.md → Google Photos.';
+  }
+  return 'One-time step: the Photos Picker API is switched off in the Cloud project this ' +
+    'script runs in, so Google refuses every picker call — the authorisation itself is fine, ' +
+    'and re-authorising will not change this. Enable the API' +
+    (activationUrl ? ' at ' + activationUrl : ' in that project’s API library') +
+    ', give Google a few minutes to notice, then try again. If that page says you don’t ' +
+    'have permission, the script is on its hidden default Cloud project: switch it to a ' +
+    'standard one (Apps Script editor → Project Settings → Google Cloud Platform (GCP) ' +
+    'Project → Change project), enable the Photos Picker API there, and authorise the ' +
+    'script again when it asks. Full steps: docs/SHEET-SETUP.md → Google Photos.';
+}
+
+/**
+ * Whether the Picker API answers this token at all — the half of readiness
+ * scope inspection cannot see. Probed with a GET for a session that cannot
+ * exist: any answer except the project-level refusal (the missing session's
+ * 404 included) proves the API itself is switched on. Never cached — this
+ * runs only inside the status action, exactly while someone is diagnosing,
+ * and a stale answer would send them chasing a problem they already fixed.
+ */
+function pickerApiState_(token) {
+  var state = { enabled: true, activationUrl: '' };
+  try {
+    var response = UrlFetchApp.fetch(PICKER_API + '/sessions/availability-probe', {
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true
+    });
+    if (response.getResponseCode() === 403) {
+      var refusal = pickerRefusal_(response.getContentText() || '');
+      if (refusal.apiDisabled) {
+        state.enabled = false;
+        state.activationUrl = refusal.activationUrl;
+      }
+    }
+  } catch (error) {
+    // Indeterminate — a network hiccup is no verdict. The next real call
+    // will say precisely what is wrong if something is.
+  }
+  return state;
 }
 
 /**
@@ -1054,7 +1162,24 @@ function photosAuthStatus_() {
   // actively wondering why the picker won't open, and a five-minute-old
   // "no" would send them chasing a problem they already fixed.
   var scopeGranted = scriptPhotosScopeGranted_(true);
-  var connected = oauthLive || scopeGranted;
+  var authorised = oauthLive || scopeGranted;
+
+  // Authorisation is necessary, not sufficient: the Picker API must also be
+  // enabled in the Cloud project the token belongs to. A deployment can pass
+  // the scope check and still have every Photos call bounce — the state this
+  // probe exists to catch, because without it the status would say
+  // "connected" while the picker says 403.
+  var api = { enabled: true, activationUrl: '' };
+  if (authorised) {
+    try {
+      api = pickerApiState_(oauthLive ? photosAccessToken_() : ScriptApp.getOAuthToken());
+    } catch (tokenError) {
+      // A token that cannot be minted right now is an authorisation
+      // problem, and the fields below already describe those.
+    }
+  }
+  var connected = authorised && api.enabled;
+
   return {
     // Imports can run right now, or there is at least a connect path the
     // app can offer. Older apps read this as "worth showing the flow".
@@ -1066,10 +1191,16 @@ function photosAuthStatus_() {
     // Script mode's ground truth, separated out so the app can tell "the
     // default just works" from "the manifest step is still missing".
     scopeGranted: scopeGranted,
-    // What to do about a not-connected script mode, worded here because
-    // only the script knows which mode it is in. Empty when the app's own
-    // connect button is the answer, or when nothing is wrong.
-    advice: connected || oauthConfigured ? '' :
+    // False in exactly one state: authorisation works, but the Picker API
+    // is switched off in the Cloud project. Absent from older deployments'
+    // answers, so the app reads a missing field as true.
+    pickerApiEnabled: api.enabled,
+    // What to do about a not-connected answer, worded here because only
+    // the script knows which mode it is in and what Google refused. Empty
+    // when the app's own connect button is the answer, or when nothing is
+    // wrong.
+    advice: !api.enabled ? pickerApiDisabledAdvice_(api.activationUrl) :
+      connected || oauthConfigured ? '' :
       'One-time step: add the Google Photos Picker scope to the script’s appsscript.json ' +
       'manifest and re-authorise the deployment — see docs/SHEET-SETUP.md → Google Photos.',
     connectedAt: oauthLive && tokens && tokens.connectedAt ? tokens.connectedAt : '',
@@ -1167,15 +1298,22 @@ function pickerFetch_(method, path, body) {
   var text = response.getContentText() || '';
 
   if (code === 401 || code === 403) {
-    // Google's own reason rides along — a refusal that is not about the
-    // scope at all (a policy, a suspended API) should say so, not hide
-    // behind the likeliest guess.
-    var refusal = '';
-    try { refusal = (JSON.parse(text).error || {}).message || ''; } catch (e) { refusal = ''; }
+    var refusal = pickerRefusal_(text);
+    // The one 403 that has nothing to do with authorisation: the Picker
+    // API is not enabled in the Cloud project. "Re-authorise" would be
+    // precisely the wrong advice there, so that case gets its own words
+    // and the enable-this-API link Google handed over.
+    if (refusal.apiDisabled) {
+      throw new Error('Google Photos refused the request (' + code + '). ' +
+        pickerApiDisabledAdvice_(refusal.activationUrl));
+    }
+    // Otherwise Google's own reason rides along — a refusal that is not
+    // about the scope at all (a policy, a suspended account) should say
+    // so, not hide behind the likeliest guess.
     throw new Error((photosOauthClientLive_()
       ? 'Google Photos refused the request (' + code + '). The authorisation may have been revoked — reconnect from settings.'
       : 'Google Photos refused the request (' + code + '). The script’s own authorisation may be missing the Photos Picker scope — re-authorise the deployment (docs/SHEET-SETUP.md → Google Photos).') +
-      (refusal ? ' Google said: ' + refusal : ''));
+      (refusal.message ? ' Google said: ' + refusal.message : ''));
   }
   if (code === 404) {
     throw new Error('That Google Photos picking session no longer exists. Start the picker again.');
