@@ -41,6 +41,15 @@ export type VisitedPlace = {
   /** Photo reference — either `photo:<uuid>` (local blob) or an absolute URL. */
   coverImage?: string;
   photos?: string[];
+  /**
+   * Google's own id for this place, kept from the search result that created
+   * it. It is what turns "Open in Google Maps" from a pin at some coordinates
+   * into the actual listing — hours, photos, reviews. Set only when Google
+   * answered the search; replaced or cleared when a different location is
+   * chosen; deliberately kept when a pin is nudged, because adjusting a pin
+   * corrects the placement of the same place rather than choosing a new one.
+   */
+  googlePlaceId?: string;
   createdAt: string;
   updatedAt: string;
   /**
@@ -149,4 +158,6 @@ export type LocationResult = {
   kind?: string;
   /** Which service answered. Shown as attribution, and nothing else. */
   source?: "google" | "osm";
+  /** Google's id for the listing, present only when Google answered. */
+  googlePlaceId?: string;
 };

@@ -433,16 +433,26 @@ var BOOKKEEPING_COLUMNS = [
 ];
 
 function ensureBookkeepingColumns_() {
-  var names = ['Dates_Visits', 'Media_Links'];
-  for (var i = 0; i < names.length; i++) {
-    var sheet = book_().getSheetByName(names[i]);
+  // Places predates the bookkeeping set, but a sheet made from an early copy
+  // of the template can be missing Google Place ID — and a write naming a
+  // column the tab lacks fails loudly by design. Appending it here means the
+  // fix is "update the script", not "edit your spreadsheet by hand".
+  var wanted = {
+    'Dates_Visits': BOOKKEEPING_COLUMNS,
+    'Media_Links': BOOKKEEPING_COLUMNS,
+    'Places': ['Google Place ID']
+  };
+  for (var name in wanted) {
+    if (!wanted.hasOwnProperty(name)) continue;
+    var sheet = book_().getSheetByName(name);
     if (!sheet) continue;
 
-    var headerRow = TABS[names[i]].header;
+    var headerRow = TABS[name].header;
     var index = headerIndex_(sheet, headerRow);
+    var columns = wanted[name];
     var missing = [];
-    for (var j = 0; j < BOOKKEEPING_COLUMNS.length; j++) {
-      if (index.map[BOOKKEEPING_COLUMNS[j]] === undefined) missing.push(BOOKKEEPING_COLUMNS[j]);
+    for (var j = 0; j < columns.length; j++) {
+      if (index.map[columns[j]] === undefined) missing.push(columns[j]);
     }
     if (missing.length === 0) continue;
 
@@ -2216,7 +2226,14 @@ function applyCoordinates_(values, map) {
 
   if (map['Coordinate Key'] !== undefined) values[map['Coordinate Key']] = lat + ',' + lng;
   if (map['Map URL'] !== undefined) {
-    values[map['Map URL']] = 'https://www.google.com/maps/search/?api=1&query=' + lat + ',' + lng;
+    var mapUrl = 'https://www.google.com/maps/search/?api=1&query=' + lat + ',' + lng;
+    // With the listing id the app saves from a Google search, the link opens
+    // the actual place — the coordinates stay as the fallback query.
+    var placeId = map['Google Place ID'] === undefined
+      ? ''
+      : String(values[map['Google Place ID']] || '').trim();
+    if (placeId) mapUrl += '&query_place_id=' + encodeURIComponent(placeId);
+    values[map['Map URL']] = mapUrl;
   }
 }
 

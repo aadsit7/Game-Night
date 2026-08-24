@@ -27,6 +27,7 @@ const suites = [
   "draft-dates.test.mjs",
   "trips.test.mjs",
   "place-search.test.mjs",
+  "google-maps-links.test.mjs",
   "sheet-stack.test.mjs",
   "tagging.test.mjs",
   "flag-chips.test.mjs",

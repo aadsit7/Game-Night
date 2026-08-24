@@ -268,7 +268,7 @@ for (const row of places) {
     const a = lat.toFixed(6), b = lng.toFixed(6);
     row[PI["Latitude"]] = a; row[PI["Longitude"]] = b;
     row[PI["Coordinate Key"]] = `${a},${b}`;
-    row[PI["Map URL"]] = `https://www.google.com/maps/search/?api=1&query=${a},${b}`;
+    row[PI["Map URL"]] = mapUrl(a, b, row[PI["Google Place ID"]]);
   }
 }
 
@@ -276,6 +276,13 @@ const settings = { "Schema Version": "1", "Default Currency": "USD", "Default Ma
 const log = [];
 
 const stamp = () => new Date().toISOString().slice(0, 19);
+
+/** The listing id the app saves makes the derived link open the real place. */
+function mapUrl(lat, lng, googlePlaceId) {
+  const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+  const id = String(googlePlaceId ?? "").trim();
+  return id ? `${url}&query_place_id=${encodeURIComponent(id)}` : url;
+}
 
 const SEARCH_SOURCES = ["Place Name", "Alternate Names", "Place Type", "Status", "Description",
   "Personal Notes", "Tags", "List Names", "Country", "Region / State", "City",
@@ -312,7 +319,7 @@ function applyDerived(row, isNew) {
     const a = lat.toFixed(6), b = lng.toFixed(6);
     row[PI["Latitude"]] = a; row[PI["Longitude"]] = b;
     row[PI["Coordinate Key"]] = `${a},${b}`;
-    row[PI["Map URL"]] = `https://www.google.com/maps/search/?api=1&query=${a},${b}`;
+    row[PI["Map URL"]] = mapUrl(a, b, row[PI["Google Place ID"]]);
   }
   row[PI["Search Text"]] = SEARCH_SOURCES
     .map((h) => String(row[PI[h]] ?? "").trim()).filter(Boolean)

@@ -10,7 +10,9 @@ import {
   Heart,
   Home,
   Luggage,
+  Map as MapIcon,
   MapPin,
+  Navigation,
   Pencil,
   Plane,
   Play,
@@ -27,6 +29,7 @@ import { formatDays } from "@/lib/timeline/buildTimeline";
 import { isResidenceVisit, isUpcomingVisit, visitStats } from "@/lib/places/visits";
 import { formatMediaCounts, mediaCounts } from "@/lib/photos/mediaPlaylist";
 import { photosForPlace, sortTravelPhotos } from "@/lib/photos/travelPhotos";
+import { googleMapsDirectionsUrl, googleMapsUrl } from "@/lib/maps/googleMapsLinks";
 import { formatVisitRange, inclusiveDayCount } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
 import { countryFlag, formatCoordinates, placeSubtitle } from "@/lib/utils/geo";
@@ -387,6 +390,30 @@ export function PlaceDetailSheet({
                 value={formatCoordinates(place.latitude, place.longitude)}
                 tabular
               />
+            </div>
+
+            {/* The same spot on everyone's map. With a listing id saved from
+                the search that created the place, this opens the real entry —
+                hours, photos, reviews — not just a pin at the coordinates. */}
+            <div className="mt-2.5 flex gap-2.5">
+              <a
+                href={googleMapsUrl(place)}
+                target="_blank"
+                rel="noreferrer"
+                className="pressable flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-md bg-fill text-[16px] font-medium text-ink"
+              >
+                <MapIcon size={17} aria-hidden="true" />
+                Google Maps
+              </a>
+              <a
+                href={googleMapsDirectionsUrl(place)}
+                target="_blank"
+                rel="noreferrer"
+                className="pressable flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-md bg-fill text-[16px] font-medium text-ink"
+              >
+                <Navigation size={16} aria-hidden="true" />
+                Directions
+              </a>
             </div>
 
             {place.notes ? (

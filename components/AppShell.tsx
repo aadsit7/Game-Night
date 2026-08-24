@@ -632,6 +632,11 @@ export function AppShell() {
       // the trip screen lists members by the place's own trip cell. A trip
       // the place already belongs to is never overwritten.
       if (input.tripId && !existing.tripId) additions.tripId = input.tripId;
+      // A record saved before Google answered for it gains its listing id the
+      // next time the same place is added from a Google result.
+      if (input.googlePlaceId && !existing.googlePlaceId) {
+        additions.googlePlaceId = input.googlePlaceId;
+      }
 
       if (Object.keys(additions).length > 0) await updatePlace(existing.id, additions);
 

@@ -1,10 +1,11 @@
 "use client";
 
-import { ChevronRight, Pencil } from "lucide-react";
+import { ChevronRight, Navigation, Pencil } from "lucide-react";
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
+import { googleMapsDirectionsUrl } from "@/lib/maps/googleMapsLinks";
 import { flagVariant } from "@/lib/ui/flags";
 import { formatVisitShort } from "@/lib/utils/date";
 import { countryFlag, placeSubtitle } from "@/lib/utils/geo";
@@ -108,6 +109,17 @@ export function PlacePreviewSheet({
               <Pencil size={15} aria-hidden="true" />
               Edit
             </button>
+            {/* Directions in one tap from the pin you are looking at — the
+                thing you want standing in a city with the globe open. */}
+            <a
+              href={googleMapsDirectionsUrl(place)}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Directions to ${place.name} in Google Maps`}
+              className="pressable grid min-h-11 min-w-11 place-items-center rounded-sm bg-fill text-ink"
+            >
+              <Navigation size={16} aria-hidden="true" />
+            </a>
           </div>
         </div>
       ) : null}

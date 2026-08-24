@@ -180,4 +180,13 @@ test("a Places result with no id still gets a stable one", () => {
   assert.equal(result.id, "google-3");
 });
 
+test("the Google listing id rides along, and is never invented", () => {
+  assert.equal(toLocationResult(GOOGLE_CAFE, 0).googlePlaceId, GOOGLE_CAFE.id);
+
+  // The fallback row id is a list key, not a listing — a place saved from it
+  // must not claim a Google identity it doesn't have.
+  assert.equal(toLocationResult({ ...GOOGLE_CAFE, id: undefined }, 3).googlePlaceId, undefined);
+  assert.equal(toLocationResult({ ...GOOGLE_CAFE, id: "   " }, 3).googlePlaceId, undefined);
+});
+
 process.exit(failures === 0 ? 0 : 1);

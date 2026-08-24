@@ -50,6 +50,7 @@ export const COLUMNS = {
   // need no new column on a 78-column tab that other formulas read.
   tripId: "Trip ID / Collection",
   photoUrl: "Photo URL",
+  googlePlaceId: "Google Place ID",
   createdAt: "Created At",
   updatedAt: "Updated At",
   deleted: "Deleted?",
@@ -281,6 +282,7 @@ export function placeFromRow(
     // "belongs to no trip" looks like.
     tripId: text(cell(row, index, COLUMNS.tripId)),
     coverImage: isRemotePhoto(photo) ? photo : undefined,
+    googlePlaceId: text(cell(row, index, COLUMNS.googlePlaceId)),
     createdAt: timestamp(cell(row, index, COLUMNS.createdAt), fallbackTime),
     updatedAt,
     // The sheet has a Yes/No flag, not a moment. The last write is the closest
@@ -680,6 +682,10 @@ export function fieldsFromChanges(
   // cleared, the row is otherwise untouched, and the place stays in the
   // history exactly as it was.
   if (has("tripId")) put(COLUMNS.tripId, (changes as PlaceChanges).tripId?.trim());
+  // Cleared the same way when a place is re-anchored somewhere Google didn't
+  // answer for — a stale listing id would send "Open in Google Maps" to the
+  // old place.
+  if (has("googlePlaceId")) put(COLUMNS.googlePlaceId, (changes as PlaceChanges).googlePlaceId?.trim());
 
   if (has("latitude") && typeof changes.latitude === "number") {
     put(COLUMNS.latitude, clampLatitude(changes.latitude).toFixed(6));
