@@ -640,6 +640,16 @@ reviews, rather than a pin at the coordinates. The buttons themselves work on
 every place either way — they are ordinary Google Maps links and need no key —
 a place without a listing id just opens as a pin on the exact spot.
 
+The card's **Google Maps section** comes from the same key: opening a place
+looks its listing up through the script and shows the rating and review
+count, whether it is open right now and today's hours, what kind of place
+Google says it is, the local time there, the address, and website and phone
+rows. A place with no listing id is linked up automatically on first open —
+one search, biased to the saved pin, accepted only when the result clearly is
+that place — and the id is saved so every later open is a straight lookup.
+Nothing else is stored: listing content is fetched fresh and cached for six
+hours, inside what Google's terms allow.
+
 To turn it off again, delete the property. The app goes back to OpenStreetMap
 on the next reload; saved listing ids stay in the sheet and keep working.
 
@@ -648,6 +658,14 @@ on the next reload; saved listing ids stay in the sheet and keep working.
 One search is one request, sent after you stop typing rather than on every
 keystroke, and identical searches are cached on the script for half an hour.
 Adding a few hundred places a year does not come close to the free allowance.
+
+Opening a card is one Place Details request the first time and free from
+cache after that — the script and the browser each remember a listing for six
+hours. The fields the card asks for put the call in Google's Enterprise tier,
+which includes 1,000 free requests a month; even browsing a large journal
+daily stays inside it, and the quota cap from step 2 means "inside it" is
+enforced rather than hoped for. Auto-linking an old place is one ordinary
+search, once, and the result is saved.
 
 ### If it does not work
 

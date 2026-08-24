@@ -152,6 +152,7 @@ export const NO_TRAVEL_PHOTOS: TravelPhoto[] = [];
  */
 export const NO_CAPABILITIES: SheetCapabilities = {
   placesSearch: false,
+  placeDetails: false,
   photoUpload: false,
   visits: false,
   travelPhotos: false,

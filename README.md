@@ -376,8 +376,21 @@ they open the Google Maps app on a phone, need no key, and work for every
 place. A place added from a Google search result remembers its listing id (the
 sheet's `Google Place ID` column), so its links open the actual listing —
 hours, photos, reviews — while any other place opens as a pin on the exact
-spot. See [Google Maps search](docs/SHEET-SETUP.md#optional-google-maps-search)
-for the optional key setup.
+spot.
+
+With the key set, the card goes further: a **Google Maps** section shows the
+listing itself — the star rating and how many people gave it, whether it is
+open right now and today's hours, what Google calls it, the local time there,
+the address, and tappable website and phone rows. A place that closed for good
+since you visited says so. Places saved before any of this existed link
+themselves up on first open: one search biased to the saved pin, taken only on
+a confident match, then remembered in the sheet. Only the listing *id* is ever
+stored — the content is fetched fresh and cached for six hours, which is what
+Google's terms ask. One card open is one Place Details call (1,000 free a
+month, and the cache absorbs reopens), so a personal journal stays inside the
+free allowance. See
+[Google Maps search](docs/SHEET-SETUP.md#optional-google-maps-search) for the
+key setup.
 
 
 `lib/maps/geocoding.ts` uses **Photon**, an open geocoder over OpenStreetMap
