@@ -56,11 +56,18 @@ export type GooglePlaceDetails = {
   reviews?: GoogleReview[];
   /** Every day's hours, Monday first — the line the card can unfold. */
   weekHours?: string[];
-  /** The listing's lead photograph, as a resource name to resolve on use. */
-  photoName?: string;
+  /**
+   * The listing's photographs — up to three, lead first — as resource names
+   * to resolve on use, each with the credit Google's policies require.
+   */
+  photos?: GooglePhotoRef[];
+};
+
+export type GooglePhotoRef = {
+  name: string;
   /** Who took it — shown with the picture, as Google's policies require. */
-  photoBy?: string;
-  photoByUri?: string;
+  by?: string;
+  byUri?: string;
 };
 
 /** Whether this browser's sheet can serve the lookup at all. */
@@ -198,27 +205,28 @@ export function toGooglePlaceDetails(raw: unknown, now: Date = new Date()): Goog
       hours.weekdayDescriptions.every((line) => typeof line === "string")
         ? (hours.weekdayDescriptions as string[])
         : undefined,
-    ...leadPhoto(place.photos),
+    photos: listingPhotos(place.photos),
   };
 }
 
-/** The first photo's name and credit; the picture itself is fetched on use. */
-function leadPhoto(
-  raw: unknown,
-): Pick<GooglePlaceDetails, "photoName" | "photoBy" | "photoByUri"> {
-  if (!Array.isArray(raw) || raw.length === 0) return {};
-  const photo = raw[0] as Record<string, unknown>;
-  const name = text(photo.name);
-  if (!name) return {};
+/** How many of a listing's photographs the card will show, lead first. */
+const LISTING_PHOTO_MAX = 3;
 
-  const author = (Array.isArray(photo.authorAttributions) ? photo.authorAttributions[0] : {}) as
-    | Record<string, unknown>
-    | undefined;
-  return {
-    photoName: name,
-    photoBy: text(author?.displayName),
-    photoByUri: text(author?.uri),
-  };
+/** Photo names and credits; the pictures themselves are fetched on use. */
+function listingPhotos(raw: unknown): GooglePhotoRef[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+
+  const refs: GooglePhotoRef[] = [];
+  for (const entry of raw.slice(0, LISTING_PHOTO_MAX)) {
+    const photo = entry as Record<string, unknown>;
+    const name = text(photo.name);
+    if (!name) continue;
+    const author = (Array.isArray(photo.authorAttributions) ? photo.authorAttributions[0] : {}) as
+      | Record<string, unknown>
+      | undefined;
+    refs.push({ name, by: text(author?.displayName), byUri: text(author?.uri) });
+  }
+  return refs.length > 0 ? refs : undefined;
 }
 
 /* ------------------------------------------------------------------ *
@@ -341,10 +349,10 @@ export async function fetchGoogleDetails(
 }
 
 /* ------------------------------------------------------------------ *
- * The borrowed photograph
+ * The borrowed photographs
  *
  * Shown only where the traveller has no photo of their own, so each is a
- * once-per-place lookup against the photo call's own monthly allowance.
+ * once-per-photo lookup against the photo call's own monthly allowance.
  * Cached for a week — the picture of a landmark does not churn — and
  * display-only throughout: the address is never written to the sheet,
  * which is what Google's terms ask of their content.
@@ -383,17 +391,16 @@ function writePhotoCache(cache: PhotoCache): void {
 
 /**
  * The image address behind a photo name, or null for any reason at all.
- * Keyed by the place rather than the photo: names churn as Google refreshes
- * a listing, and one picture per place per week is the whole appetite.
+ * Keyed by the photo's own resource name — unique per picture, so the strip
+ * and the hero each pay for themselves exactly once a week.
  */
 export async function fetchGooglePhotoUri(
-  googlePlaceId: string,
   photoName: string,
   options: { signal?: AbortSignal } = {},
 ): Promise<string | null> {
   if (!hasGoogleDetails()) return null;
 
-  const cached = readPhotoCache()[googlePlaceId];
+  const cached = readPhotoCache()[photoName];
   if (cached && Date.now() - cached.at < PHOTO_TTL_MS) return cached.uri;
 
   const connection = sheetPlaceRepository.getConnection();
@@ -403,7 +410,7 @@ export async function fetchGooglePhotoUri(
     const uri = await getPlacePhoto(connection, { name: photoName }, options.signal);
     if (!uri) return null;
     const cache = readPhotoCache();
-    cache[googlePlaceId] = { at: Date.now(), uri };
+    cache[photoName] = { at: Date.now(), uri };
     writePhotoCache(cache);
     return uri;
   } catch (error) {

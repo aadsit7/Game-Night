@@ -11,7 +11,6 @@ import {
   Home,
   ImageUp,
   Luggage,
-  MapPin,
   Pencil,
   Plane,
   Play,
@@ -34,10 +33,11 @@ import { formatMediaCounts, mediaCounts } from "@/lib/photos/mediaPlaylist";
 import { photosForPlace, sortTravelPhotos } from "@/lib/photos/travelPhotos";
 import { GoogleMapsCard } from "@/components/place/GoogleMapsCard";
 import { GooglePhotoHero } from "@/components/place/GooglePhotoHero";
+import { PlaceMiniMap } from "@/components/place/PlaceMiniMap";
 import type { GooglePlaceDetails } from "@/lib/maps/placeDetails";
 import { formatVisitRange, inclusiveDayCount } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
-import { countryFlag, formatCoordinates, placeSubtitle } from "@/lib/utils/geo";
+import { countryFlag, placeSubtitle } from "@/lib/utils/geo";
 import type { PlaceVisit, VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
 import type { TravelPhoto } from "@/types/travelPhoto";
@@ -272,13 +272,10 @@ export function PlaceDetailSheet({
                   className="aspect-[16/10] w-full rounded-[22px]"
                 />
               </button>
-            ) : googleListing?.forId === place.id && googleListing.details.photoName ? (
+            ) : googleListing?.forId === place.id && googleListing.details.photos ? (
               <GooglePhotoHero
                 key={place.id}
-                googlePlaceId={googleListing.details.id}
-                photoName={googleListing.details.photoName}
-                photoBy={googleListing.details.photoBy}
-                photoByUri={googleListing.details.photoByUri}
+                photos={googleListing.details.photos}
                 placeName={place.name}
               />
             ) : null}
@@ -335,6 +332,18 @@ export function PlaceDetailSheet({
                 <Stat value={stats.firstYear ?? "—"} label="first here" />
                 <Stat value={stats.lastLabel ?? "—"} label="last visit" />
               </div>
+            ) : null}
+
+            {/* A place with no visits yet — just added, or a wish — leads
+                with what Google knows about it; an empty "Your visits" pill
+                claiming the prime slot said nothing at all. With visits, the
+                journal's own record leads and Google keeps its usual place. */}
+            {visits.length === 0 ? (
+              <GoogleMapsCard
+                place={place}
+                onLinked={onLinkGoogle ? (id) => onLinkGoogle(place.id, id) : undefined}
+                onDetails={(details) => setGoogleListing({ forId: place.id, details })}
+              />
             ) : null}
 
             {/* Every stay, newest first — the heart of the card. Each visit
@@ -422,34 +431,35 @@ export function PlaceDetailSheet({
               </Section>
             ) : null}
 
-            {/* The facts, grouped — the trip, the coordinates. */}
-            <div className="mt-6 divide-y divide-separator overflow-hidden rounded-[18px] bg-fill/60">
+            {/* The facts — the trip it belongs to, and where it is. The
+                coordinates became a picture: a small still of the map with
+                the pin on it, which says "here" the way numbers never did. */}
+            <div className="mt-6 space-y-2.5">
               {trip && onOpenTrip ? (
-                <Fact
-                  icon={<Luggage size={16} aria-hidden="true" />}
-                  label="Trip"
-                  value={trip.name}
-                  onPress={onOpenTrip}
-                />
+                <div className="overflow-hidden rounded-[18px] bg-fill/60">
+                  <Fact
+                    icon={<Luggage size={16} aria-hidden="true" />}
+                    label="Trip"
+                    value={trip.name}
+                    onPress={onOpenTrip}
+                  />
+                </div>
               ) : null}
 
-              <Fact
-                icon={<MapPin size={16} aria-hidden="true" />}
-                label="Location details"
-                value={formatCoordinates(place.latitude, place.longitude)}
-                tabular
-              />
+              <PlaceMiniMap place={place} />
             </div>
 
             {/* The place as Google Maps knows it — rating, open right now,
                 the address — with the buttons through to the real listing.
                 With no key or no listing it quietly shrinks to the buttons,
                 which work for every place. */}
-            <GoogleMapsCard
-              place={place}
-              onLinked={onLinkGoogle ? (id) => onLinkGoogle(place.id, id) : undefined}
-              onDetails={(details) => setGoogleListing({ forId: place.id, details })}
-            />
+            {visits.length > 0 ? (
+              <GoogleMapsCard
+                place={place}
+                onLinked={onLinkGoogle ? (id) => onLinkGoogle(place.id, id) : undefined}
+                onDetails={(details) => setGoogleListing({ forId: place.id, details })}
+              />
+            ) : null}
 
             {place.notes ? (
               <Section

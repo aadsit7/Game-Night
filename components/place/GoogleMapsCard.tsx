@@ -1,9 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { ChevronDown, Clock, Globe, Map as MapIcon, Navigation, Phone, Star } from "lucide-react";
+import {
+  ChevronDown,
+  Clock,
+  Globe,
+  Map as MapIcon,
+  Navigation,
+  PersonStanding,
+  Phone,
+  Star,
+} from "lucide-react";
 
-import { googleMapsDirectionsUrl, googleMapsUrl } from "@/lib/maps/googleMapsLinks";
+import { googleMapsDirectionsUrl, googleMapsUrl, googleStreetViewUrl } from "@/lib/maps/googleMapsLinks";
 import { sheetPlaceRepository } from "@/lib/storage/sheetPlaceRepository";
 import {
   autoLinkGooglePlace,
@@ -226,26 +235,37 @@ export function GoogleMapsCard({
         />
       ) : null}
 
-      {/* The same spot on everyone's map. With a listing behind it, either
-          button opens the real entry rather than a pin at the coordinates. */}
-      <div className="flex gap-2.5">
+      {/* The same spot on everyone's map. With a listing behind it, the map
+          buttons open the real entry rather than a pin at the coordinates;
+          Street View needs no listing at all — it aims at the coordinates. */}
+      <div className="flex gap-2">
         <a
           href={googleMapsUrl(place)}
           target="_blank"
           rel="noreferrer"
-          className="pressable flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-md bg-fill text-[16px] font-medium text-ink"
+          aria-label="Open in Google Maps"
+          className="pressable flex min-h-[48px] flex-1 items-center justify-center gap-1.5 rounded-md bg-fill text-[15px] font-medium text-ink"
         >
-          <MapIcon size={17} aria-hidden="true" />
-          Google Maps
+          <MapIcon size={16} aria-hidden="true" />
+          Maps
         </a>
         <a
           href={googleMapsDirectionsUrl(place)}
           target="_blank"
           rel="noreferrer"
-          className="pressable flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-md bg-fill text-[16px] font-medium text-ink"
+          className="pressable flex min-h-[48px] flex-1 items-center justify-center gap-1.5 rounded-md bg-fill text-[15px] font-medium text-ink"
         >
-          <Navigation size={16} aria-hidden="true" />
+          <Navigation size={15} aria-hidden="true" />
           Directions
+        </a>
+        <a
+          href={googleStreetViewUrl(place)}
+          target="_blank"
+          rel="noreferrer"
+          className="pressable flex min-h-[48px] flex-1 items-center justify-center gap-1.5 rounded-md bg-fill text-[15px] font-medium text-ink"
+        >
+          <PersonStanding size={16} aria-hidden="true" />
+          Street View
         </a>
       </div>
     </section>
