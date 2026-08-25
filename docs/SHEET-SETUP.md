@@ -652,11 +652,20 @@ count, whether it is open right now and today's hours — with the whole week
 one tap away, today's line emphasised in the place's own timezone — what
 kind of place Google says it is, the local time there, the address, and
 website and phone rows. A place with no listing id is linked up
-automatically on first open — one search, biased to the saved pin, accepted
-only when the result clearly is that place — and the id is saved so every
-later open is a straight lookup. A place with no photograph of its own
-borrows the listing's first photo as its card picture, credited to its
-photographer as Google requires, until you add one of yours. And a trip with
+automatically — on first open, and also by a quiet background sweep that
+works through the back catalogue one place every few seconds while the app
+is open, so a journal saved before this integration lights up on its own.
+Either way it is one search, biased to the saved pin, accepted only when
+the result clearly is that place, and the id is saved so every later open
+is a straight lookup. A place with no confident match is noted on the
+device and not asked about again for a month. A place with no photograph of its own
+borrows up to three of the listing's photos — the first as its card
+picture, two more beneath — each credited to its photographer as Google
+requires, until you add one of yours. Every card also carries a **Street
+View** button (an ordinary keyless link aimed at the coordinates) and a
+small still of the map with the pin on it, rendered on the device from the
+same keyless map the globe uses — tapping it opens the spot in Google
+Maps. And a trip with
 two or more dated stops gets a **Route in Google Maps** button that opens
 the whole itinerary as one route, in order — an ordinary Maps link, no key
 involved. Nothing else is stored: listing content is fetched fresh and
@@ -679,12 +688,19 @@ daily stays inside it, and the quota cap from step 2 means "inside it" is
 enforced rather than hoped for. Auto-linking an old place is one ordinary
 search, once, and the result is saved.
 
-The borrowed card picture is one Place Photos request the first time a
-photo-less place is opened — Place Photos has its own separate 1,000 free
-requests a month — and the browser then remembers the picture's address for
-seven days, so revisiting your photo-less places costs nothing day to day.
-Places where you have added your own photograph never make the request at
-all.
+The borrowed card pictures are up to three Place Photos requests the first
+time a photo-less place is opened — Place Photos has its own separate 1,000
+free requests a month — and the browser then remembers each picture's
+address for seven days, so revisiting your photo-less places costs nothing
+day to day. Places where you have added your own photograph never make the
+request at all.
+
+The background link sweep is one search per unlinked place, once — a few
+hundred places is a few hundred searches spread over the first sessions,
+far inside the search tier's monthly allowance — and its finds are saved,
+so it runs down to nothing. The map still and the Street View button cost
+nothing: one is drawn on the device from the keyless map, the other is an
+ordinary link.
 
 ### If it does not work
 

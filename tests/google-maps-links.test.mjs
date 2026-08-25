@@ -10,9 +10,8 @@
  */
 import assert from "node:assert/strict";
 
-const { googleMapsUrl, googleMapsDirectionsUrl, googleMapsTripRouteUrl } = await import(
-  "../lib/maps/googleMapsLinks.ts"
-);
+const { googleMapsUrl, googleMapsDirectionsUrl, googleMapsTripRouteUrl, googleStreetViewUrl } =
+  await import("../lib/maps/googleMapsLinks.ts");
 
 let failures = 0;
 function test(name, body) {
@@ -66,6 +65,13 @@ test("six decimals, exactly as the sheet's own Map URL writes them", () => {
   assert.equal(
     googleMapsUrl({ latitude: 35, longitude: 135 }),
     "https://www.google.com/maps/search/?api=1&query=35.000000%2C135.000000",
+  );
+});
+
+test("street view aims at the exact spot, and needs nothing else", () => {
+  assert.equal(
+    googleStreetViewUrl(EIFFEL),
+    "https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=48.858400%2C2.294500",
   );
 });
 

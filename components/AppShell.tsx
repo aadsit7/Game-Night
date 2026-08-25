@@ -53,7 +53,9 @@ import { Toast, type ToastMessage } from "@/components/ui/Toast";
 import { useHistorySentinel } from "@/lib/hooks/useHistorySentinel";
 import { makeCoverPhoto, removePlacePhoto } from "@/lib/places/photoEdits";
 import { type InsightScope } from "@/lib/insights/insights";
+import { startAutoLinkSweep } from "@/lib/maps/autoLinkSweep";
 import { reverseGeocode } from "@/lib/maps/geocoding";
+import { sheetPlaceRepository } from "@/lib/storage/sheetPlaceRepository";
 import { LocationError, currentLocation, type Fix } from "@/lib/maps/geolocation";
 import type { MapView } from "@/lib/maps/basemap";
 import { usePlaces } from "@/lib/store/PlacesProvider";
@@ -618,6 +620,18 @@ export function AppShell() {
       updatePlace(placeId, { googlePlaceId }).catch(() => undefined);
     },
     [updatePlace],
+  );
+
+  /* The back catalogue links itself: one quiet search every few seconds
+     while the app is open, through the same confident-match path a card
+     open uses. Places reads are live, so new saves simply join the queue. */
+  useEffect(
+    () =>
+      startAutoLinkSweep({
+        getPlaces: () => sheetPlaceRepository.getVisible(),
+        onLinked: handleLinkGoogle,
+      }),
+    [handleLinkGoogle],
   );
 
   const handleLocationChosen = useCallback(

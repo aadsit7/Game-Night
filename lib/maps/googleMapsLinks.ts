@@ -37,6 +37,15 @@ export function googleMapsDirectionsUrl(place: Linkable): string {
   return id ? `${url}&destination_place_id=${encodeURIComponent(id)}` : url;
 }
 
+/**
+ * The spot at eye level. `map_action=pano` opens Street View aimed at the
+ * coordinates; where no panorama exists nearby, Google shows its own gentle
+ * empty state, so the link is safe to offer for every place.
+ */
+export function googleStreetViewUrl(place: Pick<VisitedPlace, "latitude" | "longitude">): string {
+  return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${encodeURIComponent(point(place))}`;
+}
+
 /** The most stops Google's directions URL accepts between the two ends. */
 const MAX_WAYPOINTS = 9;
 

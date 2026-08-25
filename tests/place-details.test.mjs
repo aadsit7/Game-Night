@@ -164,28 +164,33 @@ test("the week's hours come through whole, or not at all", () => {
   assert.equal(partial.weekHours, undefined);
 });
 
-test("the lead photo arrives as a name and a credit, never a URL", () => {
+test("photos arrive as names and credits, never URLs — at most three", () => {
+  const photo = (name, by) => ({
+    name,
+    authorAttributions: by ? [{ displayName: by, uri: `https://maps/${by}` }] : [],
+  });
   const details = toGooglePlaceDetails({
     id: "x",
     photos: [
-      {
-        name: "places/x/photos/p1",
-        authorAttributions: [{ displayName: "Hana S.", uri: "https://maps/hana" }],
-      },
-      { name: "places/x/photos/p2" },
+      photo("places/x/photos/p1", "Hana"),
+      photo("places/x/photos/p2", "Kenji"),
+      photo("places/x/photos/p3"),
+      photo("places/x/photos/p4", "Mara"),
     ],
   });
-  assert.equal(details.photoName, "places/x/photos/p1");
-  assert.equal(details.photoBy, "Hana S.");
-  assert.equal(details.photoByUri, "https://maps/hana");
-
-  // No photos, or an entry with no name to fetch by, is simply no hero.
-  assert.equal(toGooglePlaceDetails({ id: "x" }).photoName, undefined);
-  assert.equal(toGooglePlaceDetails({ id: "x", photos: [{}] }).photoName, undefined);
+  assert.deepEqual(
+    details.photos.map((entry) => entry.name),
+    ["places/x/photos/p1", "places/x/photos/p2", "places/x/photos/p3"],
+    "the lead and two more; the fourth stays on Google",
+  );
+  assert.equal(details.photos[0].by, "Hana");
+  assert.equal(details.photos[0].byUri, "https://maps/Hana");
   // An uncredited photo still shows; the credit is only owed when given.
-  const bare = toGooglePlaceDetails({ id: "x", photos: [{ name: "places/x/photos/p3" }] });
-  assert.equal(bare.photoName, "places/x/photos/p3");
-  assert.equal(bare.photoBy, undefined);
+  assert.equal(details.photos[2].by, undefined);
+
+  // No photos, or entries with no name to fetch by, is simply no hero.
+  assert.equal(toGooglePlaceDetails({ id: "x" }).photos, undefined);
+  assert.equal(toGooglePlaceDetails({ id: "x", photos: [{}] }).photos, undefined);
 });
 
 /* ---------------------------------------------------------------- *

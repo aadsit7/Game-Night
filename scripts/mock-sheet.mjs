@@ -295,6 +295,15 @@ const MOCK_PLACES = [
     city: "Kyoto", region: "Kyoto Prefecture", country: "Japan",
     countryCode: "JP", types: ["locality", "political"],
   },
+  // Sits exactly on the seeded Reykjavík row's pin, so the background link
+  // sweep has one confident match to find in development.
+  {
+    id: "ChIJmock0005", name: "Reykjavík",
+    address: "Reykjavík, Iceland",
+    latitude: 64.1466, longitude: -21.9426,
+    city: "Reykjavík", country: "Iceland",
+    countryCode: "IS", types: ["locality", "political"],
+  },
 ];
 
 /**
@@ -402,7 +411,7 @@ const MOCK_PLACE_DETAILS = {
     shortFormattedAddress: "Kyoto, Japan",
     utcOffsetMinutes: 540,
     // A locality with no rating still has photographs — which is exactly the
-    // case the card's borrowed hero exists for.
+    // case the card's borrowed hero and strip exist for.
     photos: [
       {
         name: "places/ChIJmock0004/photos/p1",
@@ -412,13 +421,39 @@ const MOCK_PLACE_DETAILS = {
           { displayName: "Hana S.", uri: "https://www.google.com/maps/contrib/9", photoUri: "" },
         ],
       },
+      {
+        name: "places/ChIJmock0004/photos/p2",
+        widthPx: 1200,
+        heightPx: 800,
+        authorAttributions: [
+          { displayName: "Kenji T.", uri: "https://www.google.com/maps/contrib/10", photoUri: "" },
+        ],
+      },
+      {
+        name: "places/ChIJmock0004/photos/p3",
+        widthPx: 1200,
+        heightPx: 800,
+        authorAttributions: [
+          { displayName: "Mara L.", uri: "https://www.google.com/maps/contrib/11", photoUri: "" },
+        ],
+      },
+      // A fourth exists on the listing; the card shows at most three.
+      { name: "places/ChIJmock0004/photos/p4", widthPx: 1200, heightPx: 800 },
     ],
+  },
+  ChIJmock0005: {
+    id: "ChIJmock0005",
+    displayName: { text: "Reykjavík", languageCode: "en" },
+    shortFormattedAddress: "Reykjavík, Iceland",
+    utcOffsetMinutes: 0,
   },
 };
 
 /** What the real script's placePhoto proxy answers, per photo name. */
 const MOCK_PLACE_PHOTOS = {
   "places/ChIJmock0004/photos/p1": "http://localhost:8787/mock-base/33",
+  "places/ChIJmock0004/photos/p2": "http://localhost:8787/mock-base/34",
+  "places/ChIJmock0004/photos/p3": "http://localhost:8787/mock-base/35",
 };
 
 // Seeded rows arrive with their derived coordinate columns already correct, the
