@@ -1,6 +1,6 @@
 import { searchWithGoogle } from "@/lib/maps/googlePlaces";
 import { normalizePlaceName } from "@/lib/places/dedupe";
-import { getPlaceDetails } from "@/lib/sheets/sheetsClient";
+import { getPlaceDetails, getPlacePhoto } from "@/lib/sheets/sheetsClient";
 import { sheetPlaceRepository } from "@/lib/storage/sheetPlaceRepository";
 import { angularDistance } from "@/lib/utils/geo";
 import type { LocationResult, VisitedPlace } from "@/types/place";
@@ -54,6 +54,13 @@ export type GooglePlaceDetails = {
   /** The listing on Google Maps itself; "more reviews" points here. */
   googleMapsUri?: string;
   reviews?: GoogleReview[];
+  /** Every day's hours, Monday first — the line the card can unfold. */
+  weekHours?: string[];
+  /** The listing's lead photograph, as a resource name to resolve on use. */
+  photoName?: string;
+  /** Who took it — shown with the picture, as Google's policies require. */
+  photoBy?: string;
+  photoByUri?: string;
 };
 
 /** Whether this browser's sheet can serve the lookup at all. */
@@ -75,10 +82,19 @@ function count(value: unknown): number | undefined {
 }
 
 /**
- * Today's row of the week's hours — today *at the place*, which is not always
- * today where the phone is: a card for Tokyo opened from New York on Monday
- * evening is asking about Tuesday. `weekdayDescriptions` starts on Monday.
+ * Which row of a Monday-first week is "today" — today *at the place*, which
+ * is not always today where the phone is: a card for Tokyo opened from New
+ * York on Monday evening is asking about Tuesday. Google's
+ * `weekdayDescriptions` start on Monday.
  */
+export function placeWeekdayIndex(utcOffsetMinutes: number | undefined, now: Date): number {
+  const there =
+    utcOffsetMinutes === undefined ? now : new Date(now.getTime() + utcOffsetMinutes * 60_000);
+  const day = utcOffsetMinutes === undefined ? there.getDay() : there.getUTCDay();
+  return (day + 6) % 7;
+}
+
+/** Today's line of the week's hours, with the day name pared off. */
 export function todaysHoursLine(
   descriptions: unknown,
   utcOffsetMinutes: number | undefined,
@@ -86,10 +102,7 @@ export function todaysHoursLine(
 ): string | undefined {
   if (!Array.isArray(descriptions) || descriptions.length !== 7) return undefined;
 
-  const there =
-    utcOffsetMinutes === undefined ? now : new Date(now.getTime() + utcOffsetMinutes * 60_000);
-  const day = utcOffsetMinutes === undefined ? there.getDay() : there.getUTCDay();
-  const line = descriptions[(day + 6) % 7];
+  const line = descriptions[placeWeekdayIndex(utcOffsetMinutes, now)];
   if (typeof line !== "string") return undefined;
 
   // "Monday: 9:30 AM – 11:00 PM" → the hours; the day is already "today".
@@ -179,6 +192,32 @@ export function toGooglePlaceDetails(raw: unknown, now: Date = new Date()): Goog
     summary: text((place.editorialSummary as Record<string, unknown> | undefined)?.text),
     googleMapsUri: text(place.googleMapsUri),
     reviews: reviews.length > 0 ? reviews : undefined,
+    weekHours:
+      Array.isArray(hours.weekdayDescriptions) &&
+      hours.weekdayDescriptions.length === 7 &&
+      hours.weekdayDescriptions.every((line) => typeof line === "string")
+        ? (hours.weekdayDescriptions as string[])
+        : undefined,
+    ...leadPhoto(place.photos),
+  };
+}
+
+/** The first photo's name and credit; the picture itself is fetched on use. */
+function leadPhoto(
+  raw: unknown,
+): Pick<GooglePlaceDetails, "photoName" | "photoBy" | "photoByUri"> {
+  if (!Array.isArray(raw) || raw.length === 0) return {};
+  const photo = raw[0] as Record<string, unknown>;
+  const name = text(photo.name);
+  if (!name) return {};
+
+  const author = (Array.isArray(photo.authorAttributions) ? photo.authorAttributions[0] : {}) as
+    | Record<string, unknown>
+    | undefined;
+  return {
+    photoName: name,
+    photoBy: text(author?.displayName),
+    photoByUri: text(author?.uri),
   };
 }
 
@@ -297,6 +336,79 @@ export async function fetchGoogleDetails(
   } catch (error) {
     if ((error as Error)?.name === "AbortError") throw error;
     console.warn("Google place details lookup failed; the card shows less.", error);
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * The borrowed photograph
+ *
+ * Shown only where the traveller has no photo of their own, so each is a
+ * once-per-place lookup against the photo call's own monthly allowance.
+ * Cached for a week — the picture of a landmark does not churn — and
+ * display-only throughout: the address is never written to the sheet,
+ * which is what Google's terms ask of their content.
+ * ------------------------------------------------------------------ */
+
+const PHOTO_CACHE_KEY = "travel-globe.place-photo.v1";
+const PHOTO_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const PHOTO_CACHE_MAX = 200;
+
+type PhotoCache = Record<string, { at: number; uri: string }>;
+
+function readPhotoCache(): PhotoCache {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(PHOTO_CACHE_KEY);
+    return raw ? ((JSON.parse(raw) as PhotoCache) ?? {}) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writePhotoCache(cache: PhotoCache): void {
+  if (typeof window === "undefined") return;
+  try {
+    const now = Date.now();
+    const entries = Object.entries(cache).filter(([, value]) => now - value.at < PHOTO_TTL_MS);
+    entries.sort((a, b) => b[1].at - a[1].at);
+    window.localStorage.setItem(
+      PHOTO_CACHE_KEY,
+      JSON.stringify(Object.fromEntries(entries.slice(0, PHOTO_CACHE_MAX))),
+    );
+  } catch {
+    // The cache is a nicety, never a need.
+  }
+}
+
+/**
+ * The image address behind a photo name, or null for any reason at all.
+ * Keyed by the place rather than the photo: names churn as Google refreshes
+ * a listing, and one picture per place per week is the whole appetite.
+ */
+export async function fetchGooglePhotoUri(
+  googlePlaceId: string,
+  photoName: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<string | null> {
+  if (!hasGoogleDetails()) return null;
+
+  const cached = readPhotoCache()[googlePlaceId];
+  if (cached && Date.now() - cached.at < PHOTO_TTL_MS) return cached.uri;
+
+  const connection = sheetPlaceRepository.getConnection();
+  if (!connection) return null;
+
+  try {
+    const uri = await getPlacePhoto(connection, { name: photoName }, options.signal);
+    if (!uri) return null;
+    const cache = readPhotoCache();
+    cache[googlePlaceId] = { at: Date.now(), uri };
+    writePhotoCache(cache);
+    return uri;
+  } catch (error) {
+    if ((error as Error)?.name === "AbortError") throw error;
+    console.warn("Google place photo lookup failed; the card stays photo-less.", error);
     return null;
   }
 }

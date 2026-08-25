@@ -138,8 +138,16 @@ const visits = [
     "Archived?": "No", "Deleted?": "No",
   }),
   makeVisit({
-    "Place ID": "PL-0002", "Visit ID": "VIS-0002", "Visit Status": "Been",
+    "Place ID": "PL-0002", "Visit ID": "VIS-0002", "Trip ID": "TRIP-0001", "Visit Status": "Been",
     "Start Date": "2023-09-12", "End Date": "2023-09-19", "Days": "8",
+    "Year": "2023", "Month": "September", "Season": "Autumn/Fall", "Trip Type": "Couple",
+    "Archived?": "No", "Deleted?": "No",
+  }),
+  // A second stop inside the same trip, so the trip sheet has a real
+  // itinerary — two places, in date order — to route in development.
+  makeVisit({
+    "Place ID": "PL-0005", "Visit ID": "VIS-0003", "Trip ID": "TRIP-0001", "Visit Status": "Been",
+    "Start Date": "2023-09-15", "End Date": "2023-09-17", "Days": "3",
     "Year": "2023", "Month": "September", "Season": "Autumn/Fall", "Trip Type": "Couple",
     "Archived?": "No", "Deleted?": "No",
   }),
@@ -165,8 +173,21 @@ const media = [
   }),
 ];
 
-/** Trips start empty, the way a sheet that has never had one does. */
-const trips = [];
+function makeTrip(values) {
+  const row = blank(TRIP_HEADERS);
+  for (const [header, value] of Object.entries(values)) row[TI[header]] = value;
+  return row;
+}
+
+/** One seeded trip, holding the two 2023 visits above as its itinerary. */
+const trips = [
+  makeTrip({
+    "Trip ID": "TRIP-0001", "Trip Name": "Iberia & Morocco", "Start Date": "2023-09-12",
+    "End Date": "2023-09-19", "Description": "Lisbon first, then south across the strait.",
+    "Created At": "2023-09-25", "Updated At": "2023-09-25", "Sync Version": 1,
+    "Archived?": "No", "Deleted?": "No",
+  }),
+];
 
 /** Travel_Photos rows start empty; picker imports land here. */
 const travelPhotos = [];
@@ -380,7 +401,24 @@ const MOCK_PLACE_DETAILS = {
     displayName: { text: "Kyoto", languageCode: "en" },
     shortFormattedAddress: "Kyoto, Japan",
     utcOffsetMinutes: 540,
+    // A locality with no rating still has photographs — which is exactly the
+    // case the card's borrowed hero exists for.
+    photos: [
+      {
+        name: "places/ChIJmock0004/photos/p1",
+        widthPx: 1200,
+        heightPx: 800,
+        authorAttributions: [
+          { displayName: "Hana S.", uri: "https://www.google.com/maps/contrib/9", photoUri: "" },
+        ],
+      },
+    ],
   },
+};
+
+/** What the real script's placePhoto proxy answers, per photo name. */
+const MOCK_PLACE_PHOTOS = {
+  "places/ChIJmock0004/photos/p1": "http://localhost:8787/mock-base/33",
 };
 
 // Seeded rows arrive with their derived coordinate columns already correct, the
@@ -514,6 +552,13 @@ function handle(action, body) {
     const details = MOCK_PLACE_DETAILS[id];
     if (!details) throw new Error("Google Places refused the lookup (404): place not found.");
     return { place: details, source: "google" };
+  }
+
+  if (action === "placePhoto") {
+    if (!CAPABILITIES.placeDetails) throw new Error("No Google Maps API key is set on this script.");
+    const uri = MOCK_PLACE_PHOTOS[String(body.name || "").trim()];
+    if (!uri) throw new Error("Google Places refused the photo (404).");
+    return { photoUri: uri };
   }
 
   if (action === "getAll") {

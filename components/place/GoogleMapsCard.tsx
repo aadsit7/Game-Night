@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Globe, Map as MapIcon, Navigation, Phone, Star } from "lucide-react";
+import { ChevronDown, Clock, Globe, Map as MapIcon, Navigation, Phone, Star } from "lucide-react";
 
 import { googleMapsDirectionsUrl, googleMapsUrl } from "@/lib/maps/googleMapsLinks";
 import {
@@ -9,6 +9,7 @@ import {
   fetchGoogleDetails,
   hasGoogleDetails,
   localTimeAt,
+  placeWeekdayIndex,
   type GooglePlaceDetails,
   type GoogleReview,
 } from "@/lib/maps/placeDetails";
@@ -30,21 +31,27 @@ import type { VisitedPlace } from "@/types/place";
 export function GoogleMapsCard({
   place,
   onLinked,
+  onDetails,
 }: {
   place: VisitedPlace;
   /** A confident match for an unlinked place was found; persist it. */
   onLinked?: (googlePlaceId: string) => void;
+  /** The listing arrived; the sheet above may want its photograph. */
+  onDetails?: (details: GooglePlaceDetails) => void;
 }) {
   const [details, setDetails] = useState<GooglePlaceDetails | null>(null);
   const [loading, setLoading] = useState(false);
+  const [hoursOpen, setHoursOpen] = useState(false);
 
-  // The callback identity changes every render (the sheet closes over the
+  // The callback identities change every render (the sheet closes over the
   // place), but a new callback is not a reason to look the listing up again —
-  // a ref keeps the latest one without it steering the effect.
+  // refs keep the latest ones without steering the effect.
   const onLinkedRef = useRef(onLinked);
+  const onDetailsRef = useRef(onDetails);
   useEffect(() => {
     onLinkedRef.current = onLinked;
-  }, [onLinked]);
+    onDetailsRef.current = onDetails;
+  }, [onLinked, onDetails]);
 
   const placeId = place.id;
   const googlePlaceId = place.googlePlaceId;
@@ -73,7 +80,11 @@ export function GoogleMapsCard({
         }
 
         const found = await fetchGoogleDetails(id, { signal: controller.signal });
-        if (alive) setDetails(found);
+        if (alive) {
+          setDetails(found);
+          setHoursOpen(false);
+          if (found) onDetailsRef.current?.(found);
+        }
       } catch {
         // An aborted lookup is a closed card, not a problem to report.
       } finally {
@@ -135,6 +146,44 @@ export function GoogleMapsCard({
                   {line.text}
                 </p>
               ))}
+            </div>
+          ) : null}
+
+          {details?.weekHours ? (
+            <div>
+              <button
+                type="button"
+                onClick={() => setHoursOpen((open) => !open)}
+                aria-expanded={hoursOpen}
+                className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors active:bg-fill-strong"
+              >
+                <span className="grid size-[30px] shrink-0 place-items-center rounded-[9px] bg-accent-soft text-accent">
+                  <Clock size={16} aria-hidden="true" />
+                </span>
+                <span className="flex-1 text-[15px] text-ink">All hours</span>
+                <ChevronDown
+                  size={16}
+                  aria-hidden="true"
+                  className={cn("shrink-0 text-ink-3 transition-transform", hoursOpen && "rotate-180")}
+                />
+              </button>
+              {hoursOpen ? (
+                <ul className="space-y-1 px-3.5 pb-3 pt-0.5">
+                  {details.weekHours.map((line, index) => (
+                    <li
+                      key={line}
+                      className={cn(
+                        "text-[14px] leading-snug",
+                        index === placeWeekdayIndex(details.utcOffsetMinutes, new Date())
+                          ? "font-semibold text-ink"
+                          : "text-ink-2",
+                      )}
+                    >
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </div>
           ) : null}
 

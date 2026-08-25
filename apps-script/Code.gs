@@ -136,7 +136,10 @@ var PLACE_DETAILS_FIELDS = [
   'priceLevel',
   'accessibilityOptions',
   'editorialSummary',
-  'reviews'
+  'reviews',
+  // Photo resource names ride along below the tier this call already bills
+  // at; the image bytes themselves are a separate, separately-metered call.
+  'photos'
 ].join(',');
 
 /**
@@ -212,6 +215,7 @@ function doGet(e) {
       case 'getLookups':    return { lookups: readLookups_() };
       case 'searchPlaces':  return searchPlaces_(params);
       case 'placeDetails':  return placeDetails_(params);
+      case 'placePhoto':    return placePhoto_(params);
       case 'photosAuthStatus':      return photosAuthStatus_();
       case 'getPhotoPickerSession': return getPhotoPickerSession_(params);
       case 'getPickedPhotoPreview': return getPickedPhotoPreview_(params);
@@ -222,7 +226,8 @@ function doGet(e) {
         throw new Error(
           'Unknown action "' + (params.action || '') +
           '". Expected getAll, getLookups, searchPlaces, placeDetails, ' +
-          'photosAuthStatus, getPhotoPickerSession, getTravelPhoto or ping.'
+          'placePhoto, photosAuthStatus, getPhotoPickerSession, ' +
+          'getTravelPhoto or ping.'
         );
     }
   });
@@ -749,6 +754,80 @@ function placeDetails_(params) {
   // Already shaped by the field mask; passed through as one object so the
   // app's own mapping decides what a card shows.
   var result = { place: payload, source: 'google' };
+  try {
+    cache.put(cacheKey, JSON.stringify(result), PLACE_DETAILS_CACHE_SECONDS);
+  } catch (cacheError) {
+    // Caching is an optimisation, never a reason to fail.
+  }
+  return result;
+}
+
+/**
+ * One place photo, resolved to a servable image address.
+ *
+ * The card shows Google's photograph only where the traveller has none of
+ * their own, so each of these is a once-per-place call, cached hard on both
+ * sides of the wire. `skipHttpRedirect` asks for the image's address rather
+ * than its bytes — the browser fetches the picture from Google's CDN
+ * directly, and nothing heavy moves through this script. Display-only by
+ * policy: the URI is never written to the sheet.
+ */
+function placePhoto_(params) {
+  var key = placesKey_();
+  if (!key) {
+    throw new Error(
+      'No Google Maps API key is set on this script, so place photos are off. ' +
+      'Add a GOOGLE_MAPS_API_KEY script property to switch them on.'
+    );
+  }
+
+  var name = String(params.name || '').trim();
+  // Photo resource names are places/<id>/photos/<id>; anything else is
+  // refused before it can reach the URL path.
+  if (!/^places\/[A-Za-z0-9_-]+\/photos\/[A-Za-z0-9_.-]+$/.test(name)) {
+    throw new Error('That does not look like a Google place photo name.');
+  }
+
+  var cacheKey = 'placePhoto:' + name.slice(-120);
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (parseError) {
+      // A corrupt entry is not worth failing the picture over.
+    }
+  }
+
+  var url =
+    'https://places.googleapis.com/v1/' + name +
+    '/media?maxWidthPx=1200&skipHttpRedirect=true';
+  var response = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: { 'X-Goog-Api-Key': key },
+    muteHttpExceptions: true
+  });
+
+  var code = response.getResponseCode();
+  var text = response.getContentText();
+  if (code !== 200) {
+    var detail = '';
+    try {
+      detail = (JSON.parse(text).error || {}).message || '';
+    } catch (parseError) {
+      detail = '';
+    }
+    throw new Error('Google Places refused the photo (' + code + ')' + (detail ? ': ' + detail : '.'));
+  }
+
+  var payload;
+  try {
+    payload = JSON.parse(text);
+  } catch (parseError) {
+    throw new Error('Google Places sent back something unreadable.');
+  }
+
+  var result = { photoUri: String(payload.photoUri || '') };
   try {
     cache.put(cacheKey, JSON.stringify(result), PLACE_DETAILS_CACHE_SECONDS);
   } catch (cacheError) {

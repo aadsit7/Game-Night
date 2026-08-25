@@ -10,7 +10,9 @@
  */
 import assert from "node:assert/strict";
 
-const { googleMapsUrl, googleMapsDirectionsUrl } = await import("../lib/maps/googleMapsLinks.ts");
+const { googleMapsUrl, googleMapsDirectionsUrl, googleMapsTripRouteUrl } = await import(
+  "../lib/maps/googleMapsLinks.ts"
+);
 
 let failures = 0;
 function test(name, body) {
@@ -72,6 +74,58 @@ test("an id never truncates or reshapes the URL", () => {
   // the cell — someone can type into the sheet by hand.
   const odd = googleMapsUrl({ ...EIFFEL, googlePlaceId: "ChIJ&x=1 #frag" });
   assert.equal(odd.includes("query_place_id=ChIJ%26x%3D1%20%23frag"), true);
+});
+
+console.log("trip route url");
+
+const LISBON = { latitude: 38.7223, longitude: -9.1393, googlePlaceId: "ChIJlisbon" };
+const PORTO = { latitude: 41.1579, longitude: -8.6291, googlePlaceId: "ChIJporto" };
+const SINTRA = { latitude: 38.8029, longitude: -9.3817, googlePlaceId: "ChIJsintra" };
+
+test("a route needs two stops; one or none is no route", () => {
+  assert.equal(googleMapsTripRouteUrl([]), null);
+  assert.equal(googleMapsTripRouteUrl([LISBON]), null);
+});
+
+test("two stops route end to end, ids anchoring both", () => {
+  assert.equal(
+    googleMapsTripRouteUrl([LISBON, PORTO]),
+    "https://www.google.com/maps/dir/?api=1&origin=38.722300%2C-9.139300&destination=41.157900%2C-8.629100&origin_place_id=ChIJlisbon&destination_place_id=ChIJporto",
+  );
+});
+
+test("stops between become waypoints, ids aligned with them", () => {
+  assert.equal(
+    googleMapsTripRouteUrl([LISBON, SINTRA, PORTO]),
+    "https://www.google.com/maps/dir/?api=1&origin=38.722300%2C-9.139300&destination=41.157900%2C-8.629100&origin_place_id=ChIJlisbon&destination_place_id=ChIJporto&waypoints=38.802900%2C-9.381700&waypoint_place_ids=ChIJsintra",
+  );
+});
+
+test("one unlinked waypoint drops every waypoint id, never misaligns them", () => {
+  // waypoint_place_ids matches waypoints by position; with a gap, someone
+  // else's listing would pin to the wrong stop. Coordinates alone are safe.
+  const url = googleMapsTripRouteUrl([
+    LISBON,
+    SINTRA,
+    { latitude: 40.2033, longitude: -8.4103 },
+    PORTO,
+  ]);
+  assert.equal(url.includes("waypoints=38.802900%2C-9.381700%7C40.203300%2C-8.410300"), true);
+  assert.equal(url.includes("waypoint_place_ids"), false);
+  // The ends keep theirs — they ride separate parameters.
+  assert.equal(url.includes("origin_place_id=ChIJlisbon"), true);
+  assert.equal(url.includes("destination_place_id=ChIJporto"), true);
+});
+
+test("a long trip thins to nine waypoints, keeping the journey's shape", () => {
+  // Eleven middle stops at recognisable latitudes; Google's URL takes nine.
+  const middles = Array.from({ length: 11 }, (_, i) => ({ latitude: i, longitude: 0 }));
+  const url = googleMapsTripRouteUrl([LISBON, ...middles, PORTO]);
+  const waypoints = decodeURIComponent(url.match(/waypoints=([^&]+)/)[1]).split("|");
+  assert.equal(waypoints.length, 9);
+  // Both ends of the middle leg survive the thinning.
+  assert.equal(waypoints[0], "0.000000,0.000000");
+  assert.equal(waypoints[8], "10.000000,0.000000");
 });
 
 process.exit(failures === 0 ? 0 : 1);

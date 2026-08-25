@@ -33,6 +33,8 @@ import { isResidenceVisit, isUpcomingVisit, visitStats } from "@/lib/places/visi
 import { formatMediaCounts, mediaCounts } from "@/lib/photos/mediaPlaylist";
 import { photosForPlace, sortTravelPhotos } from "@/lib/photos/travelPhotos";
 import { GoogleMapsCard } from "@/components/place/GoogleMapsCard";
+import { GooglePhotoHero } from "@/components/place/GooglePhotoHero";
+import type { GooglePlaceDetails } from "@/lib/maps/placeDetails";
 import { formatVisitRange, inclusiveDayCount } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
 import { countryFlag, formatCoordinates, placeSubtitle } from "@/lib/utils/geo";
@@ -44,11 +46,12 @@ import type { TravelPhoto } from "@/types/travelPhoto";
  * The full memory: the name, the photograph if there is one, when you were
  * there, what you wrote, and where on Earth it sits.
  *
- * A place with no photograph gets no hero. A tall tinted rectangle with a pin
- * in it is not a picture of anywhere — it filled half an iPhone screen and
- * pushed the writing and the dates below the fold to say nothing at all. The
- * facts move into a grouped card instead, so an entry with no photo opens
- * complete on one screen rather than opening on a placeholder.
+ * A place with no photograph gets no placeholder hero. A tall tinted
+ * rectangle with a pin in it is not a picture of anywhere — it filled half an
+ * iPhone screen and pushed the writing and the dates below the fold to say
+ * nothing at all. What it can get is a real picture: when the linked Google
+ * listing carries one, that photograph stands in, credited. Otherwise the
+ * facts lead and the entry opens complete on one screen.
  */
 
 /** One stable empty list, so a photo-less gallery's props never churn. */
@@ -133,6 +136,13 @@ export function PlaceDetailSheet({
 }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [confirmPhotoDelete, setConfirmPhotoDelete] = useState<string | null>(null);
+  // The Google listing, once the card below has fetched it — remembered with
+  // the id it belongs to, so a sheet reused for another place never wears the
+  // last place's photograph.
+  const [googleListing, setGoogleListing] = useState<{
+    forId: string;
+    details: GooglePlaceDetails;
+  } | null>(null);
   const reduceMotion = useReducedMotion();
 
   // Back closes the photo before it closes the card — the order the eye
@@ -245,7 +255,9 @@ export function PlaceDetailSheet({
         {place ? (
           <div className="pb-4">
             {/* The photograph leads when there is one — it is the memory.
-                Tapping it opens the viewer, where it can also be managed. */}
+                Tapping it opens the viewer, where it can also be managed.
+                With none of your own, Google's picture of the place stands
+                in, credited — display only, no viewer. */}
             {hasCover ? (
               <button
                 type="button"
@@ -260,6 +272,15 @@ export function PlaceDetailSheet({
                   className="aspect-[16/10] w-full rounded-[22px]"
                 />
               </button>
+            ) : googleListing?.forId === place.id && googleListing.details.photoName ? (
+              <GooglePhotoHero
+                key={place.id}
+                googlePlaceId={googleListing.details.id}
+                photoName={googleListing.details.photoName}
+                photoBy={googleListing.details.photoBy}
+                photoByUri={googleListing.details.photoByUri}
+                placeName={place.name}
+              />
             ) : null}
 
             <h1 className="wrap-anywhere text-[30px] font-bold leading-[1.12] tracking-[-0.03em] text-ink">
@@ -427,6 +448,7 @@ export function PlaceDetailSheet({
             <GoogleMapsCard
               place={place}
               onLinked={onLinkGoogle ? (id) => onLinkGoogle(place.id, id) : undefined}
+              onDetails={(details) => setGoogleListing({ forId: place.id, details })}
             />
 
             {place.notes ? (

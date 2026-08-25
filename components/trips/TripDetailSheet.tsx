@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import { ImagePlus, MapPin, Pencil, Play, Plus, TriangleAlert, X } from "lucide-react";
+import { ImagePlus, MapPin, Pencil, Play, Plus, Route, TriangleAlert, X } from "lucide-react";
 
 import { TravelPhotoGallery } from "@/components/photos/TravelPhotoGallery";
+import { googleMapsTripRouteUrl } from "@/lib/maps/googleMapsLinks";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FlagChip } from "@/components/ui/FlagChip";
@@ -91,6 +92,22 @@ export function TripDetailSheet({
     [travelPhotos, trip, places, visits],
   );
   const tripCounts = mediaCounts(tripPhotos);
+  /* The trip as one route: stops in itinerary order — day by day, each place
+     once at its first appearance, dated stragglers next, undated last. Fewer
+     than two stops is no route, and the button simply isn't there. */
+  const routeUrl = useMemo(() => {
+    if (!grouping) return null;
+    const seen = new Set<string>();
+    const stops: VisitedPlace[] = [];
+    const add = (place: VisitedPlace) => {
+      if (seen.has(place.id)) return;
+      seen.add(place.id);
+      stops.push(place);
+    };
+    for (const day of [...grouping.days, ...grouping.outside]) day.places.forEach(add);
+    grouping.undated.forEach(add);
+    return googleMapsTripRouteUrl(stops);
+  }, [grouping]);
   const isEmpty = Boolean(
     grouping &&
       grouping.days.length === 0 &&
@@ -145,6 +162,20 @@ export function TripDetailSheet({
             <p className="mt-3 whitespace-pre-wrap text-[16px] leading-relaxed text-ink">
               {trip.description}
             </p>
+          ) : null}
+
+          {/* Every stop of the journey on one Google map, in the order you
+              made it — the trip's shape, seen from above. */}
+          {routeUrl ? (
+            <a
+              href={routeUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="pressable mt-3.5 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md bg-fill text-[15px] font-medium text-accent"
+            >
+              <Route size={16} aria-hidden="true" />
+              Route in Google Maps
+            </a>
           ) : null}
 
           {/* The trip's whole gallery: journey-level media and every member
