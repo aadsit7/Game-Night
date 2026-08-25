@@ -391,6 +391,11 @@ class SheetPlaceRepository implements PlaceRepository {
       this.settings = cached.settings;
       this.media = cached.media;
       this.visitHeaders = cached.visitHeaders;
+      // The script's abilities rarely change between visits; assuming the
+      // last known set means Google search and listings work from the first
+      // keystroke, not from whenever the sheet finishes answering. The next
+      // load overwrites it with the current truth either way.
+      if (cached.capabilities) this.capabilities = cached.capabilities;
       this.commitTrips(cached.trips);
       this.commitVisits(cached.visits);
       this.commitTravelPhotos(cached.travelPhotos);
@@ -602,6 +607,7 @@ class SheetPlaceRepository implements PlaceRepository {
       visitHeaders: this.visitHeaders,
       lookups: this.lookups,
       settings: this.settings,
+      capabilities: this.capabilities,
     });
   }
 

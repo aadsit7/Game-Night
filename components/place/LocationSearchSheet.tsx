@@ -18,7 +18,8 @@ import type { LocationResult } from "@/types/place";
  * code without anyone typing a number.
  */
 
-function iconFor(kind?: string) {
+/** Result kind → glyph; shared with the globe's own search. */
+export function iconForLocationKind(kind?: string) {
   if (kind === "country" || kind === "region") return Globe2;
   if (kind === "poi") return Landmark;
   if (kind === "address" || kind === "street") return Building2;
@@ -52,7 +53,7 @@ export function LocationSearchSheet({
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const debounced = useDebouncedValue(query, 260);
+  const debounced = useDebouncedValue(query, 200);
 
   // Reset when the sheet closes, so re-opening never shows a stale search.
   const [wasOpen, setWasOpen] = useState(open);
@@ -150,7 +151,11 @@ export function LocationSearchSheet({
       }
     >
       <div className="pb-2">
-        {status === "loading" ? (
+        {/* While a fresh answer is on its way, the previous one stays on
+            screen, gently dimmed — a list that blinks into skeletons on
+            every keystroke reads as slower than it is. Skeletons appear
+            only when there is nothing yet to keep showing. */}
+        {status === "loading" && results.length === 0 ? (
           <ul className="space-y-2 pt-1" aria-hidden="true">
             {[0, 1, 2, 3].map((index) => (
               <li key={index} className="flex items-center gap-3 py-2">
@@ -167,9 +172,14 @@ export function LocationSearchSheet({
             <p className="text-[15px] leading-relaxed text-ink-2">{error}</p>
           </div>
         ) : results.length > 0 ? (
-          <ul className="pt-0.5">
+          <ul
+            className={cn(
+              "pt-0.5 transition-opacity duration-150",
+              status === "loading" && "opacity-55",
+            )}
+          >
             {results.map((result) => {
-              const Icon = iconFor(result.kind);
+              const Icon = iconForLocationKind(result.kind);
               return (
                 <li key={result.id}>
                   <button

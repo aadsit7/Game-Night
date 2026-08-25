@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ChevronDown, Clock, Globe, Map as MapIcon, Navigation, Phone, Star } from "lucide-react";
 
 import { googleMapsDirectionsUrl, googleMapsUrl } from "@/lib/maps/googleMapsLinks";
+import { sheetPlaceRepository } from "@/lib/storage/sheetPlaceRepository";
 import {
   autoLinkGooglePlace,
   fetchGoogleDetails,
@@ -15,6 +16,10 @@ import {
 } from "@/lib/maps/placeDetails";
 import { cn } from "@/lib/utils/cn";
 import type { VisitedPlace } from "@/types/place";
+
+/** Stable subscribe/server-snapshot pair for the repository store. */
+const subscribeToSheet = (listener: () => void) => sheetPlaceRepository.subscribe(listener);
+const never = () => false;
 
 /**
  * The place as Google Maps knows it, inside the card.
@@ -43,6 +48,12 @@ export function GoogleMapsCard({
   const [loading, setLoading] = useState(false);
   const [hoursOpen, setHoursOpen] = useState(false);
 
+  /* Whether the sheet can serve listings — subscribed, not asked once: on a
+     cold start the capabilities arrive a beat after the app does, and a card
+     opened in that beat should fill in when they land, not stay bare until
+     it is closed and reopened. */
+  const detailsEnabled = useSyncExternalStore(subscribeToSheet, hasGoogleDetails, never);
+
   // The callback identities change every render (the sheet closes over the
   // place), but a new callback is not a reason to look the listing up again —
   // refs keep the latest ones without steering the effect.
@@ -57,7 +68,7 @@ export function GoogleMapsCard({
   const googlePlaceId = place.googlePlaceId;
 
   useEffect(() => {
-    if (!hasGoogleDetails()) return;
+    if (!detailsEnabled) return;
 
     const controller = new AbortController();
     let alive = true;
@@ -97,9 +108,9 @@ export function GoogleMapsCard({
       alive = false;
       controller.abort();
     };
-    // The card refetches when it shows a different place or a new link lands.
+    // Refetches for a different place, a new link, or capabilities arriving.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [placeId, googlePlaceId]);
+  }, [placeId, googlePlaceId, detailsEnabled]);
 
   const facts = details ? factLines(details) : [];
   const website = details?.website;
