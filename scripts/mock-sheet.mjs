@@ -108,7 +108,7 @@ function makePlace(values) {
 /** Seeded to look like a real travel history, spread across the globe. */
 const places = [
   makePlace({ "Place ID": "PL-0001", "Place Name": "Kyoto", "Status": "Been", "Country": "Japan", "Country Code": "JP", "Region / State": "Kansai", "City": "Kyoto", "Latitude": "35.011600", "Longitude": "135.768100", "First Visited Date": "2024-03-25", "Last Visited Date": "2024-04-02", "Personal Notes": "Fushimi Inari at dawn was the whole trip.", "Photo URL": "", "Created At": "2024-04-10", "Updated At": "2024-04-10", "Sync Version": 1, "Archived?": "No", "Deleted?": "No", "Place Type": "City" }),
-  makePlace({ "Place ID": "PL-0002", "Place Name": "Lisbon", "Status": "Been", "Country": "Portugal", "Country Code": "PT", "City": "Lisbon", "Latitude": "38.722300", "Longitude": "-9.139300", "First Visited Date": "2023-09-12", "Last Visited Date": "2023-09-19", "Personal Notes": "Tram 28, pastéis, and far too many hills.", "Created At": "2023-09-25", "Updated At": "2023-09-25", "Sync Version": 1, "Archived?": "No", "Deleted?": "No", "Place Type": "City" }),
+  makePlace({ "Place ID": "PL-0002", "Place Name": "Lisbon", "Status": "Been", "Country": "Portugal", "Country Code": "PT", "City": "Lisbon", "Latitude": "38.722300", "Longitude": "-9.139300", "First Visited Date": "2023-09-12", "Last Visited Date": "2023-09-19", "Personal Notes": "Tram 28, pastéis, and far too many hills.", "Photo URL": "http://localhost:8787/mock-base/7", "Created At": "2023-09-25", "Updated At": "2023-09-25", "Sync Version": 1, "Archived?": "No", "Deleted?": "No", "Place Type": "City" }),
   makePlace({ "Place ID": "PL-0003", "Place Name": "Reykjavík", "Status": "Been", "Country": "Iceland", "Country Code": "IS", "City": "Reykjavík", "Latitude": "64.146600", "Longitude": "-21.942600", "First Visited Date": "2022-11-03", "Last Visited Date": "2022-11-09", "Personal Notes": "Saw the aurora on the last night.", "Created At": "2022-11-15", "Updated At": "2022-11-15", "Sync Version": 1, "Archived?": "No", "Deleted?": "No", "Place Type": "City" }),
   makePlace({ "Place ID": "PL-0004", "Place Name": "Queenstown", "Status": "Been", "Country": "New Zealand", "Country Code": "NZ", "Region / State": "Otago", "City": "Queenstown", "Latitude": "-45.031200", "Longitude": "168.662600", "First Visited Date": "2019-02-02", "Last Visited Date": "2019-02-14", "Personal Notes": "Routeburn track. Would go back tomorrow.", "Created At": "2019-03-01", "Updated At": "2019-03-01", "Sync Version": 1, "Archived?": "No", "Deleted?": "No", "Place Type": "City" }),
   makePlace({ "Place ID": "PL-0005", "Place Name": "Marrakesh", "Status": "Been", "Country": "Morocco", "Country Code": "MA", "City": "Marrakesh", "Latitude": "31.629600", "Longitude": "-7.981000", "First Visited Date": "2018-10-05", "Last Visited Date": "2018-10-12", "Personal Notes": "Jemaa el-Fnaa after dark.", "Created At": "2018-10-20", "Updated At": "2018-10-20", "Sync Version": 1, "Archived?": "No", "Deleted?": "No", "Place Type": "City" }),
@@ -146,7 +146,24 @@ const visits = [
 ];
 
 /** Media rows start empty; uploads made against this mock land here. */
-const media = [];
+function makeMedia(values) {
+  const row = blank(MEDIA_HEADERS);
+  for (const [header, value] of Object.entries(values)) row[MI[header]] = value;
+  return row;
+}
+
+/* Lisbon carries photographs — a cover on the Places row and one more in
+   Media_Links — so the viewer's delete and make-cover flows have something
+   real to manage in development. The images come from this mock's own
+   /mock-base route, which serves a generated picture per seed. */
+const media = [
+  makeMedia({
+    "Media ID": "MEDIA-0001", "Place ID": "PL-0002", "Media Type": "Photo",
+    "Title": "Lisbon rooftops", "URL": "http://localhost:8787/mock-base/8",
+    "Created At": "2023-09-25", "Updated At": "2023-09-25",
+    "Archived?": "No", "Deleted?": "No",
+  }),
+];
 
 /** Trips start empty, the way a sheet that has never had one does. */
 const trips = [];

@@ -9,6 +9,7 @@ import {
   Globe2,
   Heart,
   Home,
+  ImageUp,
   Luggage,
   MapPin,
   Pencil,
@@ -21,8 +22,12 @@ import {
 
 import { TravelPhotoGallery } from "@/components/photos/TravelPhotoGallery";
 import { BottomSheet } from "@/components/ui/BottomSheet";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
+import { Portal } from "@/components/ui/Portal";
+import { useHistorySentinel } from "@/lib/hooks/useHistorySentinel";
+import { MEDIA_ALERT_LAYER, PLAYER_LAYER } from "@/lib/ui/sheetStack";
 import { formatDays } from "@/lib/timeline/buildTimeline";
 import { isResidenceVisit, isUpcomingVisit, visitStats } from "@/lib/places/visits";
 import { formatMediaCounts, mediaCounts } from "@/lib/photos/mediaPlaylist";
@@ -73,6 +78,8 @@ export function PlaceDetailSheet({
   onPlayMemories,
   galleryEpoch,
   onLinkGoogle,
+  onDeletePlacePhoto,
+  onMakeCoverPhoto,
 }: {
   place: VisitedPlace | null;
   open: boolean;
@@ -119,9 +126,18 @@ export function PlaceDetailSheet({
    * listings were captured; persists it so next time is a lookup, not a hunt.
    */
   onLinkGoogle?: (placeId: string, googlePlaceId: string) => void;
+  /** Deletes one of the place's own photos, straight from the viewer. */
+  onDeletePlacePhoto?: (ref: string) => void;
+  /** Leads the card with this photo instead. */
+  onMakeCoverPhoto?: (ref: string) => void;
 }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const [confirmPhotoDelete, setConfirmPhotoDelete] = useState<string | null>(null);
   const reduceMotion = useReducedMotion();
+
+  // Back closes the photo before it closes the card — the order the eye
+  // expects, because the photo is what is on screen.
+  useHistorySentinel(Boolean(lightbox && place), () => setLightbox(null));
 
   // Closing the sheet closes any open photo with it.
   const [wasOpen, setWasOpen] = useState(open);
@@ -228,14 +244,22 @@ export function PlaceDetailSheet({
       >
         {place ? (
           <div className="pb-4">
-            {/* The photograph leads when there is one — it is the memory. */}
+            {/* The photograph leads when there is one — it is the memory.
+                Tapping it opens the viewer, where it can also be managed. */}
             {hasCover ? (
-              <PlaceImage
-                place={place}
-                alt={place.name}
-                priority
-                className="mb-4 aspect-[16/10] w-full rounded-[22px]"
-              />
+              <button
+                type="button"
+                onClick={() => place.coverImage && setLightbox(place.coverImage)}
+                aria-label={`View photos of ${place.name}`}
+                className="pressable mb-4 block w-full"
+              >
+                <PlaceImage
+                  place={place}
+                  alt={place.name}
+                  priority
+                  className="aspect-[16/10] w-full rounded-[22px]"
+                />
+              </button>
             ) : null}
 
             <h1 className="wrap-anywhere text-[30px] font-bold leading-[1.12] tracking-[-0.03em] text-ink">
@@ -484,11 +508,16 @@ export function PlaceDetailSheet({
         ) : null}
       </BottomSheet>
 
-      {/* Tap a photo to see it properly. */}
+      {/* Tap a photo to see it properly. Portaled to the body: rendered
+          inside the sheet, the sheet's own transform would trap this layer's
+          `fixed` and z-index in its stacking context, and the action bar
+          would sit under the card it is meant to cover. */}
+      <Portal>
       <AnimatePresence>
         {lightbox && place ? (
           <motion.div
-            className="fixed inset-0 z-[95] grid place-items-center bg-black/92 p-4"
+            className="grid place-items-center bg-black/92 p-4"
+            style={{ position: "fixed", inset: 0, zIndex: PLAYER_LAYER }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -504,20 +533,72 @@ export function PlaceDetailSheet({
               place={{ ...place, coverImage: lightbox }}
               alt={`Photo of ${place.name}`}
               priority
-              className="pointer-events-none relative max-h-[80dvh] w-full max-w-[560px] rounded-[20px] [&>img]:object-contain"
+              className="pointer-events-none relative max-h-[76dvh] w-full max-w-[560px] rounded-[20px] [&>img]:object-contain"
             />
             <button
               type="button"
               onClick={() => setLightbox(null)}
               aria-label="Close photo"
-              className="pressable absolute right-4 grid size-10 place-items-center rounded-full bg-white/15 text-white backdrop-blur-md"
+              className="pressable absolute right-4 z-10 grid size-10 place-items-center rounded-full bg-white/15 text-white backdrop-blur-md"
               style={{ top: "max(env(safe-area-inset-top, 0px), 16px)" }}
             >
               <X size={20} aria-hidden="true" />
             </button>
+
+            {/* Managing a photo happens where the photo is being looked at —
+                not three screens away behind Edit. Explicitly above the
+                backdrop button: relying on paint order alone left taps
+                landing on the backdrop under real fingers. */}
+            {onDeletePlacePhoto || onMakeCoverPhoto ? (
+              <div
+                className="absolute inset-x-0 z-10 flex items-center justify-center gap-2.5 px-4"
+                style={{ bottom: "max(env(safe-area-inset-bottom, 0px), 20px)" }}
+              >
+                {onMakeCoverPhoto && lightbox !== place.coverImage ? (
+                  <button
+                    type="button"
+                    onClick={() => onMakeCoverPhoto(lightbox)}
+                    className="pressable flex min-h-11 items-center gap-2 rounded-pill bg-white/15 px-4 text-[15px] font-medium text-white backdrop-blur-md"
+                  >
+                    <ImageUp size={16} aria-hidden="true" />
+                    Make cover
+                  </button>
+                ) : null}
+                {onDeletePlacePhoto ? (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmPhotoDelete(lightbox)}
+                    className="pressable flex min-h-11 items-center gap-2 rounded-pill bg-white/15 px-4 text-[15px] font-medium text-[#ff8a80] backdrop-blur-md"
+                  >
+                    <Trash2 size={16} aria-hidden="true" />
+                    Delete
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </motion.div>
         ) : null}
       </AnimatePresence>
+      </Portal>
+
+      <ConfirmDialog
+        open={Boolean(confirmPhotoDelete)}
+        title="Delete this photo?"
+        message={
+          confirmPhotoDelete && confirmPhotoDelete === place?.coverImage
+            ? "It’s the cover — the next photo takes its place."
+            : "It will be removed from this place."
+        }
+        confirmLabel="Delete"
+        destructive
+        layer={MEDIA_ALERT_LAYER}
+        onCancel={() => setConfirmPhotoDelete(null)}
+        onConfirm={() => {
+          if (confirmPhotoDelete) onDeletePlacePhoto?.(confirmPhotoDelete);
+          setConfirmPhotoDelete(null);
+          setLightbox(null);
+        }}
+      />
     </>
   );
 }

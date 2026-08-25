@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 
 import { Portal } from "@/components/ui/Portal";
+import { useHistorySentinel } from "@/lib/hooks/useHistorySentinel";
 import { playbackKind } from "@/lib/photos/mediaPlaylist";
 import {
   createPlayerState,
@@ -78,6 +79,9 @@ export function TravelMediaPlayer({
   onNeedMediaCode?: () => void;
 }) {
   const reduceMotion = useReducedMotion();
+
+  // Back closes the show, the way it closes every full-screen thing here.
+  useHistorySentinel(open && photos.length > 0, onClose);
 
   return (
     <Portal>

@@ -5,9 +5,11 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ImagePlus, KeyRound, Play, RefreshCw, Trash2, X } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useHistorySentinel } from "@/lib/hooks/useHistorySentinel";
 import { useNearViewport } from "@/lib/hooks/useNearViewport";
 import { PhotoSourceError, loadTravelPhotoBlob } from "@/lib/photos/photoSource";
 import { isVideoTravelPhoto } from "@/lib/photos/travelPhotos";
+import { MEDIA_ALERT_LAYER } from "@/lib/ui/sheetStack";
 import { cn } from "@/lib/utils/cn";
 import type { TravelPhoto, TravelPhotoSize } from "@/types/travelPhoto";
 
@@ -138,6 +140,8 @@ export function TravelPhotoGallery({
         message="It disappears from every device. The original in Google Photos is untouched."
         confirmLabel={removing ? "Removing…" : "Remove"}
         destructive
+        // Asked from inside the full-screen viewer, so it must paint over it.
+        layer={MEDIA_ALERT_LAYER}
         onCancel={() => setConfirmRemove(null)}
         onConfirm={() => {
           const photo = confirmRemove;
@@ -179,6 +183,9 @@ function PhotoViewer({
   const reduceMotion = useReducedMotion();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const open = at !== null && at >= 0 && at < photos.length;
+
+  // Back closes the viewer, not the site.
+  useHistorySentinel(open, onClose);
 
   // Snap to the tapped photo the moment the strip exists.
   useEffect(() => {
