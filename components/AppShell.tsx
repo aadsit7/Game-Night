@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { FolderOpen, Globe2, Heart, Images, MapPin, Pencil, Trash2 } from "lucide-react";
 
@@ -158,6 +158,20 @@ function whenOffline(online: string, queued: string): string {
   return typeof navigator !== "undefined" && navigator.onLine === false ? queued : online;
 }
 
+/*
+ * The tab views and the globe re-render only when something they draw
+ * changed. The shell above them re-renders for every toast, sheet and
+ * sweep tick, and with a couple of hundred places the list behind an open
+ * card was paying for each one. Memoised here, with every callback below
+ * held stable, that work simply stops happening.
+ */
+const TravelGlobeM = memo(TravelGlobe);
+const PlacesViewM = memo(PlacesView);
+const TimelineViewM = memo(TimelineView);
+const TripsViewM = memo(TripsView);
+const PlayerViewM = memo(PlayerView);
+const InsightsViewM = memo(InsightsView);
+
 export function AppShell() {
   const {
     places,
@@ -196,11 +210,15 @@ export function AppShell() {
   const reduceMotion = useReducedMotion();
 
   const [mode, setMode] = useState<AppMode>("globe");
+  /* The tab highlight answers the tap on the spot; the heavy view behind it
+     mounts in a deferred render React can slice and interleave, so switching
+     onto two hundred place cards no longer stutters the press itself. */
+  const deferredMode = useDeferredValue(mode);
   /* Read by callbacks that outlive the render they were made in — the undo in
      a toast is pressed up to six seconds later, by which time the tab it was
      raised from may not be the tab in front of anyone. */
   const modeRef = useRef<AppMode>("globe");
-  const [mapView, setMapView] = useState<MapView>("cities");
+  const [mapView, setMapView] = useState<MapView>("places");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [overlays, setOverlays] = useState<Overlay[]>([]);
@@ -432,7 +450,7 @@ export function AppShell() {
       );
       if (inCountry.length === 0) return;
 
-      setMapView("cities");
+      setMapView("places");
       /* Hand the globe the places rather than a zoom. "Show me inside Japan"
          and "show me inside Luxembourg" are the same request and nothing like
          the same camera, and the globe is the only thing here that knows how
@@ -504,6 +522,13 @@ export function AppShell() {
     },
     [captureProximity, getTrip],
   );
+
+  /* One identity per intent, so the memoised views can skip re-renders. */
+  const startCreateBlank = useCallback(() => startCreate(), [startCreate]);
+  const showGlobeTab = useCallback(() => setMode("globe"), []);
+  const browsePlacesTab = useCallback(() => setMode("places"), []);
+  const openSyncSheet = useCallback(() => setSyncOpen(true), []);
+  const openMediaCodeSheet = useCallback(() => setMediaCodeOpen(true), []);
 
   /**
    * The big search found somewhere new. Skip the middle step: fresh draft,
@@ -1775,6 +1800,24 @@ export function AppShell() {
   // Everything below reads from the sheet, so on a browser that hasn't been
   // told where the sheet is there is nothing honest to draw yet. Placed after
   // every hook above so the hook order never changes between renders.
+  /* Defined late because they wrap handlers that live above. */
+  const createTripForSelection = useCallback(
+    (ids: string[]) => {
+      tagAfterCreate.current = ids;
+      startCreateTrip();
+    },
+    [startCreateTrip],
+  );
+  const deletePlaceNow = useCallback((id: string) => void performDelete(id), [performDelete]);
+  const deletePlacesNow = useCallback(
+    (ids: string[]) => void performDeleteMany(ids),
+    [performDeleteMany],
+  );
+  const handleModeChange = useCallback((next: AppMode) => {
+    setMode(next);
+    if (next !== "globe") setPreviewOpen(false);
+  }, []);
+
   if (needsSetup) {
     return <SheetSetupScreen onConnected={sync.connect} />;
   }
@@ -1783,7 +1826,7 @@ export function AppShell() {
     <main className="fixed inset-0 overflow-hidden bg-bg">
       {/* The globe is mounted for the whole session and never torn down. */}
       <div className="absolute inset-0">
-        <TravelGlobe
+        <TravelGlobeM
           places={places}
           dataReady={status !== "loading"}
           selectedId={selectedId}
@@ -1857,7 +1900,7 @@ export function AppShell() {
 
       {/* Places slides over the globe rather than replacing it. */}
       <AnimatePresence>
-        {mode === "places" ? (
+        {deferredMode === "places" ? (
           <motion.div
             key="places"
             className="absolute inset-0 z-20"
@@ -1868,7 +1911,7 @@ export function AppShell() {
               reduceMotion ? { duration: 0 } : { duration: 0.3, ease: [0.2, 0.8, 0.3, 1] }
             }
           >
-            <PlacesView
+            <PlacesViewM
               places={places}
               countries={countries}
               stats={stats}
@@ -1876,26 +1919,23 @@ export function AppShell() {
               bottomInset={tabBarHeight + 16}
               onOpenPlace={openDetail}
               onPlaceActions={setActionsFor}
-              onAdd={() => startCreate()}
-              onShowGlobe={() => setMode("globe")}
+              onAdd={startCreateBlank}
+              onShowGlobe={showGlobeTab}
               syncState={sync.state}
-              onOpenSync={() => setSyncOpen(true)}
+              onOpenSync={openSyncSheet}
               trips={trips}
               tagging={tagging}
               onTagPlaces={tagPlacesWithTrip}
-              onCreateTripFor={(ids) => {
-                tagAfterCreate.current = ids;
-                startCreateTrip();
-              }}
+              onCreateTripFor={createTripForSelection}
               /* Straight to the delete, with the undo it already leaves in the
                  toast. The confirmation dialog belongs to the menu, where the
                  tap that opened it could have been a mis-tap; a swipe across
                  half a row could not. */
-              onDeletePlace={(id) => void performDelete(id)}
+              onDeletePlace={deletePlaceNow}
               /* The selection's own delete, which does ask first — it can be
                  many places at once, and a tick list is easier to build up by
                  accident than a swipe is. */
-              onDeletePlaces={(ids) => void performDeleteMany(ids)}
+              onDeletePlaces={deletePlacesNow}
               onSelectingChange={setSelectingPlaces}
             />
           </motion.div>
@@ -1904,7 +1944,7 @@ export function AppShell() {
 
       {/* The timeline slides over the globe the same way Places does. */}
       <AnimatePresence>
-        {mode === "timeline" ? (
+        {deferredMode === "timeline" ? (
           <motion.div
             key="timeline"
             className="absolute inset-0 z-20"
@@ -1915,7 +1955,7 @@ export function AppShell() {
               reduceMotion ? { duration: 0 } : { duration: 0.3, ease: [0.2, 0.8, 0.3, 1] }
             }
           >
-            <TimelineView
+            <TimelineViewM
               places={places}
               visits={visits}
               trips={trips}
@@ -1923,8 +1963,8 @@ export function AppShell() {
               bottomInset={tabBarHeight + 16}
               onOpenPlace={openDetail}
               onOpenTrip={openTripDetail}
-              onAdd={() => startCreate()}
-              onShowGlobe={() => setMode("globe")}
+              onAdd={startCreateBlank}
+              onShowGlobe={showGlobeTab}
             />
           </motion.div>
         ) : null}
@@ -1932,7 +1972,7 @@ export function AppShell() {
 
       {/* Trips slides over the globe the same way Places and Timeline do. */}
       <AnimatePresence>
-        {mode === "trips" ? (
+        {deferredMode === "trips" ? (
           <motion.div
             key="trips"
             className="absolute inset-0 z-20"
@@ -1943,7 +1983,7 @@ export function AppShell() {
               reduceMotion ? { duration: 0 } : { duration: 0.3, ease: [0.2, 0.8, 0.3, 1] }
             }
           >
-            <TripsView
+            <TripsViewM
               trips={trips}
               places={places}
               visits={visits}
@@ -1959,7 +1999,7 @@ export function AppShell() {
       {/* The Player — everything with media attached, ready to watch — slides
           over the globe the same way the other tabs do. */}
       <AnimatePresence>
-        {mode === "player" ? (
+        {deferredMode === "player" ? (
           <motion.div
             key="player"
             className="absolute inset-0 z-20"
@@ -1970,7 +2010,7 @@ export function AppShell() {
               reduceMotion ? { duration: 0 } : { duration: 0.3, ease: [0.2, 0.8, 0.3, 1] }
             }
           >
-            <PlayerView
+            <PlayerViewM
               trips={trips}
               places={places}
               visits={visits}
@@ -1982,8 +2022,8 @@ export function AppShell() {
               onPlayPlace={startPlaceMemories}
               onOpenTrip={openTripDetail}
               onOpenPlace={openDetail}
-              onBrowsePlaces={() => setMode("places")}
-              onNeedMediaCode={() => setMediaCodeOpen(true)}
+              onBrowsePlaces={browsePlacesTab}
+              onNeedMediaCode={openMediaCodeSheet}
               galleryEpoch={galleryEpoch}
             />
           </motion.div>
@@ -1992,7 +2032,7 @@ export function AppShell() {
 
       {/* The scoreboard slides over the globe the same way the others do. */}
       <AnimatePresence>
-        {mode === "stats" ? (
+        {deferredMode === "stats" ? (
           <motion.div
             key="stats"
             className="absolute inset-0 z-20"
@@ -2003,14 +2043,14 @@ export function AppShell() {
               reduceMotion ? { duration: 0 } : { duration: 0.3, ease: [0.2, 0.8, 0.3, 1] }
             }
           >
-            <InsightsView
+            <InsightsViewM
               places={places}
               visits={visits}
               loading={status === "loading"}
               bottomInset={tabBarHeight + 16}
               onOpenPlace={openDetail}
               onDrill={openInsightDrill}
-              onAdd={() => startCreate()}
+              onAdd={startCreateBlank}
             />
           </motion.div>
         ) : null}
@@ -2039,10 +2079,7 @@ export function AppShell() {
       <AppTabBar
         ref={tabBarRef}
         mode={mode}
-        onModeChange={(next) => {
-          setMode(next);
-          if (next !== "globe") setPreviewOpen(false);
-        }}
+        onModeChange={handleModeChange}
         onAdd={() => startCreate()}
         hidden={tabBarHidden}
       />

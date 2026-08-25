@@ -81,10 +81,10 @@ export const INTERACTIVE_LAYERS = [LAYER_PIN_MARKER, LAYER_CLUSTER];
 /** What a tap in Countries mode can land on, in the order it is considered. */
 export const COUNTRY_INTERACTIVE_LAYERS = [LAYER_COUNTRY_CHIP, LAYER_COUNTRY_FILL];
 
-/** The marks the Countries view owns, hidden in Cities mode. */
+/** The marks the Countries view owns, hidden in Places mode. */
 export const COUNTRY_LAYERS = [LAYER_COUNTRY_CHIP, LAYER_COUNTRY_COUNT];
 
-/** Everything belonging to the city-pin view, hidden in Countries mode. */
+/** Everything belonging to the place-pin view, hidden in Countries mode. */
 export const CITY_LAYERS = [
   LAYER_CLUSTER,
   LAYER_CLUSTER_COUNT,
@@ -93,8 +93,12 @@ export const CITY_LAYERS = [
   LAYER_PIN,
 ];
 
-/** The two ways of reading the map. */
-export type MapView = "countries" | "cities";
+/**
+ * The two ways of reading the map. "Places" is every saved pin — a theme
+ * park or a trailhead counts the same as a capital city, because the
+ * journal's unit is the place, not the municipality.
+ */
+export type MapView = "countries" | "places";
 
 /** Public-domain Natural Earth polygons, built by `npm run countries`. */
 export const COUNTRIES_URL = "geo/countries.json";
@@ -191,10 +195,10 @@ export const COUNTRY_FILL_OPACITY = {
     13,
     0.55,
   ] as ExpressionSpecification,
-  cities: 0.14,
+  places: 0.14,
 } as const;
 
-export const COUNTRY_LINE_OPACITY = { countries: 0.9, cities: 0 } as const;
+export const COUNTRY_LINE_OPACITY = { countries: 0.9, places: 0 } as const;
 
 /** A 0.6px hairline is not an edge at globe zoom. */
 export const COUNTRY_LINE_WIDTH: ExpressionSpecification = [

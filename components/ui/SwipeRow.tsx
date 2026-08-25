@@ -217,7 +217,20 @@ export function SwipeRow({
        full-bleed list rows, so a card allowed to slide past the list's own
        margin reads as one escaping the layout; contained, it reads as the
        card sliding aside to uncover what is under it. */
-    <li ref={rowRef} className={cn("relative isolate overflow-hidden", className)} style={style}>
+    <li
+      ref={rowRef}
+      /* `content-visibility` lets the browser skip laying out and painting
+         rows far off screen — with a couple of hundred places, most of the
+         list most of the time. The intrinsic-size hint only steadies the
+         scrollbar before a row's first paint; after it, the browser
+         remembers each row's real height. Browsers without it just render
+         everything, exactly as before. */
+      className={cn(
+        "relative isolate overflow-hidden [content-visibility:auto] [contain-intrinsic-size:auto_76px]",
+        className,
+      )}
+      style={style}
+    >
       {/*
         The panels sit under the row rather than sliding in beside it, so the
         colour is already there the instant the row starts to move — the action
