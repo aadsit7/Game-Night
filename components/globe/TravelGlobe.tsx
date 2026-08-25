@@ -123,7 +123,7 @@ type Props = {
   /** When set, a draggable pin is shown at this position. */
   pickerPosition: GlobePoint | null;
   onPickerChange: (point: GlobePoint, final: boolean) => void;
-  /** Countries paints whole visited countries; Cities shows individual pins. */
+  /** Countries paints whole visited countries; Places shows individual pins. */
   mapView: MapView;
   /** Tapping a filled country in Countries mode. */
   onCountryTap?: (code: string) => void;
@@ -312,7 +312,7 @@ function installStyleLayers(
           filter: ["in", ["get", "code"], ["literal", []]] as FilterSpecification,
           paint: {
             "fill-color": overlay.country,
-            "fill-opacity": COUNTRY_FILL_OPACITY.cities,
+            "fill-opacity": COUNTRY_FILL_OPACITY.places,
             "fill-opacity-transition": { duration: 320 },
           },
         },
@@ -341,7 +341,7 @@ function installStyleLayers(
   }
 
   /*
-   * The countries view's marks, over the fills and under everything the cities
+   * The countries view's marks, over the fills and under everything the places
    * view draws. A country you have been to says which country it is and how
    * much of your life is in it, rather than being a shape you have to
    * recognise.
@@ -1192,7 +1192,7 @@ export function TravelGlobe({
           map.setLayoutProperty(
             layer,
             "visibility",
-            mapView === "cities" ? "visible" : "none",
+            mapView === "places" ? "visible" : "none",
           );
         }
       }

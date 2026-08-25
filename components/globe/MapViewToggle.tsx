@@ -6,9 +6,10 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import type { MapView } from "@/lib/maps/basemap";
 
 /**
- * Countries or Cities — the two ways people actually read a travel map.
- * Countries answers "how much of the world have I seen"; Cities answers
- * "where exactly have I been". Sitting just above the tab bar keeps both
+ * Countries or Places — the two ways people actually read a travel map.
+ * Countries answers "how much of the world have I seen"; Places answers
+ * "where exactly have I been", one pin per saved place, whether that is a
+ * capital city or a theme park. Sitting just above the tab bar keeps both
  * within the same thumb sweep as everything else.
  */
 export function MapViewToggle({
@@ -42,7 +43,7 @@ export function MapViewToggle({
             className="glass pointer-events-auto w-auto border border-glass-border shadow-soft"
             options={[
               { value: "countries", label: "Countries" },
-              { value: "cities", label: "Cities" },
+              { value: "places", label: "Places" },
             ]}
           />
         </motion.div>
