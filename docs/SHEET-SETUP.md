@@ -642,13 +642,19 @@ a place without a listing id just opens as a pin on the exact spot.
 
 The card's **Google Maps section** comes from the same key: opening a place
 looks its listing up through the script and shows the rating and review
-count, whether it is open right now and today's hours, what kind of place
-Google says it is, the local time there, the address, and website and phone
-rows. A place with no listing id is linked up automatically on first open —
-one search, biased to the saved pin, accepted only when the result clearly is
-that place — and the id is saved so every later open is a straight lookup.
-Nothing else is stored: listing content is fetched fresh and cached for six
-hours, inside what Google's terms allow.
+count, whether it is open right now and today's hours — with the whole week
+one tap away, today's line emphasised in the place's own timezone — what
+kind of place Google says it is, the local time there, the address, and
+website and phone rows. A place with no listing id is linked up
+automatically on first open — one search, biased to the saved pin, accepted
+only when the result clearly is that place — and the id is saved so every
+later open is a straight lookup. A place with no photograph of its own
+borrows the listing's first photo as its card picture, credited to its
+photographer as Google requires, until you add one of yours. And a trip with
+two or more dated stops gets a **Route in Google Maps** button that opens
+the whole itinerary as one route, in order — an ordinary Maps link, no key
+involved. Nothing else is stored: listing content is fetched fresh and
+cached for six hours, inside what Google's terms allow.
 
 To turn it off again, delete the property. The app goes back to OpenStreetMap
 on the next reload; saved listing ids stay in the sheet and keep working.
@@ -666,6 +672,13 @@ which includes 1,000 free requests a month; even browsing a large journal
 daily stays inside it, and the quota cap from step 2 means "inside it" is
 enforced rather than hoped for. Auto-linking an old place is one ordinary
 search, once, and the result is saved.
+
+The borrowed card picture is one Place Photos request the first time a
+photo-less place is opened — Place Photos has its own separate 1,000 free
+requests a month — and the browser then remembers the picture's address for
+seven days, so revisiting your photo-less places costs nothing day to day.
+Places where you have added your own photograph never make the request at
+all.
 
 ### If it does not work
 

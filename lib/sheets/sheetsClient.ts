@@ -323,6 +323,21 @@ export async function getPlaceDetails(
   return data?.place;
 }
 
+/** One listing photo, resolved by the script to a servable image address. */
+export async function getPlacePhoto(
+  connection: SheetConnection,
+  request: { name: string },
+  signal?: AbortSignal,
+): Promise<string | undefined> {
+  const data = (await getFromSheet(
+    connection,
+    { action: "placePhoto", name: request.name },
+    signal,
+  )) as { photoUri?: string } | undefined;
+  const uri = data?.photoUri?.trim();
+  return uri ? uri : undefined;
+}
+
 export async function getLookups(
   connection: SheetConnection,
   signal?: AbortSignal,

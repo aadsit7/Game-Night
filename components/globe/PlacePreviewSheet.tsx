@@ -6,6 +6,7 @@ import { BottomSheet } from "@/components/ui/BottomSheet";
 import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
 import { googleMapsDirectionsUrl } from "@/lib/maps/googleMapsLinks";
+import { googleSummaryFor } from "@/lib/maps/placeDetails";
 import { flagVariant } from "@/lib/ui/flags";
 import { formatVisitShort } from "@/lib/utils/date";
 import { countryFlag, placeSubtitle } from "@/lib/utils/geo";
@@ -34,6 +35,20 @@ export function PlacePreviewSheet({
 }) {
   const hasPhoto = Boolean(place?.coverImage);
   const hasFlag = Boolean(place && countryFlag(place.countryCode));
+  /* The list cards' cached Google chip, on the pin's card too — the rating
+     already earned by opening the place once, or the one warning worth
+     carrying everywhere. No network from here. */
+  const google = place ? googleSummaryFor(place.googlePlaceId) : undefined;
+  const googleChip = google?.permanentlyClosed ? (
+    <span className="mr-1.5 font-medium text-danger">Permanently closed</span>
+  ) : google?.rating !== undefined ? (
+    <span className="mr-1.5 whitespace-nowrap text-accent">
+      <span aria-hidden="true">★ </span>
+      <span aria-label={`Rated ${google.rating.toFixed(1)} on Google Maps`} className="tabular-nums">
+        {google.rating.toFixed(1)}
+      </span>
+    </span>
+  ) : null;
   const detail = place
     ? [
         placeSubtitle(place),
@@ -76,11 +91,12 @@ export function PlacePreviewSheet({
               {/* Where and when on one line, the same caption the lists use.
                   The chip beside it is repeated only when a photograph has
                   taken the leading chip's place. */}
-              {detail ? (
+              {detail || googleChip ? (
                 <p className="mt-0.5 truncate text-[13.5px] text-ink-2">
                   {hasPhoto && hasFlag ? (
                     <FlagChip countryCode={place.countryCode} className="mr-1.5" />
                   ) : null}
+                  {googleChip}
                   {detail}
                 </p>
               ) : null}

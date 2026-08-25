@@ -11,9 +11,8 @@
  */
 import assert from "node:assert/strict";
 
-const { toGooglePlaceDetails, todaysHoursLine, localTimeAt, pickGoogleListing } = await import(
-  "../lib/maps/placeDetails.ts"
-);
+const { toGooglePlaceDetails, todaysHoursLine, placeWeekdayIndex, localTimeAt, pickGoogleListing } =
+  await import("../lib/maps/placeDetails.ts");
 const { groupPlacesByCountry } = await import("../lib/places/grouping.ts");
 
 let failures = 0;
@@ -152,6 +151,43 @@ test("permanently closed survives the trip through", () => {
   assert.equal(paused.temporarilyClosed, true);
 });
 
+test("the week's hours come through whole, or not at all", () => {
+  const details = toGooglePlaceDetails(EIFFEL);
+  assert.equal(details.weekHours.length, 7);
+  assert.equal(details.weekHours[0], "Monday: 9:30 AM – 11:00 PM");
+
+  // A partial week cannot say which line is Sunday, so none are kept.
+  const partial = toGooglePlaceDetails({
+    id: "x",
+    currentOpeningHours: { weekdayDescriptions: ["Monday: 1"] },
+  });
+  assert.equal(partial.weekHours, undefined);
+});
+
+test("the lead photo arrives as a name and a credit, never a URL", () => {
+  const details = toGooglePlaceDetails({
+    id: "x",
+    photos: [
+      {
+        name: "places/x/photos/p1",
+        authorAttributions: [{ displayName: "Hana S.", uri: "https://maps/hana" }],
+      },
+      { name: "places/x/photos/p2" },
+    ],
+  });
+  assert.equal(details.photoName, "places/x/photos/p1");
+  assert.equal(details.photoBy, "Hana S.");
+  assert.equal(details.photoByUri, "https://maps/hana");
+
+  // No photos, or an entry with no name to fetch by, is simply no hero.
+  assert.equal(toGooglePlaceDetails({ id: "x" }).photoName, undefined);
+  assert.equal(toGooglePlaceDetails({ id: "x", photos: [{}] }).photoName, undefined);
+  // An uncredited photo still shows; the credit is only owed when given.
+  const bare = toGooglePlaceDetails({ id: "x", photos: [{ name: "places/x/photos/p3" }] });
+  assert.equal(bare.photoName, "places/x/photos/p3");
+  assert.equal(bare.photoBy, undefined);
+});
+
 /* ---------------------------------------------------------------- *
  * Today, at the place
  * ---------------------------------------------------------------- */
@@ -167,6 +203,15 @@ test("today's hours are the place's today, not the phone's", () => {
   assert.equal(todaysHoursLine(WEEK, 540, mondayNight), "1");
   // While somewhere at UTC−7 is still mid-Monday afternoon.
   assert.equal(todaysHoursLine(WEEK, -420, mondayNight), "closed");
+});
+
+test("the week row a card should embolden is the place's weekday", () => {
+  // 23:30 UTC Monday: Tokyo is Tuesday (row 1), UTC−7 still Monday (row 0).
+  const mondayNight = new Date("2026-08-24T23:30:00Z");
+  assert.equal(placeWeekdayIndex(540, mondayNight), 1);
+  assert.equal(placeWeekdayIndex(-420, mondayNight), 0);
+  // Sunday closes the Monday-first week at row 6.
+  assert.equal(placeWeekdayIndex(0, new Date("2026-08-30T12:00:00Z")), 6);
 });
 
 test("hours that aren't a week's worth are not guessed at", () => {
