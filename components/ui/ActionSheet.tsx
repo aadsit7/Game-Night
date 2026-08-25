@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 
 import { Portal } from "@/components/ui/Portal";
+import { useHistorySentinel } from "@/lib/hooks/useHistorySentinel";
 import { MENU_LAYER } from "@/lib/ui/sheetStack";
 import { cn } from "@/lib/utils/cn";
 
@@ -36,6 +37,9 @@ export function ActionSheet({
   const reduceMotion = useReducedMotion();
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+
+  // Back closes the menu, the same as tapping away from it.
+  useHistorySentinel(open, onClose);
 
   useEffect(() => {
     if (!open) return;

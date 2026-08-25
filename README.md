@@ -46,6 +46,13 @@ Six ways to look at the same travel history:
   wishlist entries, upcoming bookings and years spent living somewhere never
   inflate a visit tally.
 
+Built for a phone in one hand. The system back gesture unwinds whatever is
+on screen — a photo closes before the card it sits on, a card before the
+list, an unsaved form asks first — instead of leaving the site, because on
+an iPhone the edge swipe *is* the back button. And photographs are managed
+where they are looked at: tap any photo on a place's card and the viewer
+offers **Make cover** and **Delete** right there, no trip through Edit.
+
 A saved place is one of two things, and the app keeps them apart: somewhere
 you have **been**, or somewhere you **want to go**. A wishlist entry has no
 visit date, stays off the timeline, does not count towards the countries you

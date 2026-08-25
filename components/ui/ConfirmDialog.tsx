@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useEffect, useId, useRef } from "react";
 
 import { Portal } from "@/components/ui/Portal";
+import { useHistorySentinel } from "@/lib/hooks/useHistorySentinel";
 import { ALERT_LAYER } from "@/lib/ui/sheetStack";
 import { cn } from "@/lib/utils/cn";
 
@@ -18,6 +19,7 @@ export function ConfirmDialog({
   confirmLabel = "Delete",
   cancelLabel = "Cancel",
   destructive = true,
+  layer = ALERT_LAYER,
   onConfirm,
   onCancel,
 }: {
@@ -27,6 +29,12 @@ export function ConfirmDialog({
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
+  /**
+   * Where the alert paints. The default outranks every sheet; a question
+   * asked from inside a media layer passes `MEDIA_ALERT_LAYER`, because the
+   * question must outrank the thing it is about.
+   */
+  layer?: number;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -34,6 +42,9 @@ export function ConfirmDialog({
   const cancelRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   const messageId = useId();
+
+  // Back answers a question the safe way: it cancels.
+  useHistorySentinel(open, onCancel);
 
   useEffect(() => {
     if (!open) return;
@@ -58,7 +69,7 @@ export function ConfirmDialog({
         {open ? (
           <div
             className="fixed inset-0 grid place-items-center px-8"
-            style={{ zIndex: ALERT_LAYER }}
+            style={{ zIndex: layer }}
           >
             <motion.button
               type="button"

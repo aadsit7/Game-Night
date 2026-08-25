@@ -50,6 +50,8 @@ import { TripsView } from "@/components/trips/TripsView";
 import { ActionSheet } from "@/components/ui/ActionSheet";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Toast, type ToastMessage } from "@/components/ui/Toast";
+import { useHistorySentinel } from "@/lib/hooks/useHistorySentinel";
+import { makeCoverPhoto, removePlacePhoto } from "@/lib/places/photoEdits";
 import { type InsightScope } from "@/lib/insights/insights";
 import { reverseGeocode } from "@/lib/maps/geocoding";
 import { LocationError, currentLocation, type Fix } from "@/lib/maps/geolocation";
@@ -551,6 +553,45 @@ export function AppShell() {
     setPreviewOpen(false);
     setOverlays([{ kind: "trip", id }]);
   }, []);
+
+  /**
+   * Photo edits made from the viewer, where the photo is. Both go through
+   * the same save as the form, so the sheet's cells and any uploaded copies
+   * follow along exactly as an edit would move them.
+   */
+  const handleDeletePlacePhoto = useCallback(
+    (placeId: string, ref: string) => {
+      const place = getPlace(placeId);
+      if (!place) return;
+      const changes = removePlacePhoto(place, ref);
+      if (!changes) return;
+      updatePlace(placeId, changes)
+        .then(() => showToast(whenOffline("Photo deleted", "Deleted here — it’ll sync when you’re back")))
+        .catch((error) =>
+          showToast(error instanceof Error ? error.message : "That photo couldn’t be deleted.", {
+            tone: "error",
+          }),
+        );
+    },
+    [getPlace, updatePlace, showToast],
+  );
+
+  const handleMakeCoverPhoto = useCallback(
+    (placeId: string, ref: string) => {
+      const place = getPlace(placeId);
+      if (!place) return;
+      const changes = makeCoverPhoto(place, ref);
+      if (!changes) return;
+      updatePlace(placeId, changes)
+        .then(() => showToast("Cover photo updated"))
+        .catch((error) =>
+          showToast(error instanceof Error ? error.message : "That couldn’t be made the cover.", {
+            tone: "error",
+          }),
+        );
+    },
+    [getPlace, updatePlace, showToast],
+  );
 
   /**
    * The card found this place's Google listing; keep it. One cell in the
@@ -1486,6 +1527,9 @@ export function AppShell() {
     }
   }, [pinSession, draft.id, draft.name]);
 
+  /* Back walks out of pin placement the same way Cancel does. */
+  useHistorySentinel(Boolean(pinSession), cancelPinSession);
+
   const commitPinSession = useCallback(async () => {
     const session = pinSession;
     if (!session?.position) return;
@@ -2009,6 +2053,8 @@ export function AppShell() {
         onPlayMemories={() => detailPlace && startPlaceMemories(detailPlace)}
         galleryEpoch={galleryEpoch}
         onLinkGoogle={handleLinkGoogle}
+        onDeletePlacePhoto={(ref) => detailPlace && handleDeletePlacePhoto(detailPlace.id, ref)}
+        onMakeCoverPhoto={(ref) => detailPlace && handleMakeCoverPhoto(detailPlace.id, ref)}
       />
 
       <VisitFormSheet

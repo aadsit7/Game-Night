@@ -30,6 +30,7 @@ const suites = [
   "google-maps-links.test.mjs",
   "place-details.test.mjs",
   "insights.test.mjs",
+  "photo-edits.test.mjs",
   "sheet-stack.test.mjs",
   "tagging.test.mjs",
   "flag-chips.test.mjs",

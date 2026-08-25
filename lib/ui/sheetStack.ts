@@ -45,6 +45,14 @@ export const ALERT_LAYER = 90;
 export const PLAYER_LAYER = 95;
 
 /**
+ * An alert raised from *inside* a media layer — "delete this photo?" asked
+ * over the photo. The ordinary alert layer sits below the viewers, by the
+ * same rule that puts alerts above sheets: the question must outrank the
+ * thing it is about.
+ */
+export const MEDIA_ALERT_LAYER = 99;
+
+/**
  * Each step back down the stack costs two layers: one for the sheet, one for
  * the scrim that dims whatever is behind it.
  */

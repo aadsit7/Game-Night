@@ -16,6 +16,7 @@ import {
 } from "react";
 
 import { Portal } from "@/components/ui/Portal";
+import { useHistorySentinel } from "@/lib/hooks/useHistorySentinel";
 import { useKeyboardInset } from "@/lib/hooks/useKeyboardInset";
 import { scrimLayer, sheetLayer } from "@/lib/ui/sheetStack";
 import { cn } from "@/lib/utils/cn";
@@ -106,6 +107,11 @@ export function BottomSheet({
     if (onRequestClose && onRequestClose() === false) return;
     onClose();
   }, [onClose, onRequestClose]);
+
+  // The phone's back gesture closes this sheet — guards included — instead
+  // of leaving the site. Registered per sheet, so a stack unwinds one card
+  // per swipe, the way every iPhone screen does.
+  useHistorySentinel(open, requestClose);
 
   useEffect(() => {
     if (!open || recessed) return;
