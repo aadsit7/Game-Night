@@ -189,4 +189,41 @@ test("the Google listing id rides along, and is never invented", () => {
   assert.equal(toLocationResult({ ...GOOGLE_CAFE, id: "   " }, 3).googlePlaceId, undefined);
 });
 
+/* ---------------------------------------------------------------- *
+ * The globe search's merging, and the search memory's key
+ * ---------------------------------------------------------------- */
+
+const { newToJournal, searchCacheKey } = await import("../lib/maps/placeSearch.ts");
+
+test("results already saved in the journal are not offered as additions", () => {
+  const row = (id, googlePlaceId) => ({
+    id,
+    name: id,
+    context: "",
+    latitude: 1,
+    longitude: 2,
+    googlePlaceId,
+  });
+  const results = [row("a", "ChIJeiffel"), row("b", "ChIJlouvre"), row("c", undefined)];
+  const places = [{ googlePlaceId: "ChIJeiffel" }, { googlePlaceId: undefined }];
+  assert.deepEqual(
+    newToJournal(results, places).map((result) => result.id),
+    ["b", "c"],
+    "the saved listing is dropped; the unlinked result is kept",
+  );
+});
+
+test("the cache key hears the same question through globe nudges", () => {
+  assert.equal(
+    searchCacheKey("Kyoto", [135.4, 34.6], "en"),
+    searchCacheKey("kyoto", [135.44, 34.61], "en"),
+  );
+  // A different vantage, tongue, or wording is a different question.
+  assert.notEqual(
+    searchCacheKey("kyoto", [135.4, 34.6], "en"),
+    searchCacheKey("kyoto", [-9.1, 38.7], "en"),
+  );
+  assert.notEqual(searchCacheKey("kyoto", undefined, "en"), searchCacheKey("kyoto", undefined, "fr"));
+});
+
 process.exit(failures === 0 ? 0 : 1);

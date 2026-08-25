@@ -503,6 +503,20 @@ export function AppShell() {
     [captureProximity, getTrip],
   );
 
+  /**
+   * The big search found somewhere new. Skip the middle step: fresh draft,
+   * location applied, form open — the same landing the two-step flow reaches,
+   * minus the flow.
+   */
+  const addFromGlobeSearch = useCallback((result: LocationResult) => {
+    const fresh = applyLocation(emptyDraft(), result);
+    setDraft(fresh);
+    setDraftBaseline(fresh);
+    setFormError(null);
+    setPreviewOpen(false);
+    setOverlays([{ kind: "form", mode: "create" }]);
+  }, []);
+
   const startEdit = useCallback(
     (id: string) => {
       const place = getPlace(id);
@@ -1787,7 +1801,12 @@ export function AppShell() {
         // the map itself can't load.
         visible={mode === "globe" && !pinSession && overlays.length === 0 && !loadError}
         onSelect={showOnGlobe}
+        onAddLocation={addFromGlobeSearch}
         onOpenSettings={() => setSyncOpen(true)}
+        // Noted at focus so the world search is biased to wherever the globe
+        // is currently looking, same as the add flow's own search.
+        onSearchFocus={captureProximity}
+        proximity={proximity}
       />
 
       {loadError ? (

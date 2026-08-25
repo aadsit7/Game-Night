@@ -632,6 +632,12 @@ No re-deploy is needed — script properties are read on every request. Reload
 the app and search for something; results now say **Results from Google Maps**
 underneath.
 
+The search bar on the globe uses the same results: type anywhere — saved
+places answer instantly at the top, and beneath them Google's matches for the
+rest of the world, each one tap from becoming a saved place with the form
+already filled in. Recent searches are remembered on the device for half an
+hour, so retyping a query costs nothing.
+
 Places added from these results also remember their Google listing — the id
 goes into the sheet's `Google Place ID` column. From then on, the **Google
 Maps** and **Directions** buttons on that place's card (and the sheet's own

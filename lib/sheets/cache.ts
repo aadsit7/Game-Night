@@ -2,6 +2,7 @@ import type { PlaceVisit, VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
 import type { TravelPhoto } from "@/types/travelPhoto";
 import type { MediaLink } from "@/lib/sheets/mapping";
+import type { SheetCapabilities } from "@/lib/sheets/sheetsClient";
 
 /**
  * A copy of the last good load from the sheet.
@@ -35,6 +36,14 @@ export type CachedSnapshot = {
   visitHeaders: string[];
   lookups: Record<string, string[]>;
   settings: Record<string, string>;
+  /**
+   * What the script could do at the last load. Restoring this is what lets a
+   * returning browser search Google Maps in its first second, instead of
+   * quietly using the fallback until the sheet has answered — the script is
+   * asked again on every load, so a changed deployment corrects itself.
+   * Absent from older caches, read defensively like everything else.
+   */
+  capabilities?: SheetCapabilities;
   cachedAt: string;
 };
 
@@ -60,6 +69,10 @@ export function loadCache(): CachedSnapshot | null {
         : [],
       lookups: (parsed.lookups ?? {}) as Record<string, string[]>,
       settings: (parsed.settings ?? {}) as Record<string, string>,
+      capabilities:
+        parsed.capabilities && typeof parsed.capabilities === "object"
+          ? (parsed.capabilities as SheetCapabilities)
+          : undefined,
       cachedAt: typeof parsed.cachedAt === "string" ? parsed.cachedAt : "",
     };
   } catch {
