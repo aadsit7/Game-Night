@@ -20,7 +20,6 @@ import {
   COUNTRY_CHIP_SORT,
   COUNTRY_INTERACTIVE_LAYERS,
   COUNTRY_LAYERS,
-  COUNT_BADGE_TEXT_SIZE,
   COUNTRIES_SOURCE_MAXZOOM,
   COUNTRIES_URL,
   COUNTRY_BEFORE_IDS,
@@ -52,8 +51,10 @@ import {
   assetUrl,
   clusterIconSize,
   countryChipSize,
+  countBadgeIconSize,
   countBadgeOffset,
   countBadgeTextOffset,
+  countBadgeTextSize,
   labelOpacity,
   labelSortKey,
   loadMapLibre,
@@ -382,12 +383,16 @@ function installStyleLayers(
         filter: ["!=", ["get", "label"], ""],
         layout: {
           "icon-image": COUNT_BADGE_IMAGE,
+          /* The badge and its number ride the chip's own size curve. Without
+             this the badge stays full-size while the chip shrinks for globe
+             zoom — a badge as big as its chip, floating half off it. */
+          "icon-size": countBadgeIconSize("country"),
           "icon-offset": countBadgeOffset(),
           "icon-allow-overlap": true,
           "icon-ignore-placement": true,
           "text-field": ["get", "label"],
           "text-font": FONT_BOLD,
-          "text-size": COUNT_BADGE_TEXT_SIZE,
+          "text-size": countBadgeTextSize("country"),
           "text-offset": countBadgeTextOffset(),
           "text-allow-overlap": true,
           "text-ignore-placement": true,
@@ -435,12 +440,15 @@ function installStyleLayers(
       filter: ["has", "point_count"],
       layout: {
         "icon-image": COUNT_BADGE_IMAGE,
+        // Same rule as the country badge: chip, badge and number are one
+        // object, so all three scale on the cluster chip's curve.
+        "icon-size": countBadgeIconSize("cluster"),
         "icon-offset": countBadgeOffset(),
         "icon-allow-overlap": true,
         "icon-ignore-placement": true,
         "text-field": ["get", "point_count_abbreviated"],
         "text-font": FONT_BOLD,
-        "text-size": COUNT_BADGE_TEXT_SIZE,
+        "text-size": countBadgeTextSize("cluster"),
         "text-offset": countBadgeTextOffset(),
         "text-allow-overlap": true,
         "text-ignore-placement": true,
@@ -725,6 +733,22 @@ export function TravelGlobe({
       mapRef.current = map;
       map.touchZoomRotate.disableRotation();
       map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+
+      /* The compact control arrives *open*, laying a strip of credits across
+         the first sight of the planet — and straight under the map-view
+         toggle. Fold it the way its own ⓘ button does; the credits stay one
+         tap away, and the control still reopens on demand. */
+      try {
+        const attrib = map
+          .getContainer()
+          .querySelector("details.maplibregl-ctrl-attrib.maplibregl-compact-show");
+        if (attrib) {
+          attrib.setAttribute("open", "");
+          attrib.classList.remove("maplibregl-compact-show");
+        }
+      } catch {
+        // Cosmetic only: an unfamiliar control build keeps its default.
+      }
 
       // The sky follows every camera move — that is what makes it a sky
       // rather than a backdrop: turn the globe and the heavens turn with you.

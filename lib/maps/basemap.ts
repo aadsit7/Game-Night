@@ -306,6 +306,40 @@ export const markerSortKey = (selected: ExpressionSpecification): ExpressionSpec
 ];
 
 /**
+ * The two chip families' size curves, as data rather than as expressions.
+ *
+ * Each is written once and read twice: once to size the chip, once to size
+ * the count badge that hangs off it. A badge that rides *exactly* its chip's
+ * curve keeps the same geometry at every zoom — same overlap, same shoulder —
+ * because `icon-offset` is measured in the icon's own pixels and multiplied
+ * by `icon-size`. The old badge had no curve at all, which at globe zoom left
+ * a full-size badge floating beside a two-thirds-size chip: nearly as big as
+ * the mark it was annotating, and barely attached to it.
+ */
+const CLUSTER_CHIP_STOPS: ReadonlyArray<readonly [number, number]> = [
+  [0, 0.76],
+  [3, 0.94],
+  [8, 1.14],
+];
+
+const COUNTRY_CHIP_STOPS: ReadonlyArray<readonly [number, number]> = [
+  [0, 0.86],
+  [3, 1.02],
+  [6, 0.88],
+];
+
+const zoomScale = (
+  stops: ReadonlyArray<readonly [number, number]>,
+  factor = 1,
+): ExpressionSpecification =>
+  [
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    ...stops.flatMap(([zoom, value]) => [zoom, value * factor]),
+  ] as ExpressionSpecification;
+
+/**
  * A country's mark, which has to survive being one of forty.
  *
  * Bigger than a place's chip at globe zoom — this is the mark the whole view
@@ -313,17 +347,7 @@ export const markerSortKey = (selected: ExpressionSpecification): ExpressionSpec
  * held back as the map becomes a map, where the fill and the coastline have
  * taken over the job of saying which country you are looking at.
  */
-export const countryChipSize = (): ExpressionSpecification => [
-  "interpolate",
-  ["linear"],
-  ["zoom"],
-  0,
-  0.86,
-  3,
-  1.02,
-  6,
-  0.88,
-];
+export const countryChipSize = (): ExpressionSpecification => zoomScale(COUNTRY_CHIP_STOPS);
 
 /**
  * Which country's mark is on top where two overlap.
@@ -357,17 +381,15 @@ export const COUNTRY_CHIP_OPACITY: ExpressionSpecification = [
  * is still Portugal, and the flag is what says so. Size and a counted badge
  * are what say "four".
  */
-export const clusterIconSize = (): ExpressionSpecification => [
-  "interpolate",
-  ["linear"],
-  ["zoom"],
-  0,
-  0.76,
-  3,
-  0.94,
-  8,
-  1.14,
-];
+export const clusterIconSize = (): ExpressionSpecification => zoomScale(CLUSTER_CHIP_STOPS);
+
+/** The two chips a count badge can hang off, each with its own size curve. */
+export type CountBadgeHost = "cluster" | "country";
+
+const HOST_CHIP_STOPS: Record<CountBadgeHost, ReadonlyArray<readonly [number, number]>> = {
+  cluster: CLUSTER_CHIP_STOPS,
+  country: COUNTRY_CHIP_STOPS,
+};
 
 /**
  * Where the count badge hangs off the chip.
@@ -380,10 +402,12 @@ export const clusterIconSize = (): ExpressionSpecification => [
  * `icon-offset` is in the icon's own pixels and scales with `icon-size`;
  * `text-offset` is in ems of the text size. They have to describe the same
  * point on screen or the number floats off its badge, so both are derived
- * here from one distance rather than tuned separately.
+ * here from one distance rather than tuned separately — and the badge's
+ * icon-size and text-size both ride the host chip's own curve, which is what
+ * keeps all three (chip, badge, number) moving as one object through a zoom.
  */
-export const COUNT_BADGE_NUDGE = 13;
-export const COUNT_BADGE_TEXT_SIZE = 11.5;
+export const COUNT_BADGE_NUDGE = 11.5;
+export const COUNT_BADGE_TEXT_SIZE = 10.5;
 
 export const countBadgeOffset = (): [number, number] => [COUNT_BADGE_NUDGE, -COUNT_BADGE_NUDGE];
 
@@ -391,6 +415,12 @@ export const countBadgeTextOffset = (): [number, number] => [
   COUNT_BADGE_NUDGE / COUNT_BADGE_TEXT_SIZE,
   -COUNT_BADGE_NUDGE / COUNT_BADGE_TEXT_SIZE,
 ];
+
+export const countBadgeIconSize = (host: CountBadgeHost): ExpressionSpecification =>
+  zoomScale(HOST_CHIP_STOPS[host]);
+
+export const countBadgeTextSize = (host: CountBadgeHost): ExpressionSpecification =>
+  zoomScale(HOST_CHIP_STOPS[host], COUNT_BADGE_TEXT_SIZE);
 
 /**
  * The halo under the selected chip.

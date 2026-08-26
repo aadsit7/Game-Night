@@ -43,6 +43,7 @@ const SPEC = {
   "symbol-sort-key": styleSpec.layout_symbol["symbol-sort-key"],
   "icon-size": styleSpec.layout_symbol["icon-size"],
   "icon-image": styleSpec.layout_symbol["icon-image"],
+  "text-size": styleSpec.layout_symbol["text-size"],
 };
 
 /**
@@ -109,6 +110,10 @@ check("the cluster's own layout compiles", () => {
   valid("icon-size", paint.clusterIconSize());
   validOffset("icon-offset", paint.countBadgeOffset());
   validOffset("text-offset", paint.countBadgeTextOffset());
+  for (const host of ["cluster", "country"]) {
+    valid("icon-size", paint.countBadgeIconSize(host));
+    valid("text-size", paint.countBadgeTextSize(host));
+  }
 });
 
 check("a cluster reads as bigger than one place, at every zoom", () => {
@@ -121,16 +126,69 @@ check("a cluster reads as bigger than one place, at every zoom", () => {
   }
 });
 
-check("the count sits on its badge rather than beside it", () => {
+check("the count sits on its badge rather than beside it, at every zoom", () => {
   /* Two properties in two different units describing one point on screen:
-     `icon-offset` in the icon's pixels, `text-offset` in ems of the text. Drift
-     between them is invisible in code and obvious on the map — a number
-     hanging off the edge of the disc it is supposed to be inside. */
+     `icon-offset` in the icon's pixels *multiplied by its icon-size*,
+     `text-offset` in ems of the text size. Both now scale through a zoom, so
+     agreement is checked where it actually has to hold — per zoom, per chip —
+     rather than at the single implicit scale the old check assumed. Drift is
+     invisible in code and obvious on the map: a number hanging off the edge
+     of the disc it is supposed to be inside. */
   const [iconX, iconY] = paint.countBadgeOffset();
   const [textX, textY] = paint.countBadgeTextOffset();
-  const size = paint.COUNT_BADGE_TEXT_SIZE;
-  assert.ok(Math.abs(textX * size - iconX) < 0.5, `badge x is ${iconX}px, its number is ${(textX * size).toFixed(1)}px`);
-  assert.ok(Math.abs(textY * size - iconY) < 0.5, `badge y is ${iconY}px, its number is ${(textY * size).toFixed(1)}px`);
+  for (const host of ["cluster", "country"]) {
+    const icon = compile("icon-size", paint.countBadgeIconSize(host));
+    const text = compile("text-size", paint.countBadgeTextSize(host));
+    for (const zoom of [0, 1, 3, 5, 8]) {
+      const iconSize = icon.value.evaluate({ zoom }, {});
+      const textSize = text.value.evaluate({ zoom }, {});
+      assert.ok(
+        Math.abs(textX * textSize - iconX * iconSize) < 0.5,
+        `${host} at zoom ${zoom}: badge x is ${(iconX * iconSize).toFixed(1)}px, its number is ${(textX * textSize).toFixed(1)}px`,
+      );
+      assert.ok(
+        Math.abs(textY * textSize - iconY * iconSize) < 0.5,
+        `${host} at zoom ${zoom}: badge y is ${(iconY * iconSize).toFixed(1)}px, its number is ${(textY * textSize).toFixed(1)}px`,
+      );
+    }
+  }
+});
+
+check("the count badge rides its chip's shoulder, as a badge and not a second chip", () => {
+  /* The badge is its own layer with its own icon-size, and nothing structural
+     ties it to the chip it annotates — only these numbers do. So: at every
+     zoom, for both chips a count can hang off, the badge's centre must sit on
+     the chip's rim (overlapping it, not floating beside it, not squatting on
+     its middle), and the badge itself must stay decisively smaller than the
+     chip. The old badge failed all three at globe zoom, which is where the
+     app opens. */
+  for (const host of ["cluster", "country"]) {
+    const chipSize = compile(
+      "icon-size",
+      host === "cluster" ? paint.clusterIconSize() : paint.countryChipSize(),
+    );
+    const badgeSize = compile("icon-size", paint.countBadgeIconSize(host));
+    const [x, y] = paint.countBadgeOffset();
+    for (const zoom of [0, 1, 3, 5, 8]) {
+      const chip = chipSize.value.evaluate({ zoom }, {});
+      const badge = badgeSize.value.evaluate({ zoom }, {});
+      const centre = Math.hypot(x, y) * badge;
+      const chipRadius = markers.MARKER_RADIUS * chip;
+      const badgeRadius = markers.COUNT_BADGE_RADIUS * badge;
+      assert.ok(
+        centre < chipRadius + badgeRadius * 0.5,
+        `${host} at zoom ${zoom}: the badge floats ${centre.toFixed(1)}px out on a ${chipRadius.toFixed(1)}px chip`,
+      );
+      assert.ok(
+        centre > badgeRadius,
+        `${host} at zoom ${zoom}: the badge sits on the middle of its chip`,
+      );
+      assert.ok(
+        badgeRadius < chipRadius * 0.75,
+        `${host} at zoom ${zoom}: a ${badgeRadius.toFixed(1)}px badge on a ${chipRadius.toFixed(1)}px chip is a second chip`,
+      );
+    }
+  }
 });
 
 check("the badge hangs clear of the marks the chip already carries", () => {
