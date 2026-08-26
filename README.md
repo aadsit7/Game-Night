@@ -32,19 +32,31 @@ Six ways to look at the same travel history:
   button for the full-screen show, the same gallery strip the cards use for
   browsing one photo or video at a time, and a link through to the full card.
   Nothing with an empty gallery appears, so everything here is watchable.
-- **Stats** — the journal as a scoreboard. *Your regulars* ranks the places
-  been to more than once — the theme park that keeps winning; *where you keep
-  going* reads the same stays a country or a continent at a time; and a
-  years-by-countries matrix crosses your busiest countries with the calendar,
-  a contribution graph for travel. A **lens** over the whole tab filters it
-  three ways: a year, a kind of trip (the sheet's own words — Family, Solo,
-  whatever was typed), and whether visits or days lead the ranking; every
-  drill answers through the same lens, titled to say so ("Japan · 2024 ·
-  Family"). Every row and every cell drills down to the places behind the
-  number, and each of those opens its own card — it is a way through the
-  collection, not a trophy shelf. Only stays that actually happened count:
-  wishlist entries, upcoming bookings and years spent living somewhere never
-  inflate a visit tally.
+- **Stats** — the journal as a dashboard, read top to bottom the way the
+  questions arrive. Four figures lead — trips, days away, countries, places —
+  each against the same figure a year earlier when a year is in the lens
+  ("6 more than 2023"). *Highlights* holds the answers a leaderboard cannot:
+  your longest trip, a typical one, the month you are away most, how far you
+  have got from home, how long since the last trip. *On the horizon* is the
+  other direction — what is booked, and how much wishlist is waiting. *When
+  you travel* draws twelve months of rhythm; *year by year* is a bar per year
+  (tap one to look through it, a dot marks the years that added a country you
+  had never been to) or the same history as a countries-by-years grid, a
+  contribution graph for travel. *Your regulars* ranks the places been to more
+  than once; *where you keep going* reads the same stays a country or a
+  continent at a time, with a bar apiece and a strip of seven continents above
+  them.
+  A **lens** covers the whole tab: a year, a part of the world, a kind of trip
+  (the sheet's own words — Family, Solo, whatever was typed), and whether
+  visits or days lead the ranking. The years ride a rail that stays on screen;
+  the rest lives one tap behind a button that wears a dot when it is holding
+  something, and the continent strip doubles as the region picker. Every drill
+  answers through the same lens, titled to say so ("Japan · 2024 · Family").
+  Every row, cell and bar drills down to the places behind the number, and each
+  of those opens its own card — it is a way through the collection, not a
+  trophy shelf. Only stays that actually happened count: wishlist entries,
+  upcoming bookings and years spent living somewhere never inflate a visit
+  tally.
 
 Built for a phone in one hand. The system back gesture unwinds whatever is
 on screen — a photo closes before the card it sits on, a card before the
@@ -58,7 +70,16 @@ you have **been**, or somewhere you **want to go**. A wishlist entry has no
 visit date, stays off the timeline, does not count towards the countries you
 have seen, and shows on the globe in its own colour. Either kind can be marked
 a **favourite** — one tap from the card, the pin or the detail sheet — and
-Places filters to favourites, been, or still to go without opening a menu.
+Places filters to favourites, been, lived, or still to go without opening a
+menu.
+
+Somewhere you **lived** is the third answer, and it is not a fourth kind of
+place: it is a visit whose status says lived rather than visited, which is how
+the sheet has always spelled it. Ticking *I lived here during this time* on any
+visit is what puts a place in the **Lived** slice, marks its card, and gives
+the Stats tab an origin to measure "furthest from home" from. The chip only
+appears once you have lived somewhere, and a residence never counts as a trip:
+six years in one city is not six years of travelling.
 
 A place you keep going back to stays **one place with many visits**. Its card
 opens on the numbers — visits, days total, first visited, last visit — above
@@ -434,6 +455,7 @@ components/
   globe/                 TravelGlobe, overlays, preview sheet, fallback
   timeline/              chronology view and its scrubber
   places/                list, cards, search, filters, stats
+  insights/              the Stats dashboard: summary, highlights, charts
   trips/                 trip list, trip detail by day, trip form
   sync/                  setup screen, connection form, settings sheet
   place/                 detail, form, location search, photos, pin bar
@@ -442,6 +464,7 @@ components/
 lib/
   maps/                  basemap config and layer ids, geocoding
   trips/                 day numbering, trip summaries and bulk tagging
+  insights/              the Stats tab's arithmetic, pure and tested
   storage/               PlaceRepository seam, sheetPlaceRepository, photoStore
   store/                 PlacesProvider, draft
   sheets/                sheetsClient (all network), mapping, queue, cache,

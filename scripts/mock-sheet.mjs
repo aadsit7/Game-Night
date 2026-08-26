@@ -114,6 +114,11 @@ const places = [
   makePlace({ "Place ID": "PL-0005", "Place Name": "Marrakesh", "Status": "Been", "Country": "Morocco", "Country Code": "MA", "City": "Marrakesh", "Latitude": "31.629600", "Longitude": "-7.981000", "First Visited Date": "2018-10-05", "Last Visited Date": "2018-10-12", "Personal Notes": "Jemaa el-Fnaa after dark.", "Created At": "2018-10-20", "Updated At": "2018-10-20", "Sync Version": 1, "Archived?": "No", "Deleted?": "No", "Place Type": "City" }),
   makePlace({ "Place ID": "PL-0006", "Place Name": "Banff", "Status": "Been", "Country": "Canada", "Country Code": "CA", "Region / State": "Alberta", "City": "Banff", "Latitude": "51.178300", "Longitude": "-115.570800", "First Visited Date": "2021-07-18", "Last Visited Date": "2021-07-25", "Personal Notes": "Moraine Lake is worth the 5am alarm.", "Created At": "2021-08-02", "Updated At": "2021-08-02", "Sync Version": 1, "Archived?": "No", "Deleted?": "No", "Place Type": "Park" }),
   makePlace({ "Place ID": "PL-0007", "Place Name": "Buenos Aires", "Status": "Been", "Country": "Argentina", "Country Code": "AR", "City": "Buenos Aires", "Latitude": "-34.603700", "Longitude": "-58.381600", "First Visited Date": "2017-03-08", "Last Visited Date": "2017-03-20", "Personal Notes": "San Telmo on a Sunday.", "Created At": "2017-04-01", "Updated At": "2017-04-01", "Sync Version": 1, "Archived?": "No", "Deleted?": "No", "Place Type": "City" }),
+  // Somewhere lived rather than visited, so the Places tab's "Lived" slice and
+  // the Stats tab's idea of home have something real to work from.
+  makePlace({ "Place ID": "PL-0009", "Place Name": "Salt Lake City", "Status": "Been", "Country": "United States", "Country Code": "US", "Region / State": "Utah", "City": "Salt Lake City", "Latitude": "40.760800", "Longitude": "-111.891000", "Personal Notes": "Home for six years.", "Created At": "2015-01-05", "Updated At": "2021-06-01", "Sync Version": 1, "Archived?": "No", "Deleted?": "No", "Place Type": "City" }),
+  // A wish, with a booking against it: the horizon card is about both.
+  makePlace({ "Place ID": "PL-0010", "Place Name": "Seoul", "Status": "Want to go", "Country": "South Korea", "Country Code": "KR", "City": "Seoul", "Latitude": "37.566500", "Longitude": "126.978000", "Personal Notes": "Every year I say next year.", "Created At": "2025-02-01", "Updated At": "2025-02-01", "Sync Version": 1, "Archived?": "No", "Deleted?": "No", "Place Type": "City" }),
   // A soft-deleted row: the app must not show it, and it must stay in the sheet.
   makePlace({ "Place ID": "PL-0008", "Place Name": "Somewhere I removed", "Status": "Been", "Country": "France", "Country Code": "FR", "Latitude": "48.856600", "Longitude": "2.352200", "Created At": "2020-01-01", "Updated At": "2020-02-01", "Sync Version": 2, "Archived?": "No", "Deleted?": "Yes" }),
 ];
@@ -141,6 +146,29 @@ const visits = [
     "Place ID": "PL-0002", "Visit ID": "VIS-0002", "Trip ID": "TRIP-0001", "Visit Status": "Been",
     "Start Date": "2023-09-12", "End Date": "2023-09-19", "Days": "8",
     "Year": "2023", "Month": "September", "Season": "Autumn/Fall", "Trip Type": "Couple",
+    "Archived?": "No", "Deleted?": "No",
+  }),
+  // Two years of living somewhere, plus a stay there since. A residence is
+  // never a "visit": it must not reach a leaderboard or a days-away total.
+  makeVisit({
+    "Place ID": "PL-0009", "Visit ID": "VIS-0004", "Visit Status": "Lived there",
+    "Start Date": "2015-01-05", "End Date": "2021-06-01", "Days": "2340",
+    "Year": "2015", "Month": "January", "Season": "Winter",
+    "Highlights": "Six years of Wasatch mornings.",
+    "Archived?": "No", "Deleted?": "No",
+  }),
+  makeVisit({
+    "Place ID": "PL-0009", "Visit ID": "VIS-0005", "Visit Status": "Been",
+    "Start Date": "2024-12-20", "End Date": "2024-12-27", "Days": "8",
+    "Year": "2024", "Month": "December", "Season": "Winter", "Trip Type": "Family",
+    "Highlights": "Back for Christmas.",
+    "Archived?": "No", "Deleted?": "No",
+  }),
+  // Booked, not been: it belongs on the horizon and nowhere else.
+  makeVisit({
+    "Place ID": "PL-0010", "Visit ID": "VIS-0006", "Visit Status": "Planned",
+    "Start Date": "2027-04-10", "End Date": "2027-04-20", "Days": "11",
+    "Year": "2027", "Month": "April", "Season": "Spring", "Trip Type": "Couple",
     "Archived?": "No", "Deleted?": "No",
   }),
   // A second stop inside the same trip, so the trip sheet has a real

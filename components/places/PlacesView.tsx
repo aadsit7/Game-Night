@@ -3,7 +3,8 @@
 import { Fragment, useCallback, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
-  Cloud, CloudOff, Compass, Heart, Loader2, Luggage, MapPin, Plus, RefreshCw, SearchX, Trash2,
+  Cloud, CloudOff, Compass, Heart, Home, Loader2, Luggage, MapPin, Plus, RefreshCw, SearchX,
+  Trash2,
 } from "lucide-react";
 
 import { PlaceCard } from "@/components/places/PlaceCard";
@@ -17,10 +18,17 @@ import { FlagChip } from "@/components/ui/FlagChip";
 import { SwipeRow } from "@/components/ui/SwipeRow";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import { groupPlacesByCountry } from "@/lib/places/grouping";
+import { residencePlaceIds } from "@/lib/places/visits";
 import { visitTimestamp } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
 import type { SheetStatus } from "@/lib/storage/sheetPlaceRepository";
-import { PLACE_FILTER_LABELS, type PlaceFilter, type PlaceSort, type VisitedPlace } from "@/types/place";
+import {
+  PLACE_FILTER_LABELS,
+  type PlaceFilter,
+  type PlaceSort,
+  type PlaceVisit,
+  type VisitedPlace,
+} from "@/types/place";
 import type { Trip } from "@/types/trip";
 
 /**
@@ -73,6 +81,7 @@ function sortPlaces(places: VisitedPlace[], sort: PlaceSort): VisitedPlace[] {
 
 export function PlacesView({
   places,
+  visits,
   countries,
   stats,
   loading,
@@ -92,6 +101,12 @@ export function PlacesView({
   onSelectingChange,
 }: {
   places: VisitedPlace[];
+  /**
+   * Every logged visit. The list reads them for one thing only: which places
+   * you *lived* in. That is a Visit Status word rather than a field on a
+   * place, so the "Lived" slice cannot be answered from `places` alone.
+   */
+  visits: PlaceVisit[];
   countries: Array<{ key: string; label: string; code?: string; count: number }>;
   stats: { saved: number; visited: number; countries: number };
   loading: boolean;
@@ -153,11 +168,19 @@ export function PlacesView({
 
   const debouncedQuery = useDebouncedValue(query, 140);
 
+  /*
+   * Which places you lived in, read once from the visits rather than per row.
+   * A residence is a Visit Status word, so this is the only thing on the
+   * screen that cannot be answered from a place on its own.
+   */
+  const livedIds = useMemo(() => residencePlaceIds(visits), [visits]);
+
   const visible = useMemo(() => {
     const term = debouncedQuery.trim().toLowerCase();
     let result = places;
     if (filter === "favorites") result = result.filter((place) => place.favorite);
     else if (filter === "been") result = result.filter((place) => !place.wantToGo);
+    else if (filter === "lived") result = result.filter((place) => livedIds.has(place.id));
     else if (filter === "wantToGo") result = result.filter((place) => place.wantToGo);
     if (country) {
       result = result.filter(
@@ -166,7 +189,7 @@ export function PlacesView({
     }
     if (term) result = result.filter((place) => matches(place, term));
     return sortPlaces(result, sort);
-  }, [places, debouncedQuery, sort, country, filter]);
+  }, [places, debouncedQuery, sort, country, filter, livedIds]);
 
   /** Only the counts worth a chip: an empty one is a dead end, so it is hidden. */
   const counts = useMemo(
@@ -174,9 +197,10 @@ export function PlacesView({
       all: places.length,
       favorites: places.filter((place) => place.favorite).length,
       been: places.filter((place) => !place.wantToGo).length,
+      lived: places.filter((place) => livedIds.has(place.id)).length,
       wantToGo: places.filter((place) => place.wantToGo).length,
     }),
-    [places],
+    [places, livedIds],
   );
 
   const filtersActive = country !== null || sort !== "country";
@@ -328,19 +352,27 @@ export function PlacesView({
             />
 
             {/*
-              The two questions a travel app is actually asked — what did I
-              love, and where do I still want to go — answered in one tap
-              rather than from inside a sort-and-filter sheet.
+              The questions a travel app is actually asked — what did I love,
+              where have I been, where did I live, and where do I still want
+              to go — answered in one tap rather than from inside a
+              sort-and-filter sheet. "Lived" appears only for someone who has
+              lived somewhere; an empty slice is a dead end.
             */}
             <div className="-mx-4 mt-2 flex gap-1.5 overflow-x-auto scrollbar-none px-4">
-              {(["all", "favorites", "been", "wantToGo"] as PlaceFilter[])
+              {(["all", "favorites", "been", "lived", "wantToGo"] as PlaceFilter[])
                 .filter((key) => key === "all" || counts[key] > 0)
                 .map((key) => (
                   <FilterChip
                     key={key}
                     active={filter === key}
                     count={counts[key]}
-                    icon={key === "favorites" ? <Heart size={13} aria-hidden="true" /> : null}
+                    icon={
+                      key === "favorites" ? (
+                        <Heart size={13} aria-hidden="true" />
+                      ) : key === "lived" ? (
+                        <Home size={13} aria-hidden="true" />
+                      ) : null
+                    }
                     label={PLACE_FILTER_LABELS[key]}
                     onPress={() => setFilter(key)}
                   />
@@ -459,6 +491,7 @@ export function PlacesView({
                   >
                     <PlaceCard
                       place={place}
+                      lived={livedIds.has(place.id)}
                       priority={priorityIds.has(place.id)}
                       onOpen={() => onOpenPlace(place.id)}
                       onActions={() => onPlaceActions(place.id)}

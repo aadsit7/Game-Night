@@ -116,6 +116,17 @@ export function angularDistance(a: LngLat, b: LngLat): number {
 }
 
 /**
+ * Kilometres per degree of great circle, on a sphere the size of the Earth.
+ * `6371 km · π / 180` — the same mean radius every navigation library uses.
+ */
+export const KM_PER_DEGREE = 111.19492664455873;
+
+/** Great-circle distance between two points, in kilometres. */
+export function distanceKm(a: LngLat, b: LngLat): number {
+  return angularDistance(a, b) * KM_PER_DEGREE;
+}
+
+/**
  * The point a given angular distance from `centre`, along a given bearing.
  *
  * Used to draw the horizon as a ring of points, which turns "how far back do I

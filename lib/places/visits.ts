@@ -108,6 +108,52 @@ export function isResidenceVisit(visit: Pick<PlaceVisit, "status">): boolean {
   return isResidenceStatus(visit.status);
 }
 
+/**
+ * Every place with a residence period against it.
+ *
+ * "Somewhere I lived" is not a field on a place — it is a Dates_Visits row
+ * whose status says lived rather than visited — so the answer has to be read
+ * from the visits, once, and handed to the list as a set. Deleted rows are
+ * skipped defensively: the repository already hides tombstones, but this is
+ * also called with whatever array a caller happens to hold.
+ */
+export function residencePlaceIds(visits: PlaceVisit[]): Set<string> {
+  const ids = new Set<string>();
+  for (const visit of visits) {
+    if (visit.deletedAt || !isResidenceVisit(visit)) continue;
+    ids.add(visit.placeId);
+  }
+  return ids;
+}
+
+/**
+ * The most recent residence period across every place — "home", as far as
+ * this app can honestly know it.
+ *
+ * Ranked by when the residence ended, falling back to when it started, so a
+ * dated period always beats an undated one and the latest address wins. A
+ * missing end date is read as a same-day row rather than as "still there",
+ * which is the reading every other visit gets; ties fall to whichever row was
+ * written most recently.
+ */
+export function latestResidence(visits: PlaceVisit[]): PlaceVisit | null {
+  let best: PlaceVisit | null = null;
+  let bestKey = "";
+  for (const visit of visits) {
+    if (visit.deletedAt || !isResidenceVisit(visit)) continue;
+    const key = visit.endDate ?? visit.startDate ?? "";
+    if (
+      best === null ||
+      key > bestKey ||
+      (key === bestKey && visit.updatedAt > best.updatedAt)
+    ) {
+      best = visit;
+      bestKey = key;
+    }
+  }
+  return best;
+}
+
 /** A place's residence periods and its ordinary stays, told apart once. */
 export function splitResidences(visits: PlaceVisit[]): {
   residences: PlaceVisit[];
@@ -137,9 +183,15 @@ export function isPlannedStatus(status: string | undefined): boolean {
   return word === "planned" || word === "booked" || word === "considering";
 }
 
-/** A stay that is still ahead, by its own date. */
-export function isUpcomingVisit(visit: PlaceVisit): boolean {
-  return Boolean(visit.startDate && visit.startDate > todayCalendarDate());
+/**
+ * A stay that is still ahead, by its own date.
+ *
+ * `today` is a parameter rather than a call so the same rule can be asked
+ * about a fixed day — which is what makes everything derived from it testable
+ * without waiting for the calendar to come round.
+ */
+export function isUpcomingVisit(visit: PlaceVisit, today: string = todayCalendarDate()): boolean {
+  return Boolean(visit.startDate && visit.startDate > today);
 }
 
 export type VisitStats = {

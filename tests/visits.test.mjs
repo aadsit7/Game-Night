@@ -31,6 +31,8 @@ const {
   visitStatusFor,
   isPlannedStatus,
   derivedVisitCells,
+  residencePlaceIds,
+  latestResidence,
 } = await import("../lib/places/visits.ts");
 const { findDuplicatePlace, normalizePlaceName } = await import("../lib/places/dedupe.ts");
 
@@ -409,6 +411,49 @@ test("uploads attach to their place without repeating what it has", () => {
   // A place that has a cover keeps it, and doesn't repeat it in photos.
   assert.equal(withExtra.coverImage, "https://example.com/cover.jpg");
   assert.deepEqual(withExtra.photos, ["https://example.com/b.jpg"]);
+});
+
+test("residences are read from the visit rows, not from the place", () => {
+  const rows = [
+    { id: "VIS-1", placeId: "PL-1", startDate: "2015-01-01", endDate: "2017-06-30",
+      status: "Lived there", createdAt: "2020-01-01", updatedAt: "2020-01-01" },
+    // The same place also gets visited; one residence row is enough.
+    { id: "VIS-2", placeId: "PL-1", startDate: "2022-03-01", status: "Been",
+      createdAt: "2020-01-01", updatedAt: "2020-01-01" },
+    // Spelled the way a person types it.
+    { id: "VIS-3", placeId: "PL-2", startDate: "2019-01-01", status: "living here",
+      createdAt: "2020-01-01", updatedAt: "2020-01-01" },
+    // Somewhere only ever visited.
+    { id: "VIS-4", placeId: "PL-3", startDate: "2021-05-01", status: "Been",
+      createdAt: "2020-01-01", updatedAt: "2020-01-01" },
+    // A deleted residence is not an address.
+    { id: "VIS-5", placeId: "PL-4", startDate: "2018-01-01", status: "Lived there",
+      createdAt: "2020-01-01", updatedAt: "2020-01-01", deletedAt: "2021-01-01" },
+  ];
+
+  const lived = residencePlaceIds(rows);
+  assert.equal(lived.size, 2);
+  assert.ok(lived.has("PL-1"));
+  assert.ok(lived.has("PL-2"));
+  assert.ok(!lived.has("PL-3"));
+  assert.ok(!lived.has("PL-4"));
+});
+
+test("home is the most recent residence, and undated ones never win", () => {
+  const rows = [
+    { id: "VIS-1", placeId: "PL-1", startDate: "2015-01-01", endDate: "2017-06-30",
+      status: "Lived there", createdAt: "2020-01-01", updatedAt: "2020-01-01" },
+    { id: "VIS-2", placeId: "PL-2", startDate: "2017-07-01", endDate: "2023-02-01",
+      status: "Lived there", createdAt: "2020-01-01", updatedAt: "2020-01-01" },
+    { id: "VIS-3", placeId: "PL-3", status: "Lived there",
+      createdAt: "2020-01-01", updatedAt: "2024-01-01" },
+    { id: "VIS-4", placeId: "PL-4", startDate: "2024-01-01", status: "Been",
+      createdAt: "2020-01-01", updatedAt: "2020-01-01" },
+  ];
+
+  assert.equal(latestResidence(rows)?.placeId, "PL-2");
+  // Nowhere lived is a perfectly ordinary journal.
+  assert.equal(latestResidence([rows[3]]), null);
 });
 
 if (failures > 0) {
