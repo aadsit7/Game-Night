@@ -1913,6 +1913,8 @@ export function AppShell() {
           >
             <PlacesViewM
               places={places}
+              /* Only ever read for one thing: which places you lived in. */
+              visits={visits}
               countries={countries}
               stats={stats}
               loading={status === "loading"}

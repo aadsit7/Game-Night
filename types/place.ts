@@ -111,13 +111,23 @@ export type VisitChanges = Partial<Omit<PlaceVisit, "id" | "placeId" | "createdA
 /** A partial patch. `id` and `createdAt` are immutable once assigned. */
 export type PlaceChanges = Partial<Omit<VisitedPlace, "id" | "createdAt">>;
 
-/** The two ways to slice the collection, beyond a country. */
-export type PlaceFilter = "all" | "favorites" | "been" | "wantToGo";
+/**
+ * The ways to slice the collection, beyond a country.
+ *
+ * Three of them describe what a place *is* to you — somewhere been, somewhere
+ * lived, somewhere still to go — and one describes how much it mattered. They
+ * are deliberately not exclusive: a place you lived in is also a place you
+ * have been, and either can be a favourite.
+ */
+export type PlaceFilter = "all" | "favorites" | "been" | "lived" | "wantToGo";
 
 export const PLACE_FILTER_LABELS: Record<PlaceFilter, string> = {
   all: "All",
   favorites: "Favorites",
   been: "Been",
+  // "Lived", not "Lived in": it rides a chip beside four others on the width
+  // of a phone, and the shorter word says the same thing.
+  lived: "Lived",
   wantToGo: "Want to go",
 };
 

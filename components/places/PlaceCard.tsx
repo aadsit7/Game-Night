@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Heart, MoreHorizontal } from "lucide-react";
+import { Check, Heart, Home, MoreHorizontal } from "lucide-react";
 
 import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
@@ -33,6 +33,7 @@ export function PlaceCard({
   place,
   onOpen,
   onActions,
+  lived = false,
   priority,
   selecting = false,
   selected = false,
@@ -41,6 +42,12 @@ export function PlaceCard({
   place: VisitedPlace;
   onOpen: () => void;
   onActions: () => void;
+  /**
+   * Somewhere you lived, not just somewhere you went. Passed in rather than
+   * read here: it comes from the visit rows, and a card holding two hundred
+   * siblings must not each go looking through them.
+   */
+  lived?: boolean;
   priority?: boolean;
   /** Tapping the card ticks it instead of opening it. */
   selecting?: boolean;
@@ -85,6 +92,18 @@ export function PlaceCard({
     </span>
   ) : null;
 
+  /*
+   * The one word that changes what a place *is*: you didn't visit here, you
+   * lived here. It rides the caption line beside the flag rather than taking
+   * a row of its own, for the same reason the wishlist mark does.
+   */
+  const livedChip = lived ? (
+    <span className="mr-1.5 inline-flex items-center gap-0.5 align-[-1px] font-medium text-accent">
+      <Home size={12} aria-hidden="true" />
+      <span>Lived</span>
+    </span>
+  ) : null;
+
   const press = selecting ? onToggleSelect : onOpen;
   // The tick is a state of the card, so the card carries the pressed state
   // rather than a separate control the thumb has to find.
@@ -122,6 +141,7 @@ export function PlaceCard({
             </h3>
             <p className="mt-1 truncate text-[13.5px] text-ink-2">
               {hasFlag ? <FlagChip countryCode={place.countryCode} className="mr-1.5" /> : null}
+              {livedChip}
               {googleChip}
               {detail}
             </p>
@@ -151,8 +171,9 @@ export function PlaceCard({
             <h3 className="truncate text-[16.5px] font-semibold leading-tight tracking-[-0.02em] text-ink">
               {place.name}
             </h3>
-            {detail || googleChip ? (
+            {detail || googleChip || livedChip ? (
               <p className="mt-0.5 truncate text-[13.5px] leading-snug text-ink-2">
+                {livedChip}
                 {googleChip}
                 {detail}
               </p>

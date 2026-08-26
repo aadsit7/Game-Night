@@ -77,6 +77,12 @@ export type InsightMetric = "stays" | "days";
 export type InsightOptions = {
   year?: number;
   tripType?: string;
+  /**
+   * A continent, spelled the way `continentOf` spells it. Narrows every board
+   * to the places that sit there — "how much of my travelling was Europe?"
+   * asked of the whole tab rather than of one row.
+   */
+  continent?: string;
   metric?: InsightMetric;
 };
 
@@ -87,11 +93,20 @@ export const MATRIX_COUNTRY_LIMIT = 8;
 /** Columns the matrix shows; the scroll keeps older years reachable. */
 export const MATRIX_YEAR_LIMIT = 12;
 
-function countable(visit: PlaceVisit): boolean {
-  return !isResidenceVisit(visit) && !isUpcomingVisit(visit);
+/**
+ * A stay that counts: not a residence, not still ahead of us.
+ *
+ * Exported because the dashboard counts exactly the same thing — one rule for
+ * what "a visit" means, or two boards on the same screen disagree.
+ */
+export function isCountableVisit(visit: PlaceVisit, today?: string): boolean {
+  return !isResidenceVisit(visit) && !isUpcomingVisit(visit, today);
 }
 
-function yearOf(date: string | undefined): number | null {
+const countable = isCountableVisit;
+
+/** The calendar year a date belongs to, or null when there is no usable date. */
+export function yearOf(date: string | undefined): number | null {
   const year = date ? Number(date.slice(0, 4)) : Number.NaN;
   return Number.isInteger(year) && year > 1000 ? year : null;
 }
@@ -101,14 +116,19 @@ function normalType(value: string | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
+/**
+ * Whether a visit was the kind of trip asked for. A visit that never said
+ * what kind of trip it was cannot claim to be a family one — under a type
+ * filter, unlabelled visits sit out.
+ */
+export function matchesTripType(visit: PlaceVisit, tripType: string | undefined): boolean {
+  if (tripType === undefined) return true;
+  return normalType(visit.tripType) === normalType(tripType);
+}
+
 function passesFilters(visit: PlaceVisit, options: InsightOptions): boolean {
   if (options.year !== undefined && yearOf(visit.startDate) !== options.year) return false;
-  // A visit that never said what kind of trip it was cannot claim to be a
-  // family one — under a type filter, unlabelled visits sit out.
-  if (options.tripType !== undefined && normalType(visit.tripType) !== normalType(options.tripType)) {
-    return false;
-  }
-  return true;
+  return matchesTripType(visit, options.tripType);
 }
 
 /** One place folded down to its tally; null when nothing countable happened. */
@@ -118,6 +138,12 @@ export function tallyPlace(
   options: InsightOptions = {},
 ): PlaceTally | null {
   if (place.wantToGo) return null;
+  // The one place the continent lens is applied: `talliesFor` and
+  // `scopeMembers` both come through here, so a board and its drill cannot
+  // end up looking at different halves of the world.
+  if (options.continent !== undefined && continentOf(place.countryCode) !== options.continent) {
+    return null;
+  }
 
   let stays = 0;
   let days = 0;

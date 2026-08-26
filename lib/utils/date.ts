@@ -32,6 +32,14 @@ const WEEKDAYS_LONG = [
   "Saturday",
 ];
 
+/**
+ * Month names for anything that labels a *calendar* rather than a date — the
+ * stats tab's month rhythm, a "busiest month" read-out. Everything that
+ * formats an actual date goes through the functions below instead.
+ */
+export const MONTH_NAMES: readonly string[] = MONTHS_LONG;
+export const MONTH_ABBREVIATIONS: readonly string[] = MONTHS_SHORT;
+
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function parseCalendarDate(value?: string | null): Date | null {
