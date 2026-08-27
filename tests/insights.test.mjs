@@ -163,6 +163,30 @@ test("countries and continents roll the same stays up, twice", () => {
   assert.deepEqual(totals, { places: 4, countries: 3, stays: 7, days: 38 });
 });
 
+test("the Moon is a place you have been and not a country you have seen", () => {
+  const { places, visits } = journal();
+  const base = buildInsights(places, visits);
+
+  const tranquility = place("Tranquility Base", "Moon", undefined);
+  const withMoon = buildInsights(
+    [...places, tranquility],
+    [...visits, visit(tranquility.id, "2026-07-20", "2026-07-21")],
+  );
+
+  // The stay counts, the days count, the place counts.
+  assert.equal(withMoon.totals.places, base.totals.places + 1);
+  assert.equal(withMoon.totals.stays, base.totals.stays + 1);
+  assert.equal(withMoon.totals.days, base.totals.days + 2);
+
+  // "Countries" and "% of the world" do not. Nor does a continent, nor a row
+  // of the years-by-countries matrix.
+  assert.equal(withMoon.totals.countries, base.totals.countries);
+  assert.equal(withMoon.countries.some((row) => row.label === "Moon"), false);
+  assert.equal(withMoon.continents.length, base.continents.length);
+  assert.equal(withMoon.matrix.rows.some((row) => row.label === "Moon"), false);
+  assert.equal(withMoon.matrix.cells.get("moon:2026"), undefined);
+});
+
 test("the matrix holds each country's years, and only years that happened", () => {
   const { places, visits } = journal();
   const { matrix } = buildInsights(places, visits);

@@ -55,6 +55,7 @@ import { makeCoverPhoto, removePlacePhoto } from "@/lib/places/photoEdits";
 import { type InsightScope } from "@/lib/insights/insights";
 import { startAutoLinkSweep } from "@/lib/maps/autoLinkSweep";
 import { reverseGeocode } from "@/lib/maps/geocoding";
+import { isOffWorldPlace } from "@/lib/space/moonPlaces";
 import { sheetPlaceRepository } from "@/lib/storage/sheetPlaceRepository";
 import { LocationError, currentLocation, type Fix } from "@/lib/maps/geolocation";
 import type { MapView } from "@/lib/maps/basemap";
@@ -307,9 +308,41 @@ export function AppShell() {
   }, [draft, trips, resolveTripId]);
 
   const selectedPlace = getPlace(selectedId);
+  /* The selection follows a rename too, not just the lookup above: a place
+     added here is selected under its temporary id, and the pin the globe
+     highlights is chosen by the id this holds. Corrected during render, the
+     way the draft's trip id is — and only ever to an id that names a row, so
+     a deleted place simply stays unfound. */
+  if (selectedId && selectedPlace && selectedPlace.id !== selectedId) {
+    setSelectedId(selectedPlace.id);
+  }
   const topOverlay = overlays[overlays.length - 1] ?? null;
   const detailOverlay = overlays.find((overlay) => overlay.kind === "detail");
   const detailPlace = getPlace(detailOverlay?.kind === "detail" ? detailOverlay.id : null);
+
+  /**
+   * The world the globe should be looking at, when it is not this one.
+   *
+   * Whichever off-Earth place is open — the card in front, or the pin behind
+   * it — is what the camera leaves the planet for. Nothing off Earth is
+   * selected and the globe is an Earth again, on its own, in a second and a
+   * half.
+   */
+  const offWorldPlace = [detailPlace, selectedPlace].find(
+    (place): place is VisitedPlace => Boolean(place) && isOffWorldPlace(place),
+  );
+  const moonFocus = useMemo(
+    () =>
+      offWorldPlace
+        ? {
+            id: offWorldPlace.id,
+            name: offWorldPlace.name,
+            longitude: offWorldPlace.longitude,
+            latitude: offWorldPlace.latitude,
+          }
+        : null,
+    [offWorldPlace],
+  );
   const tripOverlay = overlays.find((overlay) => overlay.kind === "trip");
   const insightOverlay = overlays.find(
     (overlay): overlay is Extract<Overlay, { kind: "insight" }> => overlay.kind === "insight",
@@ -395,6 +428,10 @@ export function AppShell() {
   );
 
   const flyTo = useCallback((place: VisitedPlace, zoom = 7.5) => {
+    // A place on the Moon has selenographic coordinates: flying the Earth's
+    // camera to them would land somewhere in the Indian Ocean. Opening it
+    // takes the camera off the planet instead — see `moonFocus` below.
+    if (isOffWorldPlace(place)) return;
     setCamera({
       token: Date.now(),
       longitude: place.longitude,
@@ -1846,6 +1883,7 @@ export function AppShell() {
               : null
           }
           cameraRequest={camera}
+          moonFocus={moonFocus}
           bottomInset={bottomInset}
           onStatusChange={setGlobeStatus}
           handleRef={globeHandle}

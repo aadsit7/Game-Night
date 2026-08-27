@@ -11,8 +11,14 @@
  */
 import assert from "node:assert/strict";
 
-const { toGooglePlaceDetails, todaysHoursLine, placeWeekdayIndex, localTimeAt, pickGoogleListing } =
-  await import("../lib/maps/placeDetails.ts");
+const {
+  toGooglePlaceDetails,
+  todaysHoursLine,
+  placeWeekdayIndex,
+  localTimeAt,
+  pickGoogleListing,
+  listingQueries,
+} = await import("../lib/maps/placeDetails.ts");
 const { groupPlacesByCountry } = await import("../lib/places/grouping.ts");
 
 let failures = 0;
@@ -270,6 +276,108 @@ test("distance always has a vote — an agreeing name far away is a different br
     pickGoogleListing(SAVED, [resultAt(5000, "Sagrada Família", "ChIJfar")]),
     null,
   );
+});
+
+/* ---------------------------------------------------------------- *
+ * How far a listing may sit from the pin, by what kind of thing it is
+ *
+ * The whole Google half of the app used to light up only for venues,
+ * because one tolerance chosen for a coffee shop was applied to cities and
+ * countries too — and a city's listing sits at the city's centroid, which
+ * is nowhere near the street you saved.
+ * ---------------------------------------------------------------- */
+
+const TOKYO = { name: "Tokyo", latitude: 35.6762, longitude: 139.6503 };
+
+function kindedResult(place, metersNorth, name, kind, id) {
+  return {
+    id: id ?? "row",
+    name,
+    context: "",
+    kind,
+    latitude: place.latitude + metersNorth * DEG_PER_METER,
+    longitude: place.longitude,
+    googlePlaceId: id,
+  };
+}
+
+test("a city matches its own listing from across the city", () => {
+  // Shibuya is ~8 km from the middle of Tokyo; the old 250 m rule found nothing.
+  assert.equal(
+    pickGoogleListing(TOKYO, [kindedResult(TOKYO, 8_000, "Tokyo", "place", "ChIJtokyo")]),
+    "ChIJtokyo",
+  );
+  // But not from the next prefecture: a locality is a locality, not a region.
+  assert.equal(
+    pickGoogleListing(TOKYO, [kindedResult(TOKYO, 90_000, "Tokyo", "place", "ChIJfar")]),
+    null,
+  );
+});
+
+test("a country's listing may be a continent's width from the pin", () => {
+  const brazil = { name: "Brazil", latitude: -14.24, longitude: -51.93 };
+  assert.equal(
+    pickGoogleListing(brazil, [kindedResult(brazil, 900_000, "Brazil", "country", "ChIJbr")]),
+    "ChIJbr",
+  );
+  // A region gets a region's reach, and no more.
+  const utah = { name: "Utah", latitude: 39.32, longitude: -111.09 };
+  assert.equal(
+    pickGoogleListing(utah, [kindedResult(utah, 150_000, "Utah", "region", "ChIJut")]),
+    "ChIJut",
+  );
+  assert.equal(
+    pickGoogleListing(utah, [kindedResult(utah, 400_000, "Utah", "region", "ChIJno")]),
+    null,
+  );
+});
+
+test("a venue stays on its own block, whatever the widening bought elsewhere", () => {
+  const cafe = { name: "Blue Bottle Coffee", latitude: 37.7749, longitude: -122.4194 };
+  assert.equal(
+    pickGoogleListing(cafe, [kindedResult(cafe, 200, "Blue Bottle Coffee", "poi", "ChIJnear")]),
+    "ChIJnear",
+    "the branch across the street is still this branch",
+  );
+  assert.equal(
+    pickGoogleListing(cafe, [kindedResult(cafe, 3_000, "Blue Bottle Coffee", "poi", "ChIJother")]),
+    null,
+    "three kilometres away is a different branch of the same chain",
+  );
+  // A result whose kind the geocoder never said is treated as a venue.
+  assert.equal(
+    pickGoogleListing(cafe, [kindedResult(cafe, 3_000, "Blue Bottle Coffee", undefined, "ChIJx")]),
+    null,
+  );
+});
+
+test("a wide tier still needs the names to agree — distance alone never wins", () => {
+  assert.equal(
+    pickGoogleListing(TOKYO, [kindedResult(TOKYO, 8_000, "Yokohama", "place", "ChIJyok")]),
+    null,
+    "the next city along is not this city",
+  );
+});
+
+/* ---------------------------------------------------------------- *
+ * What to ask Google about a saved place
+ * ---------------------------------------------------------------- */
+
+test("the name is asked first, then the name in its own context", () => {
+  assert.deepEqual(
+    listingQueries({ name: "Harbour Beach", city: "Nassau", region: "", country: "Bahamas" }),
+    ["Harbour Beach", "Harbour Beach, Nassau, Bahamas"],
+    "a bare name biased at fifty kilometres answers with whatever shares the word",
+  );
+});
+
+test("a place that is its own city does not ask about itself twice", () => {
+  assert.deepEqual(
+    listingQueries({ name: "Kyoto", city: "Kyoto", region: "Kyoto", country: "Japan" }),
+    ["Kyoto", "Kyoto, Japan"],
+  );
+  // Nothing to add, nothing added.
+  assert.deepEqual(listingQueries({ name: "Kyoto", country: "" }), ["Kyoto"]);
 });
 
 test("results without listing ids are passed over, and rank breaks ties", () => {

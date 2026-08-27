@@ -7,7 +7,12 @@ import { Plus, Search, Settings2, X } from "lucide-react";
 import { iconForLocationKind } from "@/components/place/LocationSearchSheet";
 import { FlagChip } from "@/components/ui/FlagChip";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
-import { hasPlacesSearch, newToJournal, searchLocations } from "@/lib/maps/placeSearch";
+import {
+  hasPlacesSearch,
+  newToJournal,
+  searchAttribution,
+  searchLocations,
+} from "@/lib/maps/placeSearch";
 import { flagVariant } from "@/lib/ui/flags";
 import { cn } from "@/lib/utils/cn";
 import { placeSubtitle } from "@/lib/utils/geo";
@@ -254,7 +259,7 @@ export function GlobeSearch({
                           )}
                         >
                           {worldShown.map((result, index) => {
-                            const Icon = iconForLocationKind(result.kind);
+                            const Icon = iconForLocationKind(result.kind, result.source);
                             return (
                               <li key={result.id}>
                                 <button
@@ -296,9 +301,7 @@ export function GlobeSearch({
                       )}
                       {worldShown.length > 0 ? (
                         <p className="px-4 pb-2.5 pt-1 text-[11.5px] text-ink-3">
-                          {worldShown[0].source === "google"
-                            ? "Results from Google Maps"
-                            : "Results from OpenStreetMap"}
+                          {searchAttribution(worldShown)}
                         </p>
                       ) : null}
                     </div>

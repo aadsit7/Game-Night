@@ -7,6 +7,7 @@ import { FlagChip } from "@/components/ui/FlagChip";
 import { PlaceImage } from "@/components/ui/PlaceImage";
 import { googleMapsDirectionsUrl } from "@/lib/maps/googleMapsLinks";
 import { googleSummaryFor } from "@/lib/maps/placeDetails";
+import { isOffWorldPlace } from "@/lib/space/moonPlaces";
 import { flagVariant } from "@/lib/ui/flags";
 import { formatVisitShort } from "@/lib/utils/date";
 import { countryFlag, placeSubtitle } from "@/lib/utils/geo";
@@ -126,16 +127,19 @@ export function PlacePreviewSheet({
               Edit
             </button>
             {/* Directions in one tap from the pin you are looking at — the
-                thing you want standing in a city with the globe open. */}
-            <a
-              href={googleMapsDirectionsUrl(place)}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={`Directions to ${place.name} in Google Maps`}
-              className="pressable grid min-h-11 min-w-11 place-items-center rounded-sm bg-fill text-ink"
-            >
-              <Navigation size={16} aria-hidden="true" />
-            </a>
+                thing you want standing in a city with the globe open. Nobody
+                is getting driving directions to the Sea of Tranquility. */}
+            {isOffWorldPlace(place) ? null : (
+              <a
+                href={googleMapsDirectionsUrl(place)}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Directions to ${place.name} in Google Maps`}
+                className="pressable grid min-h-11 min-w-11 place-items-center rounded-sm bg-fill text-ink"
+              >
+                <Navigation size={16} aria-hidden="true" />
+              </a>
+            )}
           </div>
         </div>
       ) : null}

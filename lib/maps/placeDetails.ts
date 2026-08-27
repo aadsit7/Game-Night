@@ -359,7 +359,17 @@ export async function fetchGoogleDetails(
  * ------------------------------------------------------------------ */
 
 const PHOTO_CACHE_KEY = "travel-globe.place-photo.v1";
-const PHOTO_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Six hours, matching the script's own cache of the same answer.
+ *
+ * The address behind a photo name is a *signed* one — Google hands back a
+ * `googleusercontent` link with a lifetime, not a permanent home for the
+ * picture — and the week this used to keep meant the client went on serving
+ * links the script itself had already forgotten. A stale one loads as a
+ * broken box, which is worse than a second lookup; matching the two caches
+ * means the client asks again at exactly the point the script would have to.
+ */
+const PHOTO_TTL_MS = 6 * 60 * 60 * 1000;
 const PHOTO_CACHE_MAX = 200;
 
 type PhotoCache = Record<string, { at: number; uri: string }>;
@@ -390,9 +400,26 @@ function writePhotoCache(cache: PhotoCache): void {
 }
 
 /**
+ * Drops one remembered address, so the next ask goes back to Google.
+ *
+ * The pictures are the one part of a listing the app hands straight to the
+ * browser, which means the browser is also the only thing that finds out when
+ * an address has stopped working. A picture that fails to load calls this and
+ * asks again; without it, a link that expired early would stay broken for as
+ * long as the cache held it.
+ */
+export function forgetGooglePhotoUri(photoName: string): void {
+  if (typeof window === "undefined") return;
+  const cache = readPhotoCache();
+  if (!(photoName in cache)) return;
+  delete cache[photoName];
+  writePhotoCache(cache);
+}
+
+/**
  * The image address behind a photo name, or null for any reason at all.
  * Keyed by the photo's own resource name — unique per picture, so the strip
- * and the hero each pay for themselves exactly once a week.
+ * and the hero each pay for themselves exactly once per cache window.
  */
 export async function fetchGooglePhotoUri(
   photoName: string,
@@ -434,11 +461,30 @@ const METERS_PER_DEGREE = 111_320;
 const SAME_SPOT_METERS = 60;
 
 /**
- * How far a listing may sit from the saved pin when the names agree. Wide
- * enough for a hand-adjusted pin or a venue's other gate; narrower than two
- * same-named branches usually sit apart.
+ * How far a listing may sit from the saved pin when the names agree.
+ *
+ * This used to be one number — 250 m — chosen for a coffee shop, and it was
+ * why the Google half of the app only ever lit up for coffee shops. A city's
+ * listing sits at the city's *centroid*, and a pin dropped in Shibuya is
+ * eight kilometres from the middle of Tokyo; a country's is further still. So
+ * the tolerance follows what kind of thing the result is: a venue has to be
+ * on the same block, a city has to be the same city, a country has to be the
+ * same country. The name check does the work at every tier — nothing wide is
+ * ever matched on distance alone.
  */
-const SAME_NAME_METERS = 250;
+const SAME_NAME_METERS: Record<string, number> = {
+  address: 250,
+  poi: 250,
+  /** A locality or neighbourhood: its centroid, versus your corner of it. */
+  place: 25_000,
+  /** A state, province or region — big enough that "near" means a county. */
+  region: 200_000,
+  /** A country: your pin may be a continent's width from its middle. */
+  country: 1_200_000,
+};
+
+/** A result whose kind the geocoder did not say is treated as a venue. */
+const DEFAULT_SAME_NAME_METERS = SAME_NAME_METERS.poi;
 
 function namesAgree(a: string, b: string): boolean {
   const nameA = normalizePlaceName(a);
@@ -480,9 +526,37 @@ export function pickGoogleListing(
       ) * METERS_PER_DEGREE;
 
     if (meters <= SAME_SPOT_METERS) return id;
-    if (meters <= SAME_NAME_METERS && namesAgree(place.name, result.name)) return id;
+
+    const reach = SAME_NAME_METERS[result.kind ?? ""] ?? DEFAULT_SAME_NAME_METERS;
+    if (meters <= reach && namesAgree(place.name, result.name)) return id;
   }
   return null;
+}
+
+/**
+ * The ways to ask Google about one saved place, in the order worth asking.
+ *
+ * The name alone is the right first question and a hopeless second one: half
+ * the journal is called things like "Home", "The cabin" or "Harbour Beach",
+ * and a bare-name search biased at fifty kilometres answers those with
+ * whatever else in the county shares the word. Adding what the record already
+ * knows — the city, the country — is what turns those into a question with an
+ * answer. Each is only asked if the one before it found nothing confident.
+ */
+export function listingQueries(
+  place: Pick<VisitedPlace, "name" | "city" | "region" | "country">,
+): string[] {
+  const name = place.name.trim();
+  const context = [place.city, place.region, place.country]
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part) && part !== name);
+
+  const queries = [name];
+  if (context.length > 0) queries.push([name, ...context.slice(0, 2)].join(", "));
+
+  return queries.filter(
+    (query, index, all) => query.length >= 2 && all.indexOf(query) === index,
+  );
 }
 
 /**
@@ -493,14 +567,28 @@ export function pickGoogleListing(
  * see the same answer rather than the second finding the attempt "used up".
  * The promise is the memo: a settled "no" holds for the session, a failure
  * is forgotten so the next open can try again.
+ *
+ * Keyed by what was actually asked, not just by the record's id: renaming a
+ * place or nudging its pin is a different question, and it deserves a fresh
+ * answer rather than this morning's "no".
  */
 const attempts = new Map<string, Promise<string | null>>();
+
+function attemptKey(place: VisitedPlace): string {
+  return [
+    place.id,
+    place.name.trim().toLowerCase(),
+    place.latitude.toFixed(3),
+    place.longitude.toFixed(3),
+  ].join("|");
+}
 
 /**
  * Finds the Google listing for a place saved before listings were captured,
  * so the card's Google section lights up for the whole journal rather than
- * only for places added from now on. One search, biased to the saved pin;
- * only a confident match comes back. The caller persists it.
+ * only for places added from now on. Up to two searches, biased to the saved
+ * pin — the name, then the name with the city and country the record already
+ * knows — and only a confident match comes back. The caller persists it.
  *
  * Deliberately not abortable: by the time a card is closed the search is
  * usually answered, and an answer worth having is worth keeping either way.
@@ -511,22 +599,30 @@ export function autoLinkGooglePlace(place: VisitedPlace): Promise<string | null>
   const connection = sheetPlaceRepository.getConnection();
   if (!connection) return Promise.resolve(null);
 
-  const pending = attempts.get(place.id);
+  const key = attemptKey(place);
+  const pending = attempts.get(key);
   if (pending) return pending;
 
-  const attempt = searchWithGoogle(connection, place.name, {
-    proximity: [place.longitude, place.latitude],
-    language: language(),
-  })
-    .then((results) => pickGoogleListing(place, results))
-    .catch((error) => {
-      // A failed search is not "no listing" — forget it, so a card opened
-      // after the network recovers simply asks again.
-      attempts.delete(place.id);
-      console.warn("Could not look for this place's Google listing.", error);
-      return null;
-    });
+  const ask = async (): Promise<string | null> => {
+    for (const query of listingQueries(place)) {
+      const results = await searchWithGoogle(connection, query, {
+        proximity: [place.longitude, place.latitude],
+        language: language(),
+      });
+      const found = pickGoogleListing(place, results);
+      if (found) return found;
+    }
+    return null;
+  };
 
-  attempts.set(place.id, attempt);
+  const attempt = ask().catch((error) => {
+    // A failed search is not "no listing" — forget it, so a card opened
+    // after the network recovers simply asks again.
+    attempts.delete(key);
+    console.warn("Could not look for this place's Google listing.", error);
+    return null;
+  });
+
+  attempts.set(key, attempt);
   return attempt;
 }

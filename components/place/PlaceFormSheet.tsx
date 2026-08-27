@@ -16,6 +16,7 @@ import {
   type PlaceDraft,
 } from "@/lib/store/draft";
 import { isVisitOutsideTrip } from "@/lib/trips/tripDays";
+import { isOffWorldPlace } from "@/lib/space/moonPlaces";
 import { cn } from "@/lib/utils/cn";
 import { formatVisitRange } from "@/lib/utils/date";
 import { formatCoordinates, isValidLatitude, isValidLongitude } from "@/lib/utils/geo";
@@ -191,17 +192,23 @@ export function PlaceFormSheet({
             <ChevronRight size={18} aria-hidden="true" className="shrink-0 text-ink-3" />
           </button>
 
-          <Row>
-            <button
-              type="button"
-              onClick={onAdjustPin}
-              disabled={!hasPosition}
-              className="flex min-h-[50px] w-full items-center justify-between px-4 text-left text-[16px] text-accent transition-colors active:bg-fill-strong disabled:text-ink-3"
-            >
-              Adjust Pin
-              <ChevronRight size={18} aria-hidden="true" className="text-ink-3" />
-            </button>
-          </Row>
+          {/* Nudging the pin means dragging it across the Earth, and the
+              Earth is not where a lunar record's coordinates live. Its
+              selenographic pair is edited by hand below, or by choosing a
+              different site above. */}
+          {isOffWorldPlace({ country: draft.country }) ? null : (
+            <Row>
+              <button
+                type="button"
+                onClick={onAdjustPin}
+                disabled={!hasPosition}
+                className="flex min-h-[50px] w-full items-center justify-between px-4 text-left text-[16px] text-accent transition-colors active:bg-fill-strong disabled:text-ink-3"
+              >
+                Adjust Pin
+                <ChevronRight size={18} aria-hidden="true" className="text-ink-3" />
+              </button>
+            </Row>
+          )}
 
           {/* An escape hatch — never the expected path. */}
           <Row>

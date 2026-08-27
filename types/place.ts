@@ -10,6 +10,11 @@ export type VisitedPlace = {
   name: string;
   city?: string;
   region?: string;
+  /**
+   * Where in the world, or which world. Almost always a country; `"Moon"`
+   * is what marks a record as off Earth, in which case the coordinates below
+   * are selenographic rather than terrestrial — see `lib/space/moonPlaces`.
+   */
   country: string;
   countryCode?: string;
   latitude: number;
@@ -167,8 +172,11 @@ export type LocationResult = {
   longitude: number;
   /** Broad category from the geocoder, used only to pick an icon. */
   kind?: string;
-  /** Which service answered. Shown as attribution, and nothing else. */
-  source?: "google" | "osm";
+  /**
+   * Which service answered. Shown as attribution, and nothing else.
+   * `moon` is the app's own lunar gazetteer — see `lib/space/moonPlaces`.
+   */
+  source?: "google" | "osm" | "moon";
   /** Google's id for the listing, present only when Google answered. */
   googlePlaceId?: string;
 };

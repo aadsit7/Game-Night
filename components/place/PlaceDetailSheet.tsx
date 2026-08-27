@@ -32,9 +32,11 @@ import { isResidenceVisit, isUpcomingVisit, visitStats } from "@/lib/places/visi
 import { formatMediaCounts, mediaCounts } from "@/lib/photos/mediaPlaylist";
 import { photosForPlace, sortTravelPhotos } from "@/lib/photos/travelPhotos";
 import { GoogleMapsCard } from "@/components/place/GoogleMapsCard";
+import { OffWorldCard } from "@/components/place/OffWorldCard";
 import { GooglePhotoHero } from "@/components/place/GooglePhotoHero";
 import { PlaceMiniMap } from "@/components/place/PlaceMiniMap";
 import type { GooglePlaceDetails } from "@/lib/maps/placeDetails";
+import { isOffWorldPlace } from "@/lib/space/moonPlaces";
 import { formatVisitRange, inclusiveDayCount } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
 import { countryFlag, placeSubtitle } from "@/lib/utils/geo";
@@ -158,6 +160,9 @@ export function PlaceDetailSheet({
 
   const subtitle = place ? placeSubtitle(place) : "";
   const hasFlag = Boolean(place && countryFlag(place.countryCode));
+  /* Somewhere off Earth: no Google listing to fetch, no street map to draw,
+     and no directions anyone can follow. The card says what is true instead. */
+  const offWorld = isOffWorldPlace(place);
   const extraPhotos = place?.photos ?? [];
   const hasCover = Boolean(place?.coverImage);
 
@@ -338,9 +343,10 @@ export function PlaceDetailSheet({
                 with what Google knows about it; an empty "Your visits" pill
                 claiming the prime slot said nothing at all. With visits, the
                 journal's own record leads and Google keeps its usual place. */}
-            {visits.length === 0 ? (
+            {visits.length === 0 && !offWorld ? (
               <GoogleMapsCard
                 place={place}
+                showPhotos={hasCover}
                 onLinked={onLinkGoogle ? (id) => onLinkGoogle(place.id, id) : undefined}
                 onDetails={(details) => setGoogleListing({ forId: place.id, details })}
               />
@@ -446,16 +452,21 @@ export function PlaceDetailSheet({
                 </div>
               ) : null}
 
-              <PlaceMiniMap place={place} />
+              {offWorld ? (
+                <OffWorldCard place={place} onShowOnGlobe={onShowOnGlobe} />
+              ) : (
+                <PlaceMiniMap place={place} />
+              )}
             </div>
 
             {/* The place as Google Maps knows it — rating, open right now,
                 the address — with the buttons through to the real listing.
                 With no key or no listing it quietly shrinks to the buttons,
                 which work for every place. */}
-            {visits.length > 0 ? (
+            {visits.length > 0 && !offWorld ? (
               <GoogleMapsCard
                 place={place}
+                showPhotos={hasCover}
                 onLinked={onLinkGoogle ? (id) => onLinkGoogle(place.id, id) : undefined}
                 onDetails={(details) => setGoogleListing({ forId: place.id, details })}
               />

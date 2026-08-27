@@ -1,4 +1,5 @@
 import { autoLinkGooglePlace, hasGoogleDetails } from "@/lib/maps/placeDetails";
+import { isOffWorldPlace } from "@/lib/space/moonPlaces";
 import type { VisitedPlace } from "@/types/place";
 
 /**
@@ -13,17 +14,28 @@ import type { VisitedPlace } from "@/types/place";
  *
  * It is built to be invisible: network only, never a render; paused while
  * the tab is hidden; a place with no confident match is noted on the device
- * and not asked about again for a month, so the sweep converges to nothing
+ * and not asked about again for a week, so the sweep converges to nothing
  * instead of asking the same unanswerable questions on every visit.
  */
 
-const TRIED_KEY = "travel-globe.autolink-tried.v1";
+/**
+ * The version is part of the key on purpose.
+ *
+ * These notes say "Google had no confident answer for this place", and that
+ * is only ever true of the matcher that asked. Widening the tolerances — a
+ * city's listing sits at its centroid, not on your street corner — makes a
+ * great many of the old notes wrong, and a note that is wrong for a month is
+ * a place whose card stays dark for a month. Bumping the version retires the
+ * whole set, so the back catalogue is asked again with the question that can
+ * now answer it.
+ */
+const TRIED_KEY = "travel-globe.autolink-tried.v2";
 /** An unmatched place is worth asking about again — but not before this. */
-const TRIED_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-/** One search every ten seconds — 200 places clear in about half an hour. */
-const STEP_MS = 10_000;
+const TRIED_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** One place every four seconds — 200 of them clear inside a quarter hour. */
+const STEP_MS = 4_000;
 /** The first step waits out the app's own startup work. */
-const FIRST_STEP_MS = 3_000;
+const FIRST_STEP_MS = 1_500;
 /** With nothing left to link, look again only occasionally. */
 const IDLE_MS = 60_000;
 
@@ -46,6 +58,9 @@ export function nextSweepCandidate(
 ): VisitedPlace | null {
   for (const place of places) {
     if (place.googlePlaceId || place.deletedAt) continue;
+    // Google Maps does not list the Sea of Tranquility. Asking anyway would
+    // spend a call to be told so, once a week, for as long as the app exists.
+    if (isOffWorldPlace(place)) continue;
     const at = tried[place.id];
     if (at && now - at < TRIED_TTL_MS) continue;
     return place;
@@ -120,7 +135,7 @@ export function startAutoLinkSweep({
         writeTried(tried);
       }
     } catch {
-      // A failed search is a note, not a problem — the month passes.
+      // A failed search is a note, not a problem — the week passes.
       tried[candidate.id] = Date.now();
       writeTried(tried);
     }
