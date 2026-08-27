@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FeatureCollection, Point as GeoPoint } from "geojson";
 import type {
   FilterSpecification,
@@ -76,6 +76,14 @@ import {
   markerImageId,
 } from "@/lib/maps/flagMarkers";
 import { applyBasemapTheme, paletteFor } from "@/lib/maps/theme";
+import {
+  bodyOfKind,
+  siteFacingRotation,
+  sunlitView,
+  type Mat3,
+  type SkyFocus,
+} from "@/lib/space/celestial";
+import { earthPlaces } from "@/lib/space/moonPlaces";
 import { flagVariant, type FlagVariant } from "@/lib/ui/flags";
 import {
   angularDistance,
@@ -134,10 +142,27 @@ type Props = {
    */
   currentLocation: GlobePoint | null;
   cameraRequest: CameraRequest | null;
+  /**
+   * A place that is not on Earth. Set, and the camera pulls back off the
+   * planet, the map itself fades out of the way, and the world that place is
+   * on comes forward out of the sky to be looked at. Cleared, and everything
+   * returns — the Earth, the pins, the sky exactly as it was.
+   */
+  moonFocus: OffWorldFocus | null;
   /** Space taken by sheets and the tab bar, so flights centre above them. */
   bottomInset: number;
   onStatusChange?: (status: "loading" | "ready" | "failed") => void;
   handleRef?: React.RefObject<TravelGlobeHandle | null>;
+};
+
+/** The one place off Earth being looked at, in the body's own coordinates. */
+export type OffWorldFocus = {
+  /** Identity, so opening a second lunar place restarts the approach. */
+  id: string;
+  name: string;
+  /** Selenographic, for the Moon: north positive, east positive. */
+  longitude: number;
+  latitude: number;
 };
 
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
@@ -147,6 +172,22 @@ const WORLD_VIEW_LATITUDE = 52;
 
 /** Just inside the silhouette, where the sphere is still drawing itself. */
 const HORIZON_DEGREES = 87;
+
+/** How long the crossing to another world takes, each way. */
+const FOCUS_MS = 1500;
+
+/**
+ * How much further back the camera stands to look at something that is not
+ * the Earth — subtracted from wherever it already is, and floored at the
+ * renderer's own limit.
+ *
+ * Relative rather than absolute because "zoomed out" is not one number: a
+ * traveller framed on a single city is eight levels from a whole planet and a
+ * traveller framed on a whole collection is already there. Either way the
+ * planet has to *retreat*, which is the half of "leaving Earth" the fade
+ * cannot do on its own.
+ */
+const WORLD_STANDOFF_LEVELS = 3;
 
 function toFeatureCollection(places: VisitedPlace[]): FeatureCollection {
   return {
@@ -577,6 +618,7 @@ export function TravelGlobe({
   onCountryTap,
   currentLocation,
   cameraRequest,
+  moonFocus,
   bottomInset,
   onStatusChange,
   handleRef,
@@ -586,6 +628,12 @@ export function TravelGlobe({
   const markerRef = useRef<Marker | null>(null);
   const locationMarkerRef = useRef<Marker | null>(null);
   const skyRef = useRef<SpaceSceneHandle | null>(null);
+
+  /* Everything below draws the Earth, and a place on the Moon has no business
+     on it: its coordinates are selenographic, so a lunar pin left in would
+     land in the Indian Ocean, paint a country nobody has visited, and drag
+     the opening frame off toward it. It is drawn in the sky instead. */
+  const earthOnly = useMemo(() => earthPlaces(places), [places]);
 
   const [styleReady, setStyleReady] = useState(false);
   /**
@@ -618,7 +666,7 @@ export function TravelGlobe({
   const bottomInsetRef = useRef(bottomInset);
   const reduceMotionRef = useRef(reduceMotion);
   const prefersDarkRef = useRef(prefersDark);
-  const placesRef = useRef(places);
+  const placesRef = useRef(earthOnly);
   const draggingRef = useRef(false);
   const framedRef = useRef(false);
 
@@ -633,7 +681,7 @@ export function TravelGlobe({
     bottomInsetRef.current = bottomInset;
     reduceMotionRef.current = reduceMotion;
     prefersDarkRef.current = prefersDark;
-    placesRef.current = places;
+    placesRef.current = earthOnly;
   });
 
   /**
@@ -651,6 +699,56 @@ export function TravelGlobe({
       right: Math.min(32, Math.round(width * 0.08)),
     };
   }, []);
+
+  /* ---------------------------------------------------------------------- */
+  /* Standing off another world                                               */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * The approach, as one number.
+   *
+   * `amount` runs 0 → 1 while the Moon leaves its place in the sky and comes
+   * forward to fill the view, and back again when the place is closed. It
+   * lives in a ref and is stepped by rAF rather than by React: this is a
+   * per-frame quantity feeding a canvas, and re-rendering a map component
+   * sixty times a second to move it would be the one way to make it stutter.
+   */
+  const focusRef = useRef<{
+    request: OffWorldFocus | null;
+    rotation: Mat3 | null;
+    amount: number;
+    target: number;
+  }>({ request: null, rotation: null, amount: 0, target: 0 });
+  const focusRafRef = useRef(0);
+
+  /** Where the focused world settles: the middle of the sky left above the sheet. */
+  const focusFrame = useCallback(() => {
+    const container = mapRef.current?.getContainer();
+    const width = container?.clientWidth ?? 390;
+    const height = container?.clientHeight ?? 780;
+    const free = Math.max(240, height - Math.min(bottomInsetRef.current, height * 0.5));
+    return {
+      originX: width / 2,
+      originY: free / 2,
+      radius: Math.min(width, free) * 0.36,
+    };
+  }, []);
+
+  /** The focus the sky should draw right now, or null for a plain sky. */
+  const skyFocus = useCallback((): SkyFocus | null => {
+    const { request, rotation, amount } = focusRef.current;
+    if (!request || amount <= 0) return null;
+    const { originX, originY, radius } = focusFrame();
+    return {
+      kind: "moon",
+      amount,
+      originX,
+      originY,
+      radius,
+      rotation: rotation ?? undefined,
+      site: { longitude: request.longitude, latitude: request.latitude },
+    };
+  }, [focusFrame]);
 
   /**
    * Points the sky where the camera points.
@@ -683,11 +781,99 @@ export function TravelGlobe({
         originX: origin.x,
         originY: origin.y,
         earthRadius: Number.isFinite(radius) && radius > 0 ? radius : null,
+        focus: skyFocus(),
       });
     } catch {
       // A style mid-swap can't project; the sky keeps its last frame.
     }
-  }, []);
+  }, [skyFocus]);
+
+  /**
+   * Leaving, and coming back.
+   *
+   * Opening a place on the Moon does two things at once, and they have to be
+   * the same gesture: the camera pulls back until the Earth is a marble and
+   * the map fades out from under it, while the Moon crosses the sky and grows
+   * into the space that leaves. Closing runs the whole thing backwards. The
+   * map keeps receiving gestures the entire time — the Earth is invisible, not
+   * absent — so dragging turns the camera, and turning the camera turns the
+   * Moon, which is the only way this reads as a world rather than a picture.
+   */
+  useEffect(() => {
+    const state = focusRef.current;
+    const map = mapRef.current;
+
+    if (moonFocus) {
+      state.request = moonFocus;
+      const moon = bodyOfKind("moon");
+      const centre = map?.getCenter();
+      /* Where the camera will be standing when the approach lands, not where
+         it stands now — the turn that brings the site round is frozen once,
+         and it has to agree with the view it arrives at. */
+      const stand = sunlitView(
+        centre?.lng ?? DEFAULT_CAMERA.center[0],
+        centre?.lat ?? DEFAULT_CAMERA.center[1],
+      );
+      state.rotation = moon
+        ? siteFacingRotation(moon, moonFocus, stand.longitude, stand.latitude)
+        : null;
+      state.target = 1;
+
+      /* Stand off the planet, and — only if the view was pointed away from
+         the Sun — turn toward the daylight on the way, so the crater being
+         opened is not arrived at in the dark.
+
+         `easeTo` rather than `flyTo`: a flight's curve dips *below* its
+         target zoom on the way, and the renderer has nothing to project past
+         its own minimum — the dip came back as a camera at latitude NaN,
+         which is a sky with no Moon in it. Easing only ever passes through
+         zooms between here and there. */
+      if (map && styleReady) {
+        try {
+          map.easeTo({
+            center: [stand.longitude, stand.latitude],
+            zoom: Math.max(map.getMinZoom() + 0.05, map.getZoom() - WORLD_STANDOFF_LEVELS),
+            duration: reduceMotion ? 0 : FOCUS_MS,
+            easing: easeOutCubic,
+            essential: true,
+          });
+        } catch {
+          // A style mid-swap simply keeps the camera it has.
+        }
+      }
+    } else {
+      state.target = 0;
+    }
+
+    const from = state.amount;
+    const to = state.target;
+    const duration = reduceMotion ? 0 : FOCUS_MS * Math.abs(to - from);
+    const started = performance.now();
+
+    const tick = (now: number) => {
+      focusRafRef.current = 0;
+      const progress = duration <= 0 ? 1 : Math.min(1, (now - started) / duration);
+      state.amount = from + (to - from) * progress;
+      // Once it is back in the sky there is nothing left to focus on.
+      if (progress >= 1 && to === 0) {
+        state.amount = 0;
+        state.request = null;
+        state.rotation = null;
+      }
+      syncSky();
+      if (progress < 1) focusRafRef.current = window.requestAnimationFrame(tick);
+    };
+
+    if (focusRafRef.current) window.cancelAnimationFrame(focusRafRef.current);
+    focusRafRef.current = window.requestAnimationFrame(tick);
+
+    return () => {
+      if (focusRafRef.current) window.cancelAnimationFrame(focusRafRef.current);
+      focusRafRef.current = 0;
+    };
+    // The identity of the open place, not the object it arrived in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moonFocus?.id ?? null, styleReady, reduceMotion, syncSky]);
 
   /* ---------------------------------------------------------------------- */
   /* Create the map — once                                                    */
@@ -1020,18 +1206,18 @@ export function TravelGlobe({
 
     // A place saved in a country the map has never drawn needs its chip in the
     // atlas before the feature that names it arrives.
-    registerMarkerImages(map, places, overlayFor(prefersDark));
+    registerMarkerImages(map, earthOnly, overlayFor(prefersDark));
 
     const source = map.getSource(SOURCE_ID) as GeoJSONSource | undefined;
-    source?.setData(toFeatureCollection(places));
+    source?.setData(toFeatureCollection(earthOnly));
 
     const marks = map.getSource(SOURCE_COUNTRY_MARKS) as GeoJSONSource | undefined;
-    marks?.setData(toCountryCollection(countryMarks(places)));
+    marks?.setData(toCountryCollection(countryMarks(earthOnly)));
 
     try {
       const codes = [
         ...new Set(
-          places
+          earthOnly
             // A country you want to go to is not a country you have been to,
             // and painting it as visited would answer the map's own question
             // — "how much of the world have I seen" — with a wish.
@@ -1046,7 +1232,7 @@ export function TravelGlobe({
     } catch {
       // Highlighting is optional.
     }
-  }, [places, prefersDark, styleReady, styleEpoch]);
+  }, [earthOnly, prefersDark, styleReady, styleEpoch]);
 
   /**
    * Frame the traveller's world once the data has arrived.
@@ -1136,7 +1322,7 @@ export function TravelGlobe({
     framedRef.current = true;
 
     // A lone place would otherwise be framed from its own rooftop.
-    const frame = frameOn(places.filter(hasValidCoordinates), 5.6);
+    const frame = frameOn(earthOnly.filter(hasValidCoordinates), 5.6);
     if (!frame) {
       map.jumpTo({ center: DEFAULT_CAMERA.center, zoom: DEFAULT_CAMERA.zoom });
       return;
@@ -1159,7 +1345,7 @@ export function TravelGlobe({
     } catch {
       map.jumpTo({ center: DEFAULT_CAMERA.center, zoom: DEFAULT_CAMERA.zoom });
     }
-  }, [places, dataReady, styleReady, reduceMotion, cameraPadding, frameOn]);
+  }, [earthOnly, dataReady, styleReady, reduceMotion, cameraPadding, frameOn]);
 
   /* ---------------------------------------------------------------------- */
   /* Selection                                                                */
@@ -1408,14 +1594,27 @@ export function TravelGlobe({
           sphere the camera looks out from, so turning the globe swings other
           worlds into view and the Earth eclipses each of them naturally — no
           thresholds, just occlusion and projection doing their jobs. */}
-      <SpaceScene handleRef={skyRef} />
+      <SpaceScene handleRef={skyRef} focusLabel={moonFocus?.name ?? null} />
       <div
-        ref={containerRef}
-        className="size-full"
-        // The renderer handles its own gestures; telling the browser to keep
-        // its hands off keeps a pinch from scrolling the page underneath.
-        style={{ touchAction: "none" }}
-      />
+        className="size-full transition-opacity ease-out"
+        /* The Earth gets out of the way while another world is being looked
+           at — faded, never unmounted: the map keeps taking the gestures that
+           turn the camera, and turning the camera is what turns the Moon.
+           Tearing the renderer down and rebuilding it would cost a second of
+           blank sky each way and lose the traveller's place on the planet. */
+        style={{
+          opacity: moonFocus ? 0 : 1,
+          transitionDuration: reduceMotion ? "0ms" : `${FOCUS_MS * 0.75}ms`,
+        }}
+      >
+        <div
+          ref={containerRef}
+          className="size-full"
+          // The renderer handles its own gestures; telling the browser to keep
+          // its hands off keeps a pinch from scrolling the page underneath.
+          style={{ touchAction: "none" }}
+        />
+      </div>
 
       {/* A calm stand-in while the first tiles arrive. */}
       <div

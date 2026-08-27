@@ -5,10 +5,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_CAMERA } from "@/lib/maps/basemap";
 import {
   GLINT_STARS,
+  bodyFrame,
+  bodyOfKind,
+  bodyPxPerDeg,
+  bodySurfaceDir,
+  focusEase,
+  focusedPlacement,
   projectDirection,
+  rotateBodyFrame,
+  sceneScale,
   skyPxPerDeg,
   starfieldOffset,
+  toCamera,
   viewBasis,
+  visibleEarthRadius,
   worldDir,
   type Vec3,
 } from "@/lib/space/celestial";
@@ -22,6 +32,12 @@ export type SpaceSceneHandle = {
 
 type Props = {
   handleRef?: React.RefObject<SpaceSceneHandle | null>;
+  /**
+   * What to call the spot marked on a focused world. Present only while a
+   * place off Earth is open; the mark's *position* rides the view, so it
+   * keeps station on the surface as the world turns under it.
+   */
+  focusLabel?: string | null;
 };
 
 /** Directions of the glinting stars, fixed for the life of the module. */
@@ -43,6 +59,13 @@ const BAKE_STEPS: Array<(renderer: SkyRenderer) => void> = [
   (renderer) => renderer.setBodyTexture("pluto", bakeBodyTexture("pluto")),
 ];
 
+/**
+ * How far into the approach the surface mark appears. Before this the world
+ * is still crossing the sky at a couple of dozen pixels wide, and a labelled
+ * pin on it would be bigger than the world it is marking.
+ */
+const FOCUS_MARK_FROM = 0.55;
+
 /** A frame's worth of work at a time, in the gaps the map's loading leaves. */
 function whenIdle(callback: () => void): void {
   if (typeof window.requestIdleCallback === "function") {
@@ -62,11 +85,12 @@ function whenIdle(callback: () => void): void {
  * Without WebGL the planets fall back to their painted CSS stand-ins, and the
  * starfield keeps its parallax — that part is nothing but a transform.
  */
-export function SpaceScene({ handleRef }: Props) {
+export function SpaceScene({ handleRef, focusLabel }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const starsRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glintRefs = useRef<Array<HTMLSpanElement | null>>([]);
+  const markRef = useRef<HTMLSpanElement>(null);
 
   const rendererRef = useRef<SkyRenderer | null>(null);
   const viewRef = useRef<SkyView | null>(null);
@@ -110,6 +134,53 @@ export function SpaceScene({ handleRef }: Props) {
       if (visible) {
         element.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) scale(${GLINT_STARS[i].scale})`;
       }
+    }
+
+    // The mark on the surface of a focused world: found the way the shader
+    // finds a texel, so the pin lands on the feature the map paints rather
+    // than near it, and rides round the limb as the world turns.
+    const mark = markRef.current;
+    if (mark) {
+      const focus = view.focus;
+      const body = focus ? bodyOfKind(focus.kind) : null;
+      const site = focus?.site;
+      let placed = false;
+
+      if (focus && body && site && focus.amount > FOCUS_MARK_FROM) {
+        const frame = focus.rotation
+          ? rotateBodyFrame(bodyFrame(body), focus.rotation)
+          : bodyFrame(body);
+        const surface = toCamera(basis, bodySurfaceDir(frame, site.longitude, site.latitude));
+
+        const earthRadius = visibleEarthRadius(view.earthRadius, width, height);
+        const at = projectDirection(
+          basis,
+          worldDir(body.longitude, body.latitude),
+          bodyPxPerDeg(width, height, earthRadius),
+        );
+        const disc = focusedPlacement(
+          {
+            x: view.originX + at.x,
+            y: view.originY + at.y,
+            radius: body.radius * sceneScale(width, height),
+          },
+          focus,
+        );
+
+        // Facing away is behind the world, not merely off to one side.
+        if (surface[2] > 0.06) {
+          const x = disc.x + surface[0] * disc.radius;
+          const y = disc.y - surface[1] * disc.radius * body.flatten;
+          const arrival = focusEase((focus.amount - FOCUS_MARK_FROM) / (1 - FOCUS_MARK_FROM));
+          // Flat to the surface at the limb, full-faced in the middle.
+          mark.style.opacity = String(arrival * Math.min(1, surface[2] * 3.2));
+          mark.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
+          mark.style.visibility = "visible";
+          placed = true;
+        }
+      }
+
+      if (!placed) mark.style.visibility = "hidden";
     }
 
     rendererRef.current?.render(view);
@@ -213,6 +284,14 @@ export function SpaceScene({ handleRef }: Props) {
       ) : (
         <canvas ref={canvasRef} className="globe-space__bodies" />
       )}
+
+      {/* Where you stood, on the world you are looking at. Positioned by the
+          same arithmetic that paints the surface, so it stays on its crater
+          as the Moon turns — and slides behind the limb when that crater does. */}
+      <span ref={markRef} className="globe-space__mark">
+        <span className="globe-space__mark-dot" />
+        {focusLabel ? <span className="globe-space__mark-label">{focusLabel}</span> : null}
+      </span>
     </div>
   );
 }

@@ -257,20 +257,114 @@ function bandColor(
 /* The bodies                                                                  */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * The lunar seas, where they actually are.
+ *
+ * Noise alone makes a body that reads as *a* moon; it does not make *the*
+ * Moon, and it cannot, because the Moon's face is not a texture — it is a
+ * particular arrangement of basalt floods that every human being has looked
+ * at. Painting them at their published selenographic centres does two things
+ * at once: the world in the sky becomes recognisably ours, and a place saved
+ * at "Sea of Tranquility, 8.5°N 31.4°E" lands on the sea it names rather than
+ * near it.
+ *
+ * `[longitude, latitude, radius in degrees, darkness]`. One lunar degree is
+ * about 30 km, so the radii are each mare's own half-width. The larger
+ * irregular floods — Procellarum most of all — are several overlapping
+ * circles, which is closer to their true shape than any one circle is.
+ */
+const MARIA: Array<[number, number, number, number]> = [
+  // Oceanus Procellarum, the great western flood, in four laps.
+  [-57, 18, 23, 1],
+  [-52, 34, 16, 0.95],
+  [-58, 2, 17, 0.9],
+  [-45, 10, 14, 0.85],
+  // Imbrium and its neighbours, north.
+  [-15.6, 32.8, 19, 1],
+  [1.4, 56, 11, 0.75],
+  [-25, 58, 10, 0.7],
+  [22, 54, 9, 0.7],
+  // The eastern seas of the near side.
+  [17.5, 28, 12, 1],
+  [31.4, 8.5, 14.5, 1],
+  [3.6, 13.3, 5, 0.8],
+  [51.3, -7.8, 12, 0.95],
+  [35.5, -15.2, 6.5, 0.9],
+  [59.1, 17, 9, 1],
+  // The southern seas.
+  [-16.6, -21.3, 11, 0.9],
+  [-38.6, -24.4, 7, 0.85],
+  [-30.9, 7.5, 6, 0.7],
+  // The far side keeps almost none — which is itself the point.
+  [-92.8, -19.4, 6.5, 0.85],
+  [147.9, 27.3, 4.5, 0.8],
+  [163.5, -33.7, 5.5, 0.75],
+  [129.1, -20.4, 2, 0.9],
+];
+
+/**
+ * The named craters, at their own coordinates: the bright young ones that
+ * give the near side its punctuation, and the dark-floored old ones.
+ * `[longitude, latitude, radius in degrees, depth, tone]`.
+ */
+const NAMED_CRATERS: Array<[number, number, number, number, number]> = [
+  [-20.08, 9.62, 1.6, 0.14, 0.2], // Copernicus
+  [-11.36, -43.31, 1.5, 0.15, 0.24], // Tycho
+  [-38, 8.1, 0.6, 0.1, 0.22], // Kepler
+  [-47.4, 23.7, 0.7, 0.11, 0.26], // Aristarchus, the brightest spot there is
+  [-9.3, 51.6, 1.7, 0.06, -0.1], // Plato, flooded dark
+  [-14.4, -58.4, 3.9, 0.09, 0.08], // Clavius
+  [-68.3, -5.5, 2.9, 0.05, -0.12], // Grimaldi, darker than the sea beside it
+  [15.5, -9, 1.2, 0.09, 0.1], // Theophilus, near the Apollo 16 highlands
+  [0, -89.9, 1.2, 0.12, 0.06], // Shackleton, at the pole
+];
+
+/** Radians per degree, for the great-circle work the maria need. */
+const DEG = Math.PI / 180;
+
 function bakeMoon(width: number, height: number): BakedTexture {
   const n = makeNoise3(101);
+
+  /* Each mare as a unit vector and a pair of cosine thresholds. Comparing
+     dot products against those is the same test as "within so many degrees"
+     with none of the arc-cosines — and this runs once per texel per sea. */
+  const seas = MARIA.map(([lon, lat, radius, depth]) => {
+    const c = Math.cos(lat * DEG);
+    return {
+      x: c * Math.cos(lon * DEG),
+      y: Math.sin(lat * DEG),
+      z: c * Math.sin(lon * DEG),
+      inner: Math.cos(radius * 0.72 * DEG),
+      outer: Math.cos(Math.min(89, radius * 1.16) * DEG),
+      depth,
+    };
+  });
+
   const surface = paintSphere(width, height, (lon, lat, x, y, z) => {
     const rough = n.fbm(x * 3.1, y * 3.1, z * 3.1, 5);
-    // The maria: vast basalt floods, darker and flatter than the highlands.
-    const m = n.fbm(x * 1.35 + 4.2, y * 1.35, z * 1.35, 4);
-    const mare = smoothstep(0.16, 0.4, m);
-    const high = 0.63 + 0.1 * rough;
-    const grey = high * (1 - mare) + (0.345 + 0.05 * rough) * mare;
+
+    /* The maria: vast basalt floods, darker and flatter than the highlands.
+       Their edges are roughened by the same noise the surface is made of, so
+       a sea meets its shore in bays and headlands rather than on a circle. */
+    const ragged = 0.055 * n.fbm(x * 5.2 + 11.3, y * 5.2, z * 5.2, 3);
+    let mare = 0;
+    for (const sea of seas) {
+      const towards = x * sea.x + y * sea.y + z * sea.z;
+      if (towards <= sea.outer) continue;
+      const edge = smoothstep(sea.outer, sea.inner, towards + ragged);
+      mare = Math.max(mare, edge * sea.depth);
+    }
+
+    // A whisper of the old noise, so the highlands are never uniformly bright.
+    const mottle = 0.06 * smoothstep(0.2, 0.55, n.fbm(x * 1.35 + 4.2, y * 1.35, z * 1.35, 4));
+
+    const high = 0.63 + 0.1 * rough - mottle;
+    const grey = high * (1 - mare) + (0.335 + 0.05 * rough) * mare;
     return [
       grey * 1.02,
       grey,
       grey * (1 - mare * 0.02) * 1.01,
-      0.52 + 0.14 * rough - mare * 0.1,
+      0.52 + 0.14 * rough - mare * 0.11,
     ];
   });
 
@@ -284,10 +378,62 @@ function bakeMoon(width: number, height: number): BakedTexture {
     const tone = rand() < 0.16 ? 0.16 : 0.09;
     stampCrater(surface, lon, Math.max(-76, Math.min(76, lat)), radius, depth, tone);
   }
-  // Two great basins, softened by everything stamped before them.
-  stampCrater(surface, -38, 22, 19, 0.05, 0.04);
-  stampCrater(surface, 141, -14, 16, 0.05, 0.04);
+
+  // The ones with names go last, so nothing anonymous is stamped over them.
+  for (const [lon, lat, radius, depth, tone] of NAMED_CRATERS) {
+    stampCrater(surface, lon, lat, radius, depth, tone);
+  }
+  // Tycho's rays, which reach a quarter of the way round the world.
+  stampRays(surface, -11.36, -43.31, 34, 0.115, makeNoise3(717));
+  stampRays(surface, -20.08, 9.62, 15, 0.075, makeNoise3(919));
   return pack(surface);
+}
+
+/**
+ * The bright splash around a young crater: ejecta thrown out along great
+ * circles and thinning with distance. Streaked by noise rather than drawn as
+ * spokes — real ray systems are ragged, and a clean starburst reads as a
+ * decal stuck on the Moon rather than as something that happened to it.
+ */
+function stampRays(
+  surface: Surface,
+  lonC: number,
+  latC: number,
+  reachDeg: number,
+  strength: number,
+  noise: Noise3,
+): void {
+  const { width, height, color } = surface;
+  const cosLatC = Math.cos(latC * DEG);
+  const centre = {
+    x: cosLatC * Math.cos(lonC * DEG),
+    y: Math.sin(latC * DEG),
+    z: cosLatC * Math.sin(lonC * DEG),
+  };
+  const outer = Math.cos(Math.min(89.5, reachDeg) * DEG);
+
+  for (let v = 0; v < height; v += 1) {
+    const lat = 90 - ((v + 0.5) / height) * 180;
+    const cosLat = Math.cos(lat * DEG);
+    const sinLat = Math.sin(lat * DEG);
+    for (let u = 0; u < width; u += 1) {
+      const lon = ((u + 0.5) / width) * 360 - 180;
+      const px = cosLat * Math.cos(lon * DEG);
+      const py = sinLat;
+      const pz = cosLat * Math.sin(lon * DEG);
+      const towards = px * centre.x + py * centre.y + pz * centre.z;
+      if (towards <= outer) continue;
+
+      // Fades from the rim outward; the crater itself is stamped separately.
+      const fall = smoothstep(outer, 1, towards);
+      const streak = Math.max(0, noise.fbm(px * 14, py * 14, pz * 14, 3));
+      const bright = strength * fall * fall * (0.25 + 1.35 * streak * streak);
+      const i = v * width + u;
+      color[i * 3] += bright;
+      color[i * 3 + 1] += bright;
+      color[i * 3 + 2] += bright;
+    }
+  }
 }
 
 function bakeMars(width: number, height: number): BakedTexture {

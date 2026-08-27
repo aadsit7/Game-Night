@@ -1,5 +1,6 @@
 import { searchWithGoogle } from "@/lib/maps/googlePlaces";
 import { searchWithOpenStreetMap } from "@/lib/maps/geocoding";
+import { isOffWorldPlace, searchMoonLocations } from "@/lib/space/moonPlaces";
 import { sheetPlaceRepository } from "@/lib/storage/sheetPlaceRepository";
 import type { LocationResult, VisitedPlace } from "@/types/place";
 
@@ -17,6 +18,11 @@ import type { LocationResult, VisitedPlace } from "@/types/place";
  * unbilled or simply having a bad minute falls through to the keyless search
  * rather than leaving someone unable to add a place — the failure is logged
  * for whoever set it up and invisible to whoever is typing.
+ *
+ * Above both sits the app's own short gazetteer of the Moon. Neither geocoder
+ * has ever heard of Tranquility Base, and both answer "moon" with a township
+ * in Pennsylvania; the lunar matches are found locally, cost nothing, and
+ * lead — typing "moon" should offer the Moon.
  */
 
 export { GeocodingError, GEOCODING_UNAVAILABLE, reverseGeocode } from "@/lib/maps/geocoding";
@@ -92,6 +98,11 @@ export async function searchLocations(
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
 
+  // Found on the device, so they arrive with the first keystroke rather than
+  // after a round trip — and they are never cached, because there is nothing
+  // to cache: the gazetteer ships with the app.
+  const lunar = searchMoonLocations(trimmed);
+
   const connection = sheetPlaceRepository.getConnection();
   const viaGoogle = Boolean(connection && sheetPlaceRepository.getCapabilities().placesSearch);
 
@@ -101,7 +112,7 @@ export async function searchLocations(
   const key = viaGoogle ? searchCacheKey(trimmed, options.proximity, language()) : null;
   if (key) {
     const hit = readSearchCache()[key];
-    if (hit && Date.now() - hit.at < SEARCH_TTL_MS) return hit.results;
+    if (hit && Date.now() - hit.at < SEARCH_TTL_MS) return [...lunar, ...hit.results];
   }
 
   if (connection && viaGoogle) {
@@ -118,7 +129,7 @@ export async function searchLocations(
       }
       // An empty answer is an answer: Google found nothing, and asking a
       // second geocoder the same question would only muddy that.
-      return results;
+      return [...lunar, ...results];
     } catch (error) {
       // A cancelled keystroke is not a failure, and must not fall through to a
       // second request that nobody is waiting for either.
@@ -131,7 +142,7 @@ export async function searchLocations(
     }
   }
 
-  return searchWithOpenStreetMap(trimmed, options);
+  return [...lunar, ...(await searchWithOpenStreetMap(trimmed, options))];
 }
 
 /**
@@ -141,10 +152,40 @@ export async function searchLocations(
  */
 export function newToJournal(
   results: LocationResult[],
-  places: Pick<VisitedPlace, "googlePlaceId">[],
+  places: Pick<VisitedPlace, "googlePlaceId" | "name" | "country">[],
 ): LocationResult[] {
   const known = new Set(
     places.map((place) => place.googlePlaceId).filter((id): id is string => Boolean(id)),
   );
-  return results.filter((result) => !result.googlePlaceId || !known.has(result.googlePlaceId));
+  /* Lunar sites carry no listing id to be recognised by — nothing off Earth
+     has one — so they are matched on the one thing that is theirs: the name
+     the gazetteer gave them, which is the name the record was saved under. */
+  const savedOffWorld = new Set(
+    places
+      .filter((place) => isOffWorldPlace(place))
+      .map((place) => place.name.trim().toLowerCase()),
+  );
+
+  return results.filter((result) => {
+    if (result.source === "moon") return !savedOffWorld.has(result.name.trim().toLowerCase());
+    return !result.googlePlaceId || !known.has(result.googlePlaceId);
+  });
+}
+
+/**
+ * The credit line under a list of results.
+ *
+ * Whoever answered gets named, which is both good manners and, for Google,
+ * a term of use. Lunar sites answer from the app's own short gazetteer, so
+ * they are credited as what they are rather than passed off as a geocoder's.
+ */
+export function searchAttribution(results: LocationResult[]): string | null {
+  const earth = results.find((result) => result.source !== "moon");
+  const lunar = results.some((result) => result.source === "moon");
+  const world = earth ? (earth.source === "google" ? "Google Maps" : "OpenStreetMap") : null;
+
+  if (world && lunar) return `Results from ${world} · lunar sites from this app`;
+  if (world) return `Results from ${world}`;
+  if (lunar) return "Lunar sites from this app\u2019s own gazetteer";
+  return null;
 }

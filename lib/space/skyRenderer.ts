@@ -25,13 +25,18 @@ import {
   SUN_DIR,
   bodyFrame,
   bodyPxPerDeg,
+  focusEase,
+  focusedPlacement,
   projectDirection,
+  rotateBodyFrame,
   sceneScale,
   toCamera,
   viewBasis,
+  visibleEarthRadius,
   worldDir,
   type BodyKind,
   type SkyBody,
+  type SkyFocus,
   type Vec3,
 } from "@/lib/space/celestial";
 import type { BakedTexture } from "@/lib/space/planetTextures";
@@ -45,7 +50,14 @@ export type SkyView = {
   originY: number;
   /** The Earth's projected radius, when the renderer can say; null otherwise. */
   earthRadius: number | null;
+  /**
+   * One body pulled out of the sky and made the subject — how a place on the
+   * Moon is looked at. Null, and everything stays where the sphere puts it.
+   */
+  focus?: SkyFocus | null;
 };
+
+export type { SkyFocus } from "@/lib/space/celestial";
 
 export type SkyRenderer = {
   render(view: SkyView): void;
@@ -418,11 +430,10 @@ export function createSkyRenderer(canvas: HTMLCanvasElement): SkyRenderer | null
     const sunCam = toCamera(basis, sunDir);
     const scale = sceneScale(widthCss, heightCss);
     // The Earth's disc, when it is one on screen rather than a wall of map.
-    const earthR =
-      view.earthRadius !== null && view.earthRadius > 24 && view.earthRadius < Math.max(widthCss, heightCss) * 1.15
-        ? view.earthRadius
-        : null;
+    const earthR = visibleEarthRadius(view.earthRadius, widthCss, heightCss);
     const pxPerDeg = bodyPxPerDeg(widthCss, heightCss, earthR);
+    const focus = view.focus && view.focus.amount > 0 ? view.focus : null;
+    const focusT = focus ? focusEase(focus.amount) : 0;
 
     gl.uniform3f(loc.light, sunCam[0], sunCam[1], sunCam[2]);
 
@@ -437,24 +448,51 @@ export function createSkyRenderer(canvas: HTMLCanvasElement): SkyRenderer | null
       }
     }
 
-    for (const state of bodies) {
+    /* The subject goes last, so an approaching world passes in front of the
+       sky it is leaving rather than through it. */
+    const order = focus
+      ? [...bodies.filter((state) => state.body.kind !== focus.kind),
+         ...bodies.filter((state) => state.body.kind === focus.kind)]
+      : bodies;
+
+    for (const state of order) {
       const { body } = state;
       const at = projectDirection(basis, state.dir, pxPerDeg);
-      const fade = 1 - smoothstepJs(96, 120, at.angle);
+      const subject = focus?.kind === body.kind ? focus : null;
+
+      /* The subject is never faded, culled or eclipsed on the way in: it is
+         the thing being looked at, and half of that journey crosses sky the
+         camera is not pointing at. Everything else behaves as it always has. */
+      const inSky = 1 - smoothstepJs(96, 120, at.angle);
+      const fade = subject ? Math.max(inSky, focusT) : inSky;
       if (fade <= 0.01) continue;
 
-      const radius = body.radius * scale;
+      const placed = focusedPlacement(
+        { x: view.originX + at.x, y: view.originY + at.y, radius: body.radius * scale },
+        subject,
+      );
+      const radius = placed.radius;
       const extent = body.ring ? body.ring.outer * 1.04 : 1.3;
       const half = radius * extent;
-      const cx = view.originX + at.x;
-      const cy = view.originY + at.y;
+      const cx = placed.x;
+      const cy = placed.y;
       // Off the canvas, or wholly behind the opaque Earth: not worth a draw.
       if (cx + half < 0 || cx - half > widthCss || cy + half < 0 || cy - half > heightCss) continue;
-      if (earthR !== null && Math.hypot(at.x, at.y) + half < earthR * 0.92) continue;
+      if (
+        !subject &&
+        earthR !== null &&
+        Math.hypot(at.x, at.y) + half < earthR * 0.92
+      ) {
+        continue;
+      }
 
-      const meridianCam = toCamera(basis, state.frame.meridian);
-      const axisCam = toCamera(basis, state.frame.axis);
-      const binormalCam = toCamera(basis, state.frame.binormal);
+      // The one turn that brings a named spot round to face the camera.
+      const frame = subject?.rotation
+        ? rotateBodyFrame(state.frame, subject.rotation)
+        : state.frame;
+      const meridianCam = toCamera(basis, frame.meridian);
+      const axisCam = toCamera(basis, frame.axis);
+      const binormalCam = toCamera(basis, frame.binormal);
 
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, state.texture);
@@ -476,12 +514,15 @@ export function createSkyRenderer(canvas: HTMLCanvasElement): SkyRenderer | null
       drawQuad(cx, cy, half, extent);
     }
 
-    // The Earth's own air, hugging the limb the map draws — brightest where
-    // the Sun stands, which is how a planet says which way is day.
-    if (earthR !== null) {
+    /* The Earth's own air, hugging the limb the map draws — brightest where
+       the Sun stands, which is how a planet says which way is day. It leaves
+       with the planet: while another world is being looked at the map itself
+       is faded out, and an atmosphere still glowing round nothing would be
+       the one thing left insisting the Earth is there. */
+    if (earthR !== null && focusT < 0.999) {
       const flat = Math.hypot(sunCam[0], sunCam[1]);
       gl.uniform1i(loc.kind, 3);
-      gl.uniform1f(loc.fade, 1);
+      gl.uniform1f(loc.fade, 1 - focusT);
       gl.uniform1f(loc.haloInner, 1 / 1.6);
       gl.uniform2f(
         loc.sunDir,

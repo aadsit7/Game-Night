@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Building2, Globe2, Landmark, MapPin, PencilLine, Search, X } from "lucide-react";
+import { Building2, Globe2, Landmark, MapPin, Moon, PencilLine, Search, X } from "lucide-react";
 
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
-import { searchLocations } from "@/lib/maps/placeSearch";
+import { searchAttribution, searchLocations } from "@/lib/maps/placeSearch";
 import { cn } from "@/lib/utils/cn";
 import type { LocationResult } from "@/types/place";
 
@@ -19,7 +19,9 @@ import type { LocationResult } from "@/types/place";
  */
 
 /** Result kind → glyph; shared with the globe's own search. */
-export function iconForLocationKind(kind?: string) {
+export function iconForLocationKind(kind?: string, source?: LocationResult["source"]) {
+  // Nothing off Earth is a landmark, a country or an address; it is a world.
+  if (source === "moon") return Moon;
   if (kind === "country" || kind === "region") return Globe2;
   if (kind === "poi") return Landmark;
   if (kind === "address" || kind === "street") return Building2;
@@ -179,7 +181,7 @@ export function LocationSearchSheet({
             )}
           >
             {results.map((result) => {
-              const Icon = iconForLocationKind(result.kind);
+              const Icon = iconForLocationKind(result.kind, result.source);
               return (
                 <li key={result.id}>
                   <button
@@ -224,17 +226,14 @@ export function LocationSearchSheet({
             <p className="text-[14px] leading-relaxed text-ink-2">
               Search for anywhere — somewhere you’ve been, or somewhere you want to go. A city like{" "}
               <span className="text-ink">Florence</span>, a country, a neighbourhood, or a
-              landmark like <span className="text-ink">Sagrada Família</span>.
+              landmark like <span className="text-ink">Sagrada Família</span>. Anywhere on
+              Earth, and a few places that aren’t — try <span className="text-ink">the Moon</span>.
             </p>
           </div>
         )}
 
         {results.length > 0 ? (
-          <p className="px-1 pt-2 text-[12px] text-ink-3">
-            {results[0].source === "google"
-              ? "Results from Google Maps"
-              : "Results from OpenStreetMap"}
-          </p>
+          <p className="px-1 pt-2 text-[12px] text-ink-3">{searchAttribution(results)}</p>
         ) : null}
 
         {/* Always leave a way forward — including when there is no map at all. */}

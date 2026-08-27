@@ -396,6 +396,34 @@ a parent re-render can never restart the map.
   frame. The atmosphere is the renderer's own: a full blue limb at globe zoom
   that thins as the planet becomes a map and is gone before street level.
 
+### Somewhere that isn't Earth
+
+The Moon is a place you can add. Type "moon", "Apollo 11", "Tycho" or "Sea of
+Tranquility" into either search bar and the app's own short lunar gazetteer
+answers above the geocoders — thirty-odd sites with their published
+selenographic coordinates: the seas you can see from a back garden, the craters
+that give the near side its face, every place a human being has stood, and a
+few of the machines that got there first.
+
+Opening one does the thing the Earth's camera cannot: the planet retreats, the
+map fades out from under it, and the Moon crosses the sky and grows until it
+fills the view, with the site marked on its surface. The map is faded rather
+than unmounted, so dragging still turns the camera — and turning the camera
+turns the Moon, which is what makes it read as a world rather than a picture of
+one. Closing the place runs the whole thing backwards.
+
+No new column holds this. A lunar record is one whose **Country** cell reads
+`Moon`, and its latitude and longitude are selenographic rather than
+terrestrial — `lib/space/moonPlaces.ts` owns that vocabulary, and everything
+that would otherwise treat those numbers as Earth coordinates (the pins, the
+opening frame, the mini-map, the Google lookups, the country tallies) asks
+`isOffWorldPlace` first. It counts as a place you have been and as a stay and
+its days; it is not a country, and never touches "% of the world".
+
+The Moon's own surface is painted at its real coordinates too — the maria at
+their published centres, Copernicus, Tycho and its rays, Plato, Clavius — so a
+site saved at 8.5°N 31.4°E lands on the Sea of Tranquility rather than near it.
+
 ### Finding real places
 
 Search runs through OpenStreetMap by default — no key, no account, nothing to
@@ -433,7 +461,25 @@ a confident match, then remembered in the sheet. Only the listing *id* is ever
 stored — the content is fetched fresh and cached for six hours, which is what
 Google's terms ask. One card open is one Place Details call (1,000 free a
 month, and the cache absorbs reopens), so a personal journal stays inside the
-free allowance. See
+free allowance.
+
+The listing's **photographs** ride along with it. Where the journal has no
+picture of its own they lead the card — one hero and two beneath it, each
+credited to its photographer as Google's policies require; where it does, they
+appear as a scrolling strip inside the Google Maps section instead, so the
+traveller's own memory keeps the top of the card and Google's pictures are
+still there. Photo addresses are signed and short-lived, so a picture that
+fails to load drops its cached address and asks again, once.
+
+Matching a saved place to its listing is tiered by what kind of thing the
+result is, which is the difference between the Google half of the app lighting
+up for a few places and for all of them: a venue has to be on the same block, a
+city has to be the same city (a listing sits at the city's *centroid*, eight
+kilometres from the corner of it you saved), a country may be a continent's
+width away — and every tier past the first rooftop needs the names to agree, so
+nothing wide is ever matched on distance alone. The name is asked first and
+then the name in its own context ("Harbour Beach, Nassau, Bahamas"), because
+half of any journal is called things like "Home". See
 [Google Maps search](docs/SHEET-SETUP.md#optional-google-maps-search) for the
 key setup.
 

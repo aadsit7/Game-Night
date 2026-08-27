@@ -1,5 +1,6 @@
 import type { LocationResult, NewPlaceInput, VisitedPlace } from "@/types/place";
 import type { Trip } from "@/types/trip";
+import { isOffWorldPlace } from "@/lib/space/moonPlaces";
 import { hasValidCoordinates } from "@/lib/utils/geo";
 
 /**
@@ -158,14 +159,19 @@ export function draftFromPlace(place: VisitedPlace): PlaceDraft {
 
 /** Everything a geocoder result can pre-fill, so the form opens nearly done. */
 export function applyLocation(draft: PlaceDraft, result: LocationResult): PlaceDraft {
+  // Somewhere off Earth has no flag, and must not inherit the one the draft
+  // was carrying before: a lunar record wearing Portugal's colours would be
+  // painted over Portugal on the globe.
+  const offWorld = isOffWorldPlace({ country: result.country ?? "" });
+
   return {
     ...draft,
     // Keep a name the traveller has already personalised.
     name: draft.name.trim() ? draft.name : result.name,
-    city: result.city ?? draft.city,
+    city: offWorld ? "" : (result.city ?? draft.city),
     region: result.region ?? draft.region,
     country: result.country ?? draft.country,
-    countryCode: result.countryCode ?? draft.countryCode,
+    countryCode: offWorld ? undefined : (result.countryCode ?? draft.countryCode),
     latitude: result.latitude,
     longitude: result.longitude,
     locationLabel: result.context || result.name,

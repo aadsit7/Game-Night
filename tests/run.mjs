@@ -39,6 +39,7 @@ const suites = [
   "flag-chips.test.mjs",
   "globe-frame.test.mjs",
   "celestial-sky.test.mjs",
+  "moon-places.test.mjs",
   "swipe.test.mjs",
   "country-marks.test.mjs",
 ];

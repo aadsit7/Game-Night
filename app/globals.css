@@ -547,6 +547,60 @@ select {
   }
 }
 
+/*
+ * Where you stood, on a world that is not this one.
+ *
+ * Shown only while a lunar place is open and the Moon has come forward to
+ * fill the view. JS puts it on the right crater and fades it with the limb —
+ * everything here is what it looks like once it is there: a lit dot on a
+ * dark ring, so it reads against both the bright highlands and the maria,
+ * and the name on a pill that will sit legibly over either.
+ */
+.globe-space__mark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  visibility: hidden;
+  opacity: 0;
+  will-change: transform, opacity;
+  /* The dot is the point being marked; the label hangs off its right. */
+  transform-origin: 0 0;
+  margin: -6px 0 0 -6px;
+}
+
+.globe-space__mark-dot {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--c-accent, #2f6bff);
+  box-shadow:
+    0 0 0 2.5px rgba(9, 12, 20, 0.55),
+    0 0 0 4px rgba(255, 255, 255, 0.85),
+    0 0 14px 3px rgba(120, 170, 255, 0.55);
+}
+
+.globe-space__mark-label {
+  flex: none;
+  max-width: 40vw;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(9, 12, 20, 0.62);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+}
+
 /* Distant worlds, painted in CSS: the stand-ins shown only when WebGL isn't
    there to ray-cast the real ones. Small enough to read as far away, so the
    Earth stays the hero of the view, and each lit from the upper left because

@@ -366,3 +366,231 @@ export function bodyFrame(body: SkyBody): BodyFrame {
   ]);
   return { meridian, axis, binormal: cross(axis, meridian) };
 }
+
+/* -------------------------------------------------------------------------- */
+/* Standing off another world                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A rotation, as its three rows. Applied with {@link applyMat3}.
+ *
+ * There is exactly one of these in the app, and it exists so that opening a
+ * place on the Moon can bring *that* part of the Moon round to face you. The
+ * body's own frame is fixed to the celestial sphere — which is what makes the
+ * far side genuinely far — so the only honest way to look at a named crater is
+ * to turn the whole world under it, once, and then let the camera go on
+ * turning it from there.
+ */
+export type Mat3 = [Vec3, Vec3, Vec3];
+
+export const NO_ROTATION: Mat3 = [
+  [1, 0, 0],
+  [0, 1, 0],
+  [0, 0, 1],
+];
+
+export function applyMat3(m: Mat3, v: Vec3): Vec3 {
+  return [dot(m[0], v), dot(m[1], v), dot(m[2], v)];
+}
+
+/** The body whose kind this is, or null for a kind the sky does not carry. */
+export function bodyOfKind(kind: BodyKind): SkyBody | null {
+  return SKY_BODIES.find((body) => body.kind === kind) ?? null;
+}
+
+/**
+ * The world direction of one point on a body's surface.
+ *
+ * The inverse of what the shader does to find a texel: it turns a surface
+ * normal into `lon = atan2(n·meridian, n·binormal)` and `lat = asin(n·axis)`,
+ * so longitude zero lies along the binormal and the meridian is 90° east.
+ * Read this and that together — a marker placed with this lands exactly on the
+ * feature the map paints at those coordinates.
+ */
+export function bodySurfaceDir(
+  frame: BodyFrame,
+  longitude: number,
+  latitude: number,
+): Vec3 {
+  const lat = latitude * RAD;
+  const lng = longitude * RAD;
+  const east = Math.cos(lat) * Math.sin(lng);
+  const north = Math.sin(lat);
+  const prime = Math.cos(lat) * Math.cos(lng);
+  return normalize([
+    east * frame.meridian[0] + north * frame.axis[0] + prime * frame.binormal[0],
+    east * frame.meridian[1] + north * frame.axis[1] + prime * frame.binormal[1],
+    east * frame.meridian[2] + north * frame.axis[2] + prime * frame.binormal[2],
+  ]);
+}
+
+export function rotateBodyFrame(frame: BodyFrame, rotation: Mat3): BodyFrame {
+  return {
+    meridian: applyMat3(rotation, frame.meridian),
+    axis: applyMat3(rotation, frame.axis),
+    binormal: applyMat3(rotation, frame.binormal),
+  };
+}
+
+/** An orthonormal trihedron whose first leg is `primary`. */
+function triad(primary: Vec3, secondary: Vec3): [Vec3, Vec3, Vec3] {
+  const first = normalize(primary);
+  const along = dot(secondary, first);
+  let second: Vec3 = [
+    secondary[0] - first[0] * along,
+    secondary[1] - first[1] * along,
+    secondary[2] - first[2] * along,
+  ];
+  if (Math.hypot(second[0], second[1], second[2]) < 1e-6) {
+    // `secondary` was parallel to `primary`; any perpendicular will do.
+    const seed: Vec3 = Math.abs(first[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    const proj = dot(seed, first);
+    second = [seed[0] - first[0] * proj, seed[1] - first[1] * proj, seed[2] - first[2] * proj];
+  }
+  second = normalize(second);
+  return [first, second, cross(first, second)];
+}
+
+/**
+ * The rotation that carries `from` onto `to`, with `fromUp` swung as near
+ * `toUp` as a rotation allows. Two trihedra and one matrix product — the
+ * standard way to say "point this at that, and keep it the right way up".
+ */
+export function alignRotation(from: Vec3, fromUp: Vec3, to: Vec3, toUp: Vec3): Mat3 {
+  const [a1, a2, a3] = triad(from, fromUp);
+  const [b1, b2, b3] = triad(to, toUp);
+  const row = (i: number): Vec3 => [
+    b1[i] * a1[0] + b2[i] * a2[0] + b3[i] * a3[0],
+    b1[i] * a1[1] + b2[i] * a2[1] + b3[i] * a3[1],
+    b1[i] * a1[2] + b2[i] * a2[2] + b3[i] * a3[2],
+  ];
+  return [row(0), row(1), row(2)];
+}
+
+/**
+ * The one turn that brings a named spot on a body round to face the camera,
+ * north up, for a camera pointing at (`viewLongitude`, `viewLatitude`).
+ *
+ * Frozen once, when a lunar place is opened, rather than recomputed per frame:
+ * a rotation that chased the camera would nail the site to the middle of the
+ * screen and leave dragging doing nothing at all. Fixed, the site arrives
+ * facing you and the Moon turns under your finger from there — which is the
+ * difference between looking at a world and looking at a picture of one.
+ */
+export function siteFacingRotation(
+  body: SkyBody,
+  site: { longitude: number; latitude: number },
+  viewLongitude: number,
+  viewLatitude: number,
+): Mat3 {
+  const frame = bodyFrame(body);
+  const basis = viewBasis(viewLongitude, viewLatitude);
+  return alignRotation(
+    bodySurfaceDir(frame, site.longitude, site.latitude),
+    frame.axis,
+    basis.forward,
+    basis.up,
+  );
+}
+
+/**
+ * A body pulled out of the sky and made the subject.
+ *
+ * `amount` runs 0 → 1 as the camera leaves the Earth behind: at 0 the body is
+ * exactly where the celestial sphere puts it, at its own apparent size; at 1
+ * it sits at (`originX`, `originY`) filling `radius`. Everything between is
+ * one journey across the sky, which is what the eye needs in order to believe
+ * the thing it is now looking at is the thing that was hanging up there.
+ */
+export type SkyFocus = {
+  kind: BodyKind;
+  amount: number;
+  originX: number;
+  originY: number;
+  radius: number;
+  /** The frozen turn from {@link siteFacingRotation}, if a site was named. */
+  rotation?: Mat3;
+  /** The spot to mark on the surface, in the body's own coordinates. */
+  site?: { longitude: number; latitude: number };
+};
+
+/** Ease in and out, so the approach starts and settles rather than snapping. */
+export function focusEase(amount: number): number {
+  const t = Math.min(1, Math.max(0, amount));
+  return t * t * (3 - 2 * t);
+}
+
+/** Where a focused body actually lands, shared by the renderer and the marker. */
+export function focusedPlacement(
+  sky: { x: number; y: number; radius: number },
+  focus: SkyFocus | null,
+): { x: number; y: number; radius: number } {
+  if (!focus || focus.amount <= 0) return sky;
+  const t = focusEase(focus.amount);
+  const lerp = (from: number, to: number) => from + (to - from) * t;
+  return {
+    x: lerp(sky.x, focus.originX),
+    y: lerp(sky.y, focus.originY),
+    radius: lerp(sky.radius, focus.radius),
+  };
+}
+
+/**
+ * The Earth's drawn radius when it is a disc on screen rather than a wall of
+ * map — the one number the sky needs from the renderer, and the same test on
+ * both sides of it so the marker and the world it marks never disagree.
+ */
+export function visibleEarthRadius(
+  earthRadius: number | null,
+  width: number,
+  height: number,
+): number | null {
+  if (earthRadius === null || !Number.isFinite(earthRadius)) return null;
+  return earthRadius > 24 && earthRadius < Math.max(width, height) * 1.15 ? earthRadius : null;
+}
+
+/**
+ * A camera direction from which a focused world's near face is in daylight.
+ *
+ * The whole sky is lit by one fixed Sun, and the face a world shows is decided
+ * by where you stand — so opening a place on the Moon from a camera pointed
+ * away from the Sun means arriving at a crater in the dark. This turns the
+ * camera the shortest way toward the dawn, and only as far as it has to: a
+ * view already in daylight is left exactly where it was, so leaving Earth
+ * still starts from wherever you were looking.
+ *
+ * `minLight` is the cosine of the angle between the camera and the Sun — 0.5
+ * puts the terminator sixty degrees out, which is a fat gibbous with the
+ * shadows still showing at the limb rather than a flat coin.
+ */
+export function sunlitView(
+  longitude: number,
+  latitude: number,
+  minLight = 0.5,
+): { longitude: number; latitude: number } {
+  const forward = worldDir(longitude, latitude);
+  const towardSun = dot(forward, SUN_DIR);
+  if (towardSun >= minLight) return { longitude, latitude };
+
+  const apart = Math.acos(Math.min(1, Math.max(-1, towardSun)));
+  const wanted = Math.acos(minLight);
+  const sin = Math.sin(apart);
+  /* Dead in line with the Sun, either way round, leaves no shortest arc to
+     turn along — every great circle is as short as every other. Standing where
+     the Sun stands is one of them, and the simplest to name. */
+  if (Math.abs(sin) < 1e-6) return { longitude: SUN.longitude, latitude: SUN.latitude };
+
+  const t = Math.min(1, Math.max(0, (apart - wanted) / apart));
+  const a = Math.sin((1 - t) * apart) / sin;
+  const b = Math.sin(t * apart) / sin;
+  const turned = normalize([
+    forward[0] * a + SUN_DIR[0] * b,
+    forward[1] * a + SUN_DIR[1] * b,
+    forward[2] * a + SUN_DIR[2] * b,
+  ]);
+
+  return {
+    longitude: (Math.atan2(turned[2], turned[0]) * 180) / Math.PI,
+    latitude: (Math.asin(Math.min(1, Math.max(-1, turned[1]))) * 180) / Math.PI,
+  };
+}

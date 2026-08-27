@@ -10,6 +10,7 @@ import { deletePhotos } from "@/lib/storage/photoStore";
 import { PersistenceError } from "@/lib/storage/placeRepository";
 import { sheetPlaceRepository, type SheetStatus } from "@/lib/storage/sheetPlaceRepository";
 import { findDuplicatePlace } from "@/lib/places/dedupe";
+import { isOffWorldPlace } from "@/lib/space/moonPlaces";
 import type {
   NewPlaceInput,
   NewVisitInput,
@@ -339,7 +340,21 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
   }, [places]);
 
   const getPlace = useCallback(
-    (id: string | null | undefined) => (id ? byId.get(id) : undefined),
+    (id: string | null | undefined) => {
+      if (!id) return undefined;
+      const found = byId.get(id);
+      if (found) return found;
+
+      /* A record created in this browser is saved under a temporary id and
+         re-keyed the moment the sheet hands back the real one. Anything still
+         holding the old id — the selection, an open card, an overlay further
+         down the stack — used to find nothing a second or two after it opened,
+         which is exactly how long a create takes to land. The repository
+         remembers what each temporary id became; following it here fixes every
+         lookup at once rather than at each of the places that make one. */
+      const adopted = sheetPlaceRepository.resolveId(id);
+      return adopted === id ? undefined : byId.get(adopted);
+    },
     [byId],
   );
 
@@ -375,6 +390,11 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
     const map = new Map<string, { key: string; label: string; code?: string; count: number }>();
     for (const place of places) {
       if (place.wantToGo) continue;
+      /* The rail is a row of flags and the count beside it is "% of the
+         world". The Moon has no flag and is not part of the world; it keeps
+         its section in the list below, where it is a place rather than a
+         country. */
+      if (isOffWorldPlace(place)) continue;
       const label = place.country?.trim();
       if (!label) continue;
       const key = (place.countryCode ?? label).toLowerCase();

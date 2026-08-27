@@ -23,6 +23,7 @@ import {
   type GooglePlaceDetails,
   type GoogleReview,
 } from "@/lib/maps/placeDetails";
+import { GooglePhotoStrip } from "@/components/place/GooglePhotoHero";
 import { cn } from "@/lib/utils/cn";
 import type { VisitedPlace } from "@/types/place";
 
@@ -44,10 +45,22 @@ const never = () => false;
  */
 export function GoogleMapsCard({
   place,
+  showPhotos,
   onLinked,
   onDetails,
 }: {
   place: VisitedPlace;
+  /**
+   * Carry the listing's photographs here as well.
+   *
+   * The sheet above leads with Google's picture only when the traveller has
+   * none of their own — their memory outranks a stock photograph, and always
+   * should. But that used to mean a place *with* a photo showed none of
+   * Google's at all, which is the difference between "every place has this"
+   * and "some places have this". Set when the hero slot is already taken, and
+   * the pictures appear here instead, where nothing is competing for them.
+   */
+  showPhotos?: boolean;
   /** A confident match for an unlinked place was found; persist it. */
   onLinked?: (googlePlaceId: string) => void;
   /** The listing arrived; the sheet above may want its photograph. */
@@ -76,6 +89,19 @@ export function GoogleMapsCard({
   const placeId = place.id;
   const googlePlaceId = place.googlePlaceId;
 
+  /* A different place starts with a blank card, always — reset during render
+     the way the rest of the app resets on a changed prop, never mid-effect.
+     This sheet is reused rather than remounted, so without this a place with
+     no listing of its own went on wearing the *previous* place's rating,
+     address and reviews: the load below returns early when there is nothing
+     to look up, and "early" used to mean "leave what is there". */
+  const [shownFor, setShownFor] = useState(placeId);
+  if (shownFor !== placeId) {
+    setShownFor(placeId);
+    setDetails(null);
+    setHoursOpen(false);
+  }
+
   useEffect(() => {
     if (!detailsEnabled) return;
 
@@ -102,7 +128,6 @@ export function GoogleMapsCard({
         const found = await fetchGoogleDetails(id, { signal: controller.signal });
         if (alive) {
           setDetails(found);
-          setHoursOpen(false);
           if (found) onDetailsRef.current?.(found);
         }
       } catch {
@@ -224,6 +249,12 @@ export function GoogleMapsCard({
               href={`tel:${phone.replace(/[^+\d]/g, "")}`}
             />
           ) : null}
+        </div>
+      ) : null}
+
+      {showPhotos && details?.photos ? (
+        <div className="mb-2.5">
+          <GooglePhotoStrip photos={details.photos} placeName={place.name} />
         </div>
       ) : null}
 

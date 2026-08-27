@@ -1,4 +1,5 @@
 import { continentOf } from "@/lib/insights/continents";
+import { isOffWorldPlace } from "@/lib/space/moonPlaces";
 import { countryKeyOf } from "@/lib/places/grouping";
 import {
   isResidenceVisit,
@@ -232,15 +233,20 @@ export function buildInsights(
   const metric = options.metric ?? "stays";
   const tallies = talliesFor(places, visits, options);
 
+  /* A country rollup counts countries, and the Moon is not one of the 195.
+     It stays in the place, stay and day totals — you were there — and out of
+     every tally that answers "how much of the *world*". */
+  const onEarth = tallies.filter((tally) => !isOffWorldPlace(tally.place));
+
   const countries = rollUp(
-    tallies,
+    onEarth,
     metric,
     countryKeyOf,
     (place) => place.country || "No country",
     (place) => place.countryCode,
   );
   const continents = rollUp(
-    tallies,
+    onEarth,
     metric,
     (place) => continentOf(place.countryCode),
     (place) => continentOf(place.countryCode),
@@ -250,8 +256,9 @@ export function buildInsights(
   /* The matrix: the busiest countries against every year that holds a stay,
      newest years kept when there are more than fit. It is the year view, so
      the year filter never narrows it — the other filters do. */
-  const matrixTallies =
-    options.year === undefined ? tallies : talliesFor(places, visits, { ...options, year: undefined });
+  const matrixTallies = (
+    options.year === undefined ? tallies : talliesFor(places, visits, { ...options, year: undefined })
+  ).filter((tally) => !isOffWorldPlace(tally.place));
   const matrixRows = (options.year === undefined
     ? countries
     : rollUp(matrixTallies, metric, countryKeyOf, (place) => place.country || "No country", (place) => place.countryCode)
